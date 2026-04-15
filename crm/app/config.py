@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     # Comma-separated browser origins allowed for CORS (Vite dev server, etc.)
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     agent_rate_limit_per_minute: int = 120
+    # Dev/E2E only: use in-process data instead of Mongo (see README).
+    use_memory_repository: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

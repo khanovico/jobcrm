@@ -8,7 +8,7 @@ from app.auth import decode_access_token
 from app.config import settings
 from app.models import AgentContext, UserInDB
 from app.rate_limit import MinuteRateLimiter
-from app.repository import BaseRepository, MongoRepository
+from app.repository import BaseRepository, InMemoryRepository, MongoRepository
 
 security = HTTPBearer(auto_error=False)
 _repo: BaseRepository | None = None
@@ -18,7 +18,7 @@ _agent_limiter = MinuteRateLimiter(settings.agent_rate_limit_per_minute)
 def get_repository() -> BaseRepository:
     global _repo
     if _repo is None:
-        _repo = MongoRepository()
+        _repo = InMemoryRepository() if settings.use_memory_repository else MongoRepository()
     return _repo
 
 
