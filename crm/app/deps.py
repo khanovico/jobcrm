@@ -1,12 +1,18 @@
-from fastapi import Depends, HTTPException, status
+from __future__ import annotations
+
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.agent_auth import hash_api_key
 from app.auth import decode_access_token
-from app.models import UserInDB
+from app.config import settings
+from app.models import AgentContext, UserInDB
+from app.rate_limit import MinuteRateLimiter
 from app.repository import BaseRepository, MongoRepository
 
 security = HTTPBearer(auto_error=False)
 _repo: BaseRepository | None = None
+_agent_limiter = MinuteRateLimiter(settings.agent_rate_limit_per_minute)
 
 
 def get_repository() -> BaseRepository:
@@ -30,3 +36,36 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+def get_current_admin(user: UserInDB = Depends(get_current_user)) -> UserInDB:
+    if not user.admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
+    return user
+
+
+def get_agent_context(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    repo: BaseRepository = Depends(get_repository),
+) -> AgentContext:
+    if not x_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API key")
+
+    key_hash = hash_api_key(x_api_key)
+    rec = repo.get_agent_api_key_by_hash(key_hash)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+
+    if not _agent_limiter.allow(rec.id):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limited")
+
+    repo.touch_agent_api_key_used(rec.id)
+    return AgentContext(key_id=rec.id, scopes=rec.scopes)
+
+
+def require_agent_scope(agent: AgentContext, scope: str) -> None:
+    if scope in agent.scopes:
+        return
+    if "admin" in agent.scopes:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient API key scope")

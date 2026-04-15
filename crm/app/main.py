@@ -1,24 +1,59 @@
-from fastapi import Depends, FastAPI, HTTPException, status
+from __future__ import annotations
+
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.responses import PlainTextResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 
+from app.agent_auth import generate_api_key, hash_api_key
 from app.auth import create_access_token, hash_password, verify_password
 from app.config import settings
-from app.deps import get_current_user, get_repository
+from app.deps import (
+    get_agent_context,
+    get_current_admin,
+    get_current_user,
+    get_repository,
+    require_agent_scope,
+)
+from app.lifecycle import notify_if_preparation_ready
 from app.models import (
+    ActorType,
+    AgentApiKeyCreate,
+    AgentApiKeyCreated,
+    AgentContext,
     Application,
+    ApplicationBootstrapCreate,
     ApplicationCreate,
     ApplicationMarkApplied,
+    ApplicationMarkEmailSent,
     ApplicationStatus,
     ApplicationUpdate,
+    AuditEvent,
+    AuditListQuery,
     Company,
     CompanyCreate,
     CompanyUpdate,
+    DashboardMetrics,
+    Email,
+    EmailCreate,
+    EmailUpdate,
+    GlobalSearchResult,
+    Industry,
+    IndustryCreate,
+    IndustryUpdate,
+    NotificationListQuery,
+    PerProfileApplication,
+    PerProfileApplicationCreate,
+    PerProfileApplicationUpdate,
     Profile,
     ProfileCreate,
     ProfileUpdate,
     TokenResponse,
     UserCreate,
+    UserInDB,
     UserLogin,
+    UserNotification,
     UserPublic,
 )
 from app.repository import BaseRepository
@@ -35,9 +70,83 @@ app.add_middleware(
 )
 
 
+def _audit(
+    repo: BaseRepository,
+    *,
+    actor_type: ActorType,
+    actor_id: str,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    metadata: dict | None = None,
+) -> None:
+    repo.create_audit_event(
+        actor_type=actor_type.value,
+        actor_id=actor_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        metadata=metadata or {},
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/llm.txt", response_class=PlainTextResponse)
+def llm_txt() -> str:
+    return """# JobCRM — agent-facing overview
+
+Base URL: /api/v1 for human JWT APIs; /api/v1/agent for JAA (API key).
+
+Auth:
+- Human: Authorization: Bearer <JWT> from POST /api/v1/auth/login
+- Agent: X-API-Key: <key> with scopes read and write
+
+Core entities: Company, Industry, Profile, Application, PerProfileApplication, Email.
+
+Application workflow statuses: draft → pending_preparation → researching → analysis_ready → preparation_ready → applied → archived.
+
+Agent batch: GET /api/v1/agent/applications/pending?limit=50
+
+Agent writes are limited to Company, Application, PerProfileApplication, Email (and related application fields).
+
+See GET /sitemap.xml for route index.
+"""
+
+
+@app.get("/sitemap.xml", response_class=PlainTextResponse)
+def sitemap_xml() -> str:
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+        "<url><loc>http://localhost:5173/</loc></url>",
+        "<url><loc>http://localhost:5173/applications</loc></url>",
+        "<url><loc>http://localhost:5173/companies</loc></url>",
+        "<url><loc>http://localhost:5173/profiles</loc></url>",
+        "<url><loc>http://localhost:5173/audit</loc></url>",
+        "<url><loc>http://localhost:5173/notifications</loc></url>",
+        "<url><loc>http://localhost:8000/docs</loc></url>",
+        "<url><loc>http://localhost:8000/llm.txt</loc></url>",
+        "<url><loc>http://localhost:8000/mcp-guidance.md</loc></url>",
+        "</urlset>",
+    ]
+    return "\n".join(lines)
+
+
+@app.get("/mcp-guidance.md", response_class=PlainTextResponse)
+def mcp_guidance() -> str:
+    return """# MCP / agent guidance
+
+1. Authenticate using `X-API-Key` for `/api/v1/agent/*`.
+2. Poll `GET /api/v1/agent/applications/pending` for work.
+3. Enrich companies via `PUT /api/v1/agent/companies/{id}`.
+4. Advance applications with validated status transitions via `PUT /api/v1/agent/applications/{id}`.
+5. Create per-profile rows with `POST /api/v1/agent/per-profile-applications` and emails with `POST /api/v1/agent/emails`.
+6. Read `llm.txt` for a concise capability summary.
+"""
 
 
 @app.post("/api/v1/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
@@ -64,12 +173,145 @@ def login(payload: UserLogin, repo: BaseRepository = Depends(get_repository)) ->
     return TokenResponse(access_token=create_access_token(user.id))
 
 
+@app.get("/api/v1/metrics/dashboard", response_model=DashboardMetrics)
+def dashboard_metrics(
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> DashboardMetrics:
+    apps = repo.list_applications(0, 10_000, None)
+    pending = sum(1 for a in apps if a.status == ApplicationStatus.pending_preparation)
+    ready = sum(1 for a in apps if a.status == ApplicationStatus.preparation_ready)
+    actions = sum(
+        1
+        for a in apps
+        if a.status == ApplicationStatus.preparation_ready and not a.applied
+    )
+    notes = repo.list_notifications(
+        user.id, NotificationListQuery(skip=0, limit=200, unread_only=True)
+    )
+    return DashboardMetrics(
+        pending_preparation=pending,
+        preparation_ready=ready,
+        actions_need_review=actions,
+        unread_notifications=len(notes),
+    )
+
+
+@app.get("/api/v1/search", response_model=GlobalSearchResult)
+def global_search(
+    q: str = Query(min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> GlobalSearchResult:
+    return repo.global_search(q, limit)
+
+
+@app.get("/api/v1/industries", response_model=list[Industry])
+def list_industries(
+    skip: int = 0,
+    limit: int = 100,
+    search: str | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Industry]:
+    return repo.list_industries(skip=skip, limit=limit, search=search)
+
+
+@app.post("/api/v1/industries", response_model=Industry, status_code=status.HTTP_201_CREATED)
+def create_industry(
+    payload: IndustryCreate,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Industry:
+    try:
+        industry = repo.create_industry(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="create",
+        entity_type="industry",
+        entity_id=industry.id,
+    )
+    return industry
+
+
+@app.put("/api/v1/industries/{industry_id}", response_model=Industry)
+def update_industry(
+    industry_id: str,
+    payload: IndustryUpdate,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Industry:
+    industry = repo.update_industry(industry_id, payload)
+    if not industry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Industry not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="update",
+        entity_type="industry",
+        entity_id=industry_id,
+    )
+    return industry
+
+
+@app.delete("/api/v1/industries/{industry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_industry(
+    industry_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Response:
+    deleted = repo.delete_industry(industry_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Industry not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="delete",
+        entity_type="industry",
+        entity_id=industry_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/v1/admin/agent-keys", response_model=AgentApiKeyCreated, status_code=status.HTTP_201_CREATED)
+def create_agent_key(
+    payload: AgentApiKeyCreate,
+    admin: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> AgentApiKeyCreated:
+    raw = generate_api_key()
+    rec = repo.create_agent_api_key(payload, hash_api_key(raw))
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=admin.id,
+        action="create_agent_key",
+        entity_type="agent_api_key",
+        entity_id=rec.id,
+    )
+    return AgentApiKeyCreated(
+        id=rec.id,
+        name=rec.name,
+        scopes=rec.scopes,
+        created_at=rec.created_at,
+        last_used_at=rec.last_used_at,
+        raw_key=raw,
+    )
+
+
 @app.get("/api/v1/companies", response_model=list[Company])
 def list_companies(
     skip: int = 0,
     limit: int = 50,
     search: str | None = None,
-    _: UserPublic = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Company]:
     return repo.list_companies(skip=skip, limit=limit, search=search)
@@ -78,16 +320,25 @@ def list_companies(
 @app.post("/api/v1/companies", response_model=Company, status_code=status.HTTP_201_CREATED)
 def create_company(
     payload: CompanyCreate,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Company:
-    return repo.create_company(payload)
+    company = repo.create_company(payload)
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="create",
+        entity_type="company",
+        entity_id=company.id,
+    )
+    return company
 
 
 @app.get("/api/v1/companies/{company_id}", response_model=Company)
 def get_company(
     company_id: str,
-    _: UserPublic = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Company:
     company = repo.get_company(company_id)
@@ -100,24 +351,41 @@ def get_company(
 def update_company(
     company_id: str,
     payload: CompanyUpdate,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Company:
     company = repo.update_company(company_id, payload)
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="update",
+        entity_type="company",
+        entity_id=company_id,
+    )
     return company
 
 
 @app.delete("/api/v1/companies/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_company(
     company_id: str,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
-) -> None:
+) -> Response:
     deleted = repo.delete_company(company_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="delete",
+        entity_type="company",
+        entity_id=company_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/v1/profiles", response_model=list[Profile])
@@ -125,7 +393,7 @@ def list_profiles(
     skip: int = 0,
     limit: int = 50,
     search: str | None = None,
-    _: UserPublic = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Profile]:
     return repo.list_profiles(skip=skip, limit=limit, search=search)
@@ -134,16 +402,25 @@ def list_profiles(
 @app.post("/api/v1/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)
 def create_profile(
     payload: ProfileCreate,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Profile:
-    return repo.create_profile(payload)
+    profile = repo.create_profile(payload)
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="create",
+        entity_type="profile",
+        entity_id=profile.id,
+    )
+    return profile
 
 
 @app.get("/api/v1/profiles/{profile_id}", response_model=Profile)
 def get_profile(
     profile_id: str,
-    _: UserPublic = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Profile:
     profile = repo.get_profile(profile_id)
@@ -156,24 +433,41 @@ def get_profile(
 def update_profile(
     profile_id: str,
     payload: ProfileUpdate,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Profile:
     profile = repo.update_profile(profile_id, payload)
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="update",
+        entity_type="profile",
+        entity_id=profile_id,
+    )
     return profile
 
 
 @app.delete("/api/v1/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_profile(
     profile_id: str,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
-) -> None:
+) -> Response:
     deleted = repo.delete_profile(profile_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="delete",
+        entity_type="profile",
+        entity_id=profile_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/v1/applications", response_model=list[Application])
@@ -181,27 +475,70 @@ def list_applications(
     skip: int = 0,
     limit: int = 50,
     status_filter: ApplicationStatus | None = None,
-    _: UserPublic = Depends(get_current_user),
+    company_id: str | None = None,
+    applied: bool | None = None,
+    email_sent: bool | None = None,
+    sort: str = "created_at_desc",
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Application]:
-    return repo.list_applications(skip=skip, limit=limit, status=status_filter)
+    return repo.list_applications(
+        skip=skip,
+        limit=limit,
+        status=status_filter,
+        company_id=company_id,
+        applied=applied,
+        email_sent=email_sent,
+        sort=sort,
+    )
 
 
 @app.post("/api/v1/applications", response_model=Application, status_code=status.HTTP_201_CREATED)
 def create_application(
     payload: ApplicationCreate,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
     if not repo.get_company(payload.company_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid company_id")
-    return repo.create_application(payload)
+    application = repo.create_application(payload, created_by_user_id=user.id)
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="create",
+        entity_type="application",
+        entity_id=application.id,
+    )
+    return application
+
+
+@app.post(
+    "/api/v1/applications/bootstrap",
+    response_model=Application,
+    status_code=status.HTTP_201_CREATED,
+)
+def bootstrap_application(
+    payload: ApplicationBootstrapCreate,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Application:
+    _, application = repo.bootstrap_application(payload, created_by_user_id=user.id)
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="bootstrap_application",
+        entity_type="application",
+        entity_id=application.id,
+    )
+    return application
 
 
 @app.get("/api/v1/applications/{application_id}", response_model=Application)
 def get_application(
     application_id: str,
-    _: UserPublic = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
     application = repo.get_application(application_id)
@@ -214,15 +551,26 @@ def get_application(
 def update_application(
     application_id: str,
     payload: ApplicationUpdate,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
+    before = repo.get_application(application_id)
     try:
         application = repo.update_application(application_id, payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not application:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="update",
+        entity_type="application",
+        entity_id=application_id,
+        metadata={"fields": list(payload.model_dump(exclude_none=True).keys())},
+    )
+    notify_if_preparation_ready(repo, before, application)
     return application
 
 
@@ -230,7 +578,7 @@ def update_application(
 def mark_applied(
     application_id: str,
     payload: ApplicationMarkApplied,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
     try:
@@ -239,18 +587,440 @@ def mark_applied(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not application:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="mark_applied",
+        entity_type="application",
+        entity_id=application_id,
+        metadata={"applied": payload.applied},
+    )
+    return application
+
+
+@app.post("/api/v1/applications/{application_id}/mark-email-sent", response_model=Application)
+def mark_application_email_sent_route(
+    application_id: str,
+    payload: ApplicationMarkEmailSent,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Application:
+    application = repo.mark_application_email_sent(application_id, payload.sent)
+    if not application:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="mark_email_sent",
+        entity_type="application",
+        entity_id=application_id,
+        metadata={"sent": payload.sent},
+    )
     return application
 
 
 @app.delete("/api/v1/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_application(
     application_id: str,
-    _: UserPublic = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
-) -> None:
+) -> Response:
     deleted = repo.delete_application(application_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Application not found",
         )
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="delete",
+        entity_type="application",
+        entity_id=application_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.get(
+    "/api/v1/applications/{application_id}/per-profile-applications",
+    response_model=list[PerProfileApplication],
+)
+def list_per_profile_apps(
+    application_id: str,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[PerProfileApplication]:
+    if not repo.get_application(application_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    return repo.list_per_profile_for_application(application_id)
+
+
+@app.post(
+    "/api/v1/applications/{application_id}/per-profile-applications",
+    response_model=PerProfileApplication,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_per_profile_app(
+    application_id: str,
+    payload: PerProfileApplicationCreate,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> PerProfileApplication:
+    if payload.application_id != application_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="application_id mismatch")
+    try:
+        ppa = repo.create_per_profile_application(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="create",
+        entity_type="per_profile_application",
+        entity_id=ppa.id,
+    )
+    return ppa
+
+
+@app.put("/api/v1/per-profile-applications/{ppa_id}", response_model=PerProfileApplication)
+def update_per_profile_app(
+    ppa_id: str,
+    payload: PerProfileApplicationUpdate,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> PerProfileApplication:
+    try:
+        ppa = repo.update_per_profile_application(ppa_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not ppa:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="update",
+        entity_type="per_profile_application",
+        entity_id=ppa_id,
+    )
+    return ppa
+
+
+@app.delete("/api/v1/per-profile-applications/{ppa_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_per_profile_app(
+    ppa_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Response:
+    deleted = repo.delete_per_profile_application(ppa_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="delete",
+        entity_type="per_profile_application",
+        entity_id=ppa_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.get(
+    "/api/v1/per-profile-applications/{ppa_id}/emails",
+    response_model=list[Email],
+)
+def list_emails(
+    ppa_id: str,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Email]:
+    if not repo.get_per_profile_application(ppa_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return repo.list_emails_for_ppa(ppa_id)
+
+
+@app.post(
+    "/api/v1/per-profile-applications/{ppa_id}/emails",
+    response_model=Email,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_email_route(
+    ppa_id: str,
+    payload: EmailCreate,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Email:
+    if payload.per_profile_application_id != ppa_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ppa id mismatch")
+    try:
+        email = repo.create_email(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="create",
+        entity_type="email",
+        entity_id=email.id,
+    )
+    return email
+
+
+@app.post("/api/v1/emails/{email_id}/mark-sent", response_model=Email)
+def mark_email_sent_route(
+    email_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Email:
+    email = repo.mark_email_sent(email_id, True)
+    if not email:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="mark_sent",
+        entity_type="email",
+        entity_id=email_id,
+    )
+    return email
+
+
+@app.get("/api/v1/notifications", response_model=list[UserNotification])
+def list_notifications_route(
+    skip: int = 0,
+    limit: int = 50,
+    unread_only: bool = False,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+):
+    return repo.list_notifications(
+        user.id, NotificationListQuery(skip=skip, limit=limit, unread_only=unread_only)
+    )
+
+
+@app.post("/api/v1/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+def read_notification(
+    notification_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Response:
+    updated = repo.mark_notification_read(user.id, notification_id)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.get("/api/v1/audit-events", response_model=list[AuditEvent])
+def list_audit(
+    skip: int = 0,
+    limit: int = 100,
+    actor_type: ActorType | None = None,
+    entity_type: str | None = None,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+):
+    def _parse(ts: str | None):
+        if not ts:
+            return None
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+    q = AuditListQuery(
+        skip=skip,
+        limit=limit,
+        actor_type=actor_type,
+        entity_type=entity_type,
+        from_ts=_parse(from_ts),
+        to_ts=_parse(to_ts),
+    )
+    return repo.list_audit_events(q)
+
+
+# --- Agent routes ---
+
+
+@app.get("/api/v1/agent/applications/pending", response_model=list[Application])
+def agent_list_pending(
+    limit: int = Query(default=50, ge=1, le=200),
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Application]:
+    require_agent_scope(agent, "read")
+    return repo.list_pending_applications(limit)
+
+
+@app.get("/api/v1/agent/companies", response_model=list[Company])
+def agent_list_companies(
+    skip: int = 0,
+    limit: int = 100,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Company]:
+    require_agent_scope(agent, "read")
+    return repo.list_companies(skip=skip, limit=limit, search=None)
+
+
+@app.put("/api/v1/agent/companies/{company_id}", response_model=Company)
+def agent_update_company(
+    company_id: str,
+    payload: CompanyUpdate,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Company:
+    require_agent_scope(agent, "write")
+    company = repo.update_company(company_id, payload)
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    _audit(
+        repo,
+        actor_type=ActorType.agent,
+        actor_id=agent.key_id,
+        action="update",
+        entity_type="company",
+        entity_id=company_id,
+    )
+    return company
+
+
+@app.get("/api/v1/agent/profiles", response_model=list[Profile])
+def agent_list_profiles(
+    skip: int = 0,
+    limit: int = 200,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Profile]:
+    require_agent_scope(agent, "read")
+    return repo.list_profiles(skip=skip, limit=limit, search=None)
+
+
+@app.get("/api/v1/agent/applications", response_model=list[Application])
+def agent_list_applications(
+    skip: int = 0,
+    limit: int = 200,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Application]:
+    require_agent_scope(agent, "read")
+    return repo.list_applications(skip, limit, None)
+
+
+@app.put("/api/v1/agent/applications/{application_id}", response_model=Application)
+def agent_update_application(
+    application_id: str,
+    payload: ApplicationUpdate,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Application:
+    require_agent_scope(agent, "write")
+    before = repo.get_application(application_id)
+    try:
+        application = repo.update_application(application_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not application:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    _audit(
+        repo,
+        actor_type=ActorType.agent,
+        actor_id=agent.key_id,
+        action="update",
+        entity_type="application",
+        entity_id=application_id,
+        metadata={"fields": list(payload.model_dump(exclude_none=True).keys())},
+    )
+    notify_if_preparation_ready(repo, before, application)
+    return application
+
+
+@app.post(
+    "/api/v1/agent/per-profile-applications",
+    response_model=PerProfileApplication,
+    status_code=status.HTTP_201_CREATED,
+)
+def agent_create_ppa(
+    payload: PerProfileApplicationCreate,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> PerProfileApplication:
+    require_agent_scope(agent, "write")
+    try:
+        ppa = repo.create_per_profile_application(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _audit(
+        repo,
+        actor_type=ActorType.agent,
+        actor_id=agent.key_id,
+        action="create",
+        entity_type="per_profile_application",
+        entity_id=ppa.id,
+    )
+    return ppa
+
+
+@app.put("/api/v1/agent/per-profile-applications/{ppa_id}", response_model=PerProfileApplication)
+def agent_update_ppa(
+    ppa_id: str,
+    payload: PerProfileApplicationUpdate,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> PerProfileApplication:
+    require_agent_scope(agent, "write")
+    try:
+        ppa = repo.update_per_profile_application(ppa_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not ppa:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    _audit(
+        repo,
+        actor_type=ActorType.agent,
+        actor_id=agent.key_id,
+        action="update",
+        entity_type="per_profile_application",
+        entity_id=ppa_id,
+    )
+    return ppa
+
+
+@app.post(
+    "/api/v1/agent/emails",
+    response_model=Email,
+    status_code=status.HTTP_201_CREATED,
+)
+def agent_create_email(
+    payload: EmailCreate,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Email:
+    require_agent_scope(agent, "write")
+    try:
+        email = repo.create_email(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _audit(
+        repo,
+        actor_type=ActorType.agent,
+        actor_id=agent.key_id,
+        action="create",
+        entity_type="email",
+        entity_id=email.id,
+    )
+    return email
+
+
+@app.get("/api/v1/agent/industries", response_model=list[Industry])
+def agent_list_industries(
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Industry]:
+    require_agent_scope(agent, "read")
+    return repo.list_industries(0, 500, None)

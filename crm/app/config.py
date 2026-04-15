@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     mongo_db_name: str = "jobcrm"
     # Comma-separated browser origins allowed for CORS (Vite dev server, etc.)
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    agent_rate_limit_per_minute: int = 120
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
