@@ -3,6 +3,7 @@
 ## Repo
 
 Stack: <Update during your first project initialization>
+Product Requirement Documet: `.cursor/docs/PRD.md`
 Full project structure: `.cursor/docs/PROJECT_STRUCTURE.md` (create in your first init, and update as you go.)
 
 
