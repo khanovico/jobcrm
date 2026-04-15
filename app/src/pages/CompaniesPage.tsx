@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { Modal } from "../components/Modal";
 import { api } from "../api";
 import { Company } from "../types";
 
@@ -10,6 +11,7 @@ export const CompaniesPage = () => {
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = async () => setItems(await api.listCompanies());
   useEffect(() => {
@@ -23,6 +25,7 @@ export const CompaniesPage = () => {
       await api.createCompany({ name, website: website.trim() || null });
       setName("");
       setWebsite("");
+      setCreateOpen(false);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -30,13 +33,29 @@ export const CompaniesPage = () => {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="space-y-4">
       <section className="card bg-base-100 p-4 shadow">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xl font-semibold">Companies</h2>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
+              Refresh
+            </button>
+            <button
+              type="button"
+              className="btn btn-circle btn-primary btn-sm"
+              title="New company"
+              aria-label="New company"
+              onClick={() => {
+                setError(null);
+                setCreateOpen(true);
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-base-300">
           <table className="table table-sm">
@@ -84,28 +103,48 @@ export const CompaniesPage = () => {
         </div>
         <p className="mt-2 text-xs opacity-60">Click a row to view and edit full company details.</p>
       </section>
-      <section className="card bg-base-100 p-4 shadow">
-        <h2 className="mb-2 text-xl font-semibold">New company</h2>
-        <form className="space-y-2" onSubmit={onSubmit}>
-          <input
-            className="input input-bordered w-full"
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <input
-            className="input input-bordered w-full"
-            placeholder="Website"
-            value={website}
-            onChange={(e) => setWebsite(e.target.value)}
-          />
+
+      <Modal
+        open={createOpen}
+        onClose={() => {
+          setCreateOpen(false);
+          setError(null);
+        }}
+        title="New company"
+        size="md"
+      >
+        <form className="space-y-3" onSubmit={onSubmit} aria-label="Create new company">
+          <label className="form-control w-full">
+            <span className="label-text">Name</span>
+            <input
+              className="input input-bordered w-full"
+              placeholder="Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus={createOpen}
+            />
+          </label>
+          <label className="form-control w-full">
+            <span className="label-text">Website</span>
+            <input
+              className="input input-bordered w-full"
+              placeholder="Website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+            />
+          </label>
           {error && <p className="text-sm text-error">{error}</p>}
-          <button className="btn btn-primary" type="submit">
-            Create
-          </button>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn btn-ghost" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" type="submit">
+              Create
+            </button>
+          </div>
         </form>
-      </section>
+      </Modal>
     </div>
   );
 };

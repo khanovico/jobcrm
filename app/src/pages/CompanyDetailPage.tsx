@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { MarkdownModal } from "../components/MarkdownModal";
 import { api } from "../api";
 import { Application, Company, Industry } from "../types";
 
@@ -24,6 +25,7 @@ export const CompanyDetailPage = () => {
   const [industryIds, setIndustryIds] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [overviewOpen, setOverviewOpen] = useState(false);
 
   const industryNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -126,7 +128,14 @@ export const CompanyDetailPage = () => {
       {company && (
         <>
           <div className="card bg-base-100 p-4 shadow">
-            <h2 className="text-xl font-semibold">{company.name}</h2>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h2 className="text-xl font-semibold">{company.name}</h2>
+              {company.overview?.trim() ? (
+                <button type="button" className="link link-primary text-sm font-medium" onClick={() => setOverviewOpen(true)}>
+                  Overview
+                </button>
+              ) : null}
+            </div>
             <p className="text-sm opacity-70">
               Updated {new Date(company.updated_at).toLocaleString()} · ID{" "}
               <span className="font-mono text-xs">{company.id}</span>
@@ -190,12 +199,6 @@ export const CompanyDetailPage = () => {
                 <div className="sm:col-span-2">
                   <h3 className="text-sm font-semibold opacity-80">Work mode detail</h3>
                   <p className="whitespace-pre-wrap text-sm">{company.work_mode_description}</p>
-                </div>
-              )}
-              {company.overview && (
-                <div className="sm:col-span-2">
-                  <h3 className="text-sm font-semibold opacity-80">Overview</h3>
-                  <p className="whitespace-pre-wrap text-sm">{company.overview}</p>
                 </div>
               )}
             </div>
@@ -377,6 +380,15 @@ export const CompanyDetailPage = () => {
           </div>
         </>
       )}
+      {company?.overview?.trim() ? (
+        <MarkdownModal
+          open={overviewOpen}
+          onClose={() => setOverviewOpen(false)}
+          title={`Overview — ${company.name}`}
+          markdown={company.overview ?? ""}
+          size="full"
+        />
+      ) : null}
     </div>
   );
 };
