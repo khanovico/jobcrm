@@ -1,0 +1,25 @@
+---
+description: Jest unit testing rules for frontend TypeScript and JavaScript code quality
+globs: **/*.{test,spec}.{ts,tsx,js,jsx}
+alwaysApply: false
+---
+
+# Jest Unit Testing Rules
+
+- Use Jest for unit-level tests of utilities, hooks, state helpers, and business logic.
+- Write behavior-focused test names and group related cases with `describe`.
+- Cover success, failure, and edge-case inputs (empty, null/undefined, malformed values).
+- Keep tests deterministic; mock external dependencies (network, storage, timers, browser APIs).
+- Clear/reset mocks between tests to prevent cross-test leakage.
+- Prefer explicit Arrange-Act-Assert structure for readability.
+- Add regression tests when fixing bugs.
+- Keep test files focused; avoid large mixed suites spanning unrelated behaviors.
+
+## Example
+```ts
+describe("formatLeadName", () => {
+  it("returns fallback for empty input", () => {
+    expect(formatLeadName("")).toBe("Unknown Lead");
+  });
+});
+```

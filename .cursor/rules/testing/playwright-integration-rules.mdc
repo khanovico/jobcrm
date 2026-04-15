@@ -1,0 +1,20 @@
+---
+description: Playwright integration rules for UI plus API interaction verification
+globs: **/*.{spec,test}.{ts,tsx,js,jsx}
+alwaysApply: false
+---
+
+# Playwright Integration Rules
+
+- Test integration points where UI state depends on API responses and mutations.
+- Use `page.route` to mock API responses for deterministic positive and negative scenarios.
+- Verify request intent (method/payload/endpoint) when user actions trigger backend calls.
+- Assert state transitions across loading, success, and error states in the same flow.
+- Prefer 3-5 focused tests per feature area instead of broad overlapping tests.
+- Avoid visual/pixel assertions; validate behavior and accessibility-visible outcomes.
+
+## Example
+```ts
+await page.route("**/api/leads*", route => route.fulfill({ status: 200, body: JSON.stringify([]) }));
+await expect(page.getByText("No leads found")).toBeVisible();
+```

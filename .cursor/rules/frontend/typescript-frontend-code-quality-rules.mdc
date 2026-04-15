@@ -1,0 +1,20 @@
+---
+description: TypeScript frontend code quality rules for readable, DRY, and maintainable UI code
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# TypeScript Frontend Code Quality Rules
+
+- Prefer simple and readable code over clever one-liners.
+- Use early returns to reduce nesting and keep render/logic flows clear.
+- Keep logic DRY; extract repeated transformations and guards into shared helpers/hooks.
+- Use descriptive names; prefix event handlers with `handle` (for example: `handleSubmit`, `handleRowClick`).
+- Prefer immutable update patterns for arrays/objects in state and derived data.
+- Avoid `JSDoc` for basic TypeScript-typed functions; rely on strong type definitions.
+
+## Example
+```ts
+if (!user) return null;
+if (!user.isActive) return <InactiveUserBanner />;
+```

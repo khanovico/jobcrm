@@ -1,0 +1,20 @@
+---
+description: Backend testing rules for reliable Python and FastAPI behavior verification
+globs: **/*.py
+alwaysApply: false
+---
+
+# Backend Testing Rules
+
+- Use `pytest` for backend tests; avoid mixing with `unittest` style in new code.
+- Add tests for business logic, API contracts, and important error paths.
+- Keep tests deterministic: isolate external dependencies with fixtures/mocks.
+- Put tests under `tests/` and mirror feature/domain layout for discoverability.
+- Prefer explicit test names that describe behavior and expected outcome.
+- Add regression tests for fixed bugs when practical.
+
+## Example
+```python
+def test_create_lead_returns_201_when_payload_is_valid() -> None:
+    ...
+```

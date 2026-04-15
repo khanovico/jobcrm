@@ -1,0 +1,20 @@
+---
+description: Playwright accessibility rules for automated a11y checks on critical frontend flows
+globs: **/*.{a11y,spec,test}.{ts,tsx,js,jsx}
+alwaysApply: false
+---
+
+# Playwright Accessibility Rules
+
+- Add accessibility checks for critical pages and user flows, not only isolated components.
+- Use `@axe-core/playwright` (or equivalent) to run automated WCAG checks in E2E contexts.
+- Include keyboard navigation assertions for focus order and visible focus states.
+- Assert semantic structure and labels for forms, buttons, and dialog interactions.
+- Prioritize fixing serious/critical violations and prevent regressions with CI execution.
+- Keep accessibility tests deterministic and independent from unrelated UI styling changes.
+
+## Example
+```ts
+await injectAxe(page);
+await checkA11y(page);
+```

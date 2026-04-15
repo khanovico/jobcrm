@@ -1,0 +1,21 @@
+---
+description: Backend configuration rules for safe and predictable environment-driven settings
+globs: **/*.py
+alwaysApply: false
+---
+
+# Backend Configuration Rules
+
+- Load runtime configuration from environment variables or typed settings objects.
+- Do not hardcode secrets, tokens, database URLs, or per-environment constants in source files.
+- Centralize config parsing/validation in one settings module and inject it where needed.
+- Provide sensible defaults only for non-sensitive local development values.
+- Fail fast on missing required settings at startup, not at first request.
+- Keep `.env.example` aligned with actual required variables.
+
+## Example
+```python
+class Settings(BaseSettings):
+    database_url: str
+    redis_url: str | None = None
+```

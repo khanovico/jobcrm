@@ -1,0 +1,20 @@
+---
+description: Playwright API test rules for endpoint contract and failure validation
+globs: **/*.{api,spec,test}.{ts,js}
+alwaysApply: false
+---
+
+# Playwright API Rules
+
+- Use Playwright API testing (`request` fixture or shared API client) for backend contract checks.
+- Group tests by endpoint/resource and cover expected status codes and error modes.
+- Validate both response status and response payload shape/content.
+- Keep tests isolated and repeatable; avoid relying on mutable shared server state.
+- Use test data setup/cleanup patterns that do not leak cross-test dependencies.
+- Include auth, permission, and validation failure cases for critical endpoints.
+
+## Example
+```ts
+const res = await request.post("/api/leads", { data: payload });
+expect(res.status()).toBe(201);
+```

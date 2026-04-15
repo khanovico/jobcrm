@@ -333,7 +333,7 @@ Note: This section keeps your structure and adds implementation-safe refinements
 ### 10.1 Design Style
 - Theme support: light (default) and dark mode.
 - Visual direction: simple, sharp, modern.
-- Tailwind-based design system tokens for consistency.
+- Tailwind + daisyUI-based design system tokens/components for consistency and faster UI delivery.
 - UI must be optimized for high visibility and fast review workflows (applications, drafts, and email tracking).
 
 ### 10.2 Core Screens
@@ -387,7 +387,7 @@ Note: This section keeps your structure and adds implementation-safe refinements
 
 ## 12) System Architecture Constraints
 
-- Frontend: React + Tailwind CSS (`app`).
+- Frontend: React + Tailwind CSS + daisyUI (`app`).
 - Backend: FastAPI (`crm`).
 - Database: MongoDB.
 - Containerization: Docker.

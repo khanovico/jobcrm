@@ -1,0 +1,19 @@
+---
+description: TailwindCSS and DaisyUI rules for consistent styling and fast UI delivery
+globs: **/*.{tsx,jsx,css}
+alwaysApply: false
+---
+
+# TailwindCSS + DaisyUI Frontend Rules
+
+- Use Tailwind utility classes as the default styling approach.
+- Prefer DaisyUI components for common UI patterns before writing custom markup.
+- Avoid ad hoc custom CSS unless utilities or DaisyUI cannot express the requirement.
+- Keep className strings readable; group layout, spacing, color, and state variants consistently.
+- Use responsive variants (`sm:`, `md:`, `lg:`) instead of separate breakpoint-specific components.
+- Centralize theme tokens in Tailwind/DaisyUI config rather than hardcoding repeated values.
+
+## Example
+```tsx
+<button className="btn btn-primary w-full md:w-auto">Save</button>
+```

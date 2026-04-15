@@ -1,0 +1,26 @@
+---
+description: TDD-first discipline requiring sufficient tests for new code and features
+alwaysApply: true
+---
+
+# TDD And Test Coverage Discipline
+
+## Core Principle
+
+- Use a test-driven workflow for new features and behavior changes whenever practical:
+  1. write or update a failing test first
+  2. implement the minimal code to pass
+  3. refactor safely with tests green
+
+## Coverage Expectations
+
+- Every new function, feature, and bug fix must be covered by sufficient tests.
+- Include happy path, failure path, and meaningful edge cases.
+- Add regression tests for fixed defects to prevent reintroduction.
+- Do not treat implementation as complete until relevant tests pass.
+
+## Quality Gate
+
+- Prefer focused, deterministic tests over broad flaky tests.
+- Keep test scope aligned with risk: unit + integration + E2E where needed.
+- If full coverage is not feasible in the same change, explicitly note test gaps and next steps.

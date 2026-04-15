@@ -1,0 +1,23 @@
+---
+description: FastAPI routing rules for consistent endpoint design and router organization
+globs: **/*.py
+alwaysApply: false
+---
+
+# FastAPI Routing Rules
+
+- Group endpoints by domain router (for example: leads, contacts, auth), not by HTTP verb.
+- Keep route paths resource-oriented and predictable; use nouns and stable path segments.
+- Use explicit `response_model` and `status_code` on route decorators.
+- Keep one responsibility per endpoint; split overloaded handlers into focused routes.
+- Use dependencies for auth/tenant/permissions checks instead of repeating logic in each route.
+- Prefer pagination/filter parameters over single endpoints returning unbounded lists.
+
+## Example
+```python
+router = APIRouter(prefix="/leads", tags=["leads"])
+
+@router.get("", response_model=LeadListResponse, status_code=200)
+async def list_leads(query: LeadListQuery = Depends(), service: LeadService = Depends(get_lead_service)):
+    return await service.list_leads(query)
+```

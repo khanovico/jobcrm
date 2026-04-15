@@ -1,0 +1,21 @@
+---
+description: Playwright E2E rules for stable critical-flow frontend testing
+globs: **/*.{e2e,spec,test}.{ts,tsx,js,jsx}
+alwaysApply: false
+---
+
+# Playwright E2E Rules
+
+- Cover critical user journeys first (auth, lead CRUD, search/filter, primary navigation).
+- Write behavior-focused test names and group by feature with `test.describe`.
+- Prefer semantic selectors (`getByRole`, `getByLabel`, `getByTestId`) over CSS/XPath.
+- Use Playwright auto-waiting assertions (`toBeVisible`, `toHaveURL`, `toHaveText`); avoid hard sleeps.
+- Keep tests deterministic by mocking unstable external dependencies when needed.
+- Validate both success and failure paths (validation errors, network failures, empty states).
+- Keep each spec focused and maintainable; avoid giant all-in-one scenario files.
+
+## Example
+```ts
+await page.getByTestId("login-submit").click();
+await expect(page).toHaveURL(/dashboard/);
+```

@@ -1,0 +1,25 @@
+---
+description: Backend performance rules for FastAPI and Python services
+globs: **/*.py
+alwaysApply: false
+---
+
+# Backend Performance Rules
+
+- Avoid blocking I/O inside request handlers; use async clients/drivers where possible.
+- Batch or paginate expensive reads; never load unbounded datasets in one response.
+- Add caching for hot, stable reads (in-memory or Redis) with explicit TTL and invalidation.
+- Minimize repeated serialization work; reuse response models and avoid redundant transforms.
+- Measure before and after optimization using latency/throughput/error-rate metrics.
+- Move heavy background work (emails, exports, webhooks retries) off the request path.
+
+## Example
+```python
+# Bad: CPU and I/O heavy work in request path
+@router.get("/report")
+async def report(): ...
+
+# Good: enqueue job and return accepted
+@router.post("/report-jobs", status_code=202)
+async def generate_report(): ...
+```

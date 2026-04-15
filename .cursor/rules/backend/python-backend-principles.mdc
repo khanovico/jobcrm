@@ -1,0 +1,22 @@
+---
+description: Python backend coding principles for readable and maintainable services
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python Backend Principles
+
+- Write clear, typed, concise Python with explicit return types for public functions.
+- Prefer small, pure helper functions and composition over large monolithic handlers.
+- Keep modules focused; split files once they mix routing, business logic, and data access.
+- Use descriptive snake_case names (for example: `is_active`, `has_access`, `order_repo`).
+- Avoid hidden side effects; pass dependencies explicitly.
+
+## Example
+```python
+# Bad
+def process(u): ...
+
+# Good
+def process_user_signup(user_payload: dict) -> SignupResult: ...
+```

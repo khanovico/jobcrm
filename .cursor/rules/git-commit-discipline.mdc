@@ -25,3 +25,12 @@ alwaysApply: true
 - Prefer small, feature-driven commits over large mixed commits.
 - Commit frequently during implementation so each commit represents one logical step.
 - If a commit is becoming too large, split it into smaller focused commits.
+
+## Commit Identity Rules
+- Use this identity for every commit:
+  - Name: `cursor-bot`
+  - Email: `khanovicdev+cursor@gmail.com`
+- Set identity for both author and committer on each commit command.
+- Do not rely on local git config identity for automated commits.
+- Example:
+  `git -c user.name="cursor-bot" -c user.email="khanovicdev+cursor@gmail.com" commit --author="cursor-bot <khanovicdev+cursor@gmail.com>" -m "<tag>: <meaningful summary>"`

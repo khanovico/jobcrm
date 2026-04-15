@@ -1,0 +1,22 @@
+---
+description: TypeScript frontend rules for safer React code and maintainable UI contracts
+globs: **/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Frontend TypeScript Rules
+
+- Use strict typing for component props, hook params, and exported function returns.
+- Prefer `interface` for extensible object contracts and `type` for unions/compositions.
+- Avoid `any`; use `unknown` with narrowing when type is not known upfront.
+- Model UI states with discriminated unions when a view has multiple explicit modes.
+- Keep shared types near domain features to reduce cross-module coupling.
+
+## Example
+```ts
+type FetchState<T> =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "success"; data: T };
+```

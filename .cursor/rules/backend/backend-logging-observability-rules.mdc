@@ -1,0 +1,19 @@
+---
+description: Backend logging and observability rules for debuggable and production-safe services
+globs: **/*.py
+alwaysApply: false
+---
+
+# Backend Logging And Observability Rules
+
+- Use structured logs with context fields (for example: request_id, user_id, endpoint, duration_ms).
+- Log at the right level (`debug`, `info`, `warning`, `error`) and avoid noisy duplicate entries.
+- Log unexpected failures with actionable context, then re-raise or map to API-safe errors.
+- Never log secrets or sensitive personal data.
+- Track core metrics for request latency, error rate, and throughput on critical endpoints.
+- Include correlation IDs in logs and error responses when available.
+
+## Example
+```python
+logger.error("lead_create_failed", extra={"request_id": request_id, "lead_email": email_masked})
+```
