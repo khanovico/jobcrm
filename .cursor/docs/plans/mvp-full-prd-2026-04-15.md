@@ -22,16 +22,16 @@
 
 **TODO checklist**
 
-- [ ] A: Extend `models.py` (and split if file too large)
-- [ ] B: Repository methods for new entities; `Application.created_by_user_id`
-- [ ] C: Agent key hashing, `get_agent`, rate limit middleware hook
-- [ ] D: Wire routes in `main.py` or `routers/`
-- [ ] E: Agent routes + policy enforcement
-- [ ] F: Agent-friendly surfaces
-- [ ] G: `pytest` full suite green
-- [ ] H: Frontend pages + tests (Vitest)
-- [ ] I: Playwright e2e
-- [ ] Update `PRD.md` §13 status when done
+- [x] A: Extend `models.py` (and split if file too large)
+- [x] B: Repository methods for new entities; `Application.created_by_user_id`
+- [x] C: Agent key hashing, `get_agent`, rate limit middleware hook
+- [x] D: Wire routes in `main.py` or `routers/`
+- [x] E: Agent routes + policy enforcement
+- [x] F: Agent-friendly surfaces
+- [x] G: `pytest` full suite green
+- [x] H: Frontend pages + tests (Vitest)
+- [x] I: Playwright e2e
+- [x] Update `PRD.md` §13 status when done
 
 **Dependencies / merge risks:** Single branch; repository and models are shared — avoid parallel edits to `repository.py` from multiple agents.
 
@@ -44,3 +44,4 @@
 | Date | Update |
 |------|--------|
 | 2026-04-15 | Plan created. |
+| 2026-04-15 | MVP implemented: backend agent/PPA/audit/notifications, frontend pages, Playwright E2E, `USE_MEMORY_REPOSITORY` for local E2E. |

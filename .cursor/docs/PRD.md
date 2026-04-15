@@ -395,7 +395,51 @@ Note: This section keeps your structure and adds implementation-safe refinements
 
 ---
 
-## 13) Release Plan and Milestones
+## 13) Implementation Status
+
+This section tracks **what the repository implements today** versus the rest of this PRD. It is updated when major scope lands. **Last reviewed:** April 2026.
+
+### Milestone alignment
+
+| Milestone (see §14) | Status |
+|---------------------|--------|
+| M1 – Core CRM foundation | **Implemented** (CRUD, workflow, UI shell, bootstrap create, metrics, search) |
+| M2 – JAA integration | **Implemented** (API key, `/api/v1/agent/*`, pending batch, scoped writes, rate limit) |
+| M3 – Artifacts + execution | **Implemented** (PPA + emails, mark applied / mark sent, notifications on prep ready) |
+| M4 – Agent-friendly surfaces | **Implemented** (`llm.txt`, `sitemap.xml`, `mcp-guidance.md`) |
+
+### Implemented
+
+- **Repository layout:** `app/` (React, Vite, Tailwind, daisyUI), `crm/` (FastAPI), MongoDB-backed persistence (or `USE_MEMORY_REPOSITORY` for local E2E), optional `docker-compose` (see `README.md`).
+- **Human authentication:** JWT bearer; register/login; password hashing server-side; optional **admin** flag for issuing agent API keys (`POST /api/v1/admin/agent-keys`).
+- **Entities (CRUD):** `Industry`, `Company` (extended fields), `Profile` (incl. educations), `Application`, `PerProfileApplication`, `Email` (hard delete).
+- **Application workflow:** Validated transitions; `mark-applied`; `mark-email-sent` on application and per-email; `POST /applications/bootstrap` for company name + optional job post.
+- **JAA:** `X-API-Key` on `/api/v1/agent/*`; pending applications batch; read + scoped **write** (company, application, PPA, email); per-key rate limiting; audit for agent actions.
+- **Notifications & audit:** User notifications (incl. preparation ready); searchable audit timeline API + **Audit** UI; actor type **user** vs **agent**.
+- **Search & dashboard:** `GET /search` (companies, profiles, application notes); dashboard metrics endpoint + UI cards.
+- **Agent-friendly surfaces:** `GET /llm.txt`, `GET /sitemap.xml`, `GET /mcp-guidance.md`.
+- **UI:** Application detail with ordered per-profile rows; industries; audit; notifications; quick-create application form; theme toggle; sidebar + top bar.
+- **Tests:** `pytest` (incl. agent flows); `vitest`; Playwright E2E smoke (`npm run test:e2e`).
+
+### Partially implemented / simplified vs PRD
+
+- **Background worker:** No separate worker process; JAA is expected to poll HTTP APIs (horizontal workers remain a future deployment concern).
+- **Idempotency / deduplication tokens:** Not implemented (retries rely on validated transitions and idempotent-ish updates).
+- **Webhook-style agent events:** Task accepted/completed/failed as discrete webhook payloads is not implemented; audit + notifications cover much of the traceability need.
+- **Full-text global search & advanced facets:** Basic search and list filters only; not enterprise-scale search indexing.
+- **Rate limiting:** Per API key in-memory (not distributed Redis).
+
+### MVP acceptance (§15)
+
+Criteria are **addressed in product and tests** with the simplifications above; production hardening (distributed rate limits, durable idempotency, worker fleet) is out of MVP scope here.
+
+### Note on ports
+
+The frontend dev server (Vite) defaults to **http://localhost:5173**; the API listens on **http://localhost:8000**. `VITE_API_URL` points the UI at the API; CORS allows the **page origin** (5173), which is distinct from the API port.
+
+---
+
+## 14) Release Plan and Milestones
 
 ### Milestone 1 - Core CRM Foundation
 - Entity CRUD for company/profile/application.
@@ -419,7 +463,7 @@ Note: This section keeps your structure and adds implementation-safe refinements
 
 ---
 
-## 14) Acceptance Criteria (MVP)
+## 15) Acceptance Criteria (MVP)
 
 - User can create an application with company name and optional job post details.
 - JAA can fetch pending applications using API key and update enrichment/analysis.
@@ -436,7 +480,7 @@ Note: This section keeps your structure and adds implementation-safe refinements
 
 ---
 
-## 15) Risks and Mitigations
+## 16) Risks and Mitigations
 
 - Data quality risk from AI research outputs:
   - Mitigation: capture source links, allow easy user edit and override.
@@ -449,14 +493,14 @@ Note: This section keeps your structure and adds implementation-safe refinements
 
 ---
 
-## 16) Open Questions
+## 17) Open Questions
 
 - When webhook support is introduced, should it be outbound-only (events) or include inbound command handling?
 - What is the desired API key lifecycle policy (expiration/rotation cadence) for agent keys?
 
 ---
 
-## 17) Future Enhancements (Post-MVP)
+## 18) Future Enhancements (Post-MVP)
 
 - ATS/job board integrations (auto import jobs and application statuses).
 - Contact discovery enrichment for better recipient targeting.

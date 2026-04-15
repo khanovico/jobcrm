@@ -95,8 +95,18 @@ pip install -r crm/requirements.txt
 - `POST /api/v1/auth/login`
 - `GET/POST/PUT/DELETE /api/v1/companies`
 - `GET/POST/PUT/DELETE /api/v1/profiles`
+- `GET/POST/PUT/DELETE /api/v1/industries`
 - `GET/POST/PUT/DELETE /api/v1/applications`
+- `POST /api/v1/applications/bootstrap` (company name + optional job post → `pending_preparation`)
 - `POST /api/v1/applications/{id}/mark-applied`
+- `POST /api/v1/applications/{id}/mark-email-sent`
+- `GET /api/v1/search`, `GET /api/v1/metrics/dashboard`
+- `GET /api/v1/notifications`, `POST /api/v1/notifications/{id}/read`
+- `GET /api/v1/audit-events`
+- Per-profile + emails: `/api/v1/applications/{id}/per-profile-applications`, `/api/v1/per-profile-applications/{id}/emails`, `POST /api/v1/emails/{id}/mark-sent`
+- JAA (API key header `X-API-Key`): `/api/v1/agent/applications/pending`, `/api/v1/agent/...` (read + scoped write)
+- `POST /api/v1/admin/agent-keys` (admin JWT) — returns one-time `raw_key`
+- Static: `GET /llm.txt`, `GET /sitemap.xml`, `GET /mcp-guidance.md`
 
 ## Testing
 
@@ -113,6 +123,14 @@ pip install -r crm/requirements.txt
   ```bash
   cd app
   npm run test
+  ```
+
+- E2E (Playwright; starts API with `USE_MEMORY_REPOSITORY=true` and Vite — first run may download browsers):
+
+  ```bash
+  cd app
+  npx playwright install chromium
+  npm run test:e2e
   ```
 
 If dependency installation is blocked in your environment, run these commands after network access is available.
