@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  crm:
+    build:
+      context: ./crm
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./crm/.env.example
+    depends_on:
+      - mongo
+
+  app:
+    build:
+      context: ./app
+    ports:
+      - "5173:5173"
+    env_file:
+      - ./app/.env.example
+    depends_on:
+      - crm
+
+volumes:
+  mongo_data:

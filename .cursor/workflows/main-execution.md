@@ -1,6 +1,7 @@
 ## Execution Workflow for Agents
 
 Follow this workflow for all non-trivial implementation tasks.
+**NOTE**: In this main execution mode, do not wait for human's commit request. Commit yourself. Frequently, making sure meaningful/small commits.
 
 ### 1) Plan first
 Before writing code, create a written implementation plan in Markdown. Do not keep the plan only in memory.

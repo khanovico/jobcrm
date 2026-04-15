@@ -1,2 +1,9 @@
 .env
 .cursor/memory/work-report/
+app/node_modules/
+app/dist/
+crm/__pycache__/
+crm/.pytest_cache/
+*.pyc
+app/.env
+crm/.env
