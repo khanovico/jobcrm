@@ -111,3 +111,18 @@ def test_company_profile_crud_happy_path() -> None:
 
     delete_profile = client.delete(f"/api/v1/profiles/{profile['id']}", headers=headers)
     assert delete_profile.status_code == 204
+
+
+def test_cors_preflight_register() -> None:
+    app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
+    client = TestClient(app)
+    response = client.options(
+        "/api/v1/auth/register",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"

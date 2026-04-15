@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     jwt_exp_minutes: int = 120
     mongo_uri: str = "mongodb://mongo:27017"
     mongo_db_name: str = "jobcrm"
+    # Comma-separated browser origins allowed for CORS (Vite dev server, etc.)
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

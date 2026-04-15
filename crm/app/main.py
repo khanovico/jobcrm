@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI, HTTPException, status
+from starlette.middleware.cors import CORSMiddleware
 
 from app.auth import create_access_token, hash_password, verify_password
 from app.config import settings
@@ -23,6 +24,15 @@ from app.models import (
 from app.repository import BaseRepository
 
 app = FastAPI(title=settings.app_name)
+
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")

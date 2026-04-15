@@ -29,6 +29,8 @@ For **frontend** calling a **local** API:
 
 - `app/.env` → `VITE_API_URL=http://localhost:8000`
 
+The API enables **CORS** for browser requests from the Vite dev server. Override allowed origins in `crm/.env` with `CORS_ORIGINS` (comma-separated) if you use another host or port.
+
 ## Run modes
 
 ### 1) Mongo, backend, and frontend (all via Docker)
