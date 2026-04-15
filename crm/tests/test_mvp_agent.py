@@ -112,7 +112,19 @@ def test_per_profile_and_email_mark_sent() -> None:
     h = _headers(token)
 
     company = client.post("/api/v1/companies", json={"name": "Co"}, headers=h).json()
-    profile = client.post("/api/v1/profiles", json={"name": "Me"}, headers=h).json()
+    profile = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Me",
+            "location": "Remote",
+            "email": "me@example.com",
+            "phone": "+10000000000",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "Bio.",
+            "niche_info_md": "Niche.",
+        },
+        headers=h,
+    ).json()
     application = client.post(
         "/api/v1/applications",
         json={"company_id": company["id"], "status": "preparation_ready"},

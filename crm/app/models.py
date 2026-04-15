@@ -124,7 +124,7 @@ class TokenResponse(BaseModel):
 
 
 class EducationEntry(BaseModel):
-    university_name: str
+    university_name: str = Field(min_length=1)
     from_year: int | None = None
     to_year: int | None = None
 
@@ -205,8 +205,17 @@ class ProfileBase(BaseModel):
     resume_md: str | None = None
 
 
-class ProfileCreate(ProfileBase):
-    pass
+class ProfileCreate(BaseModel):
+    """Create payload: all fields required except resume_md (optional)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    location: str = Field(min_length=1)
+    email: EmailStr
+    phone: str = Field(min_length=1)
+    educations: list[EducationEntry] = Field(min_length=1)
+    bio_md: str = Field(min_length=1)
+    niche_info_md: str = Field(min_length=1)
+    resume_md: str | None = None
 
 
 class ProfileUpdate(BaseModel):

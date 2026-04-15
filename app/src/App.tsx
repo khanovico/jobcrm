@@ -11,6 +11,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { IndustriesPage } from "./pages/IndustriesPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { ProfileDetailPage } from "./pages/ProfileDetailPage";
 import { ProfilesPage } from "./pages/ProfilesPage";
 
 const PrivateOutlet = () => {
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/companies" element={<CompaniesPage />} />
           <Route path="/companies/:companyId" element={<CompanyDetailPage />} />
           <Route path="/profiles" element={<ProfilesPage />} />
+          <Route path="/profiles/:profileId" element={<ProfileDetailPage />} />
           <Route path="/applications" element={<ApplicationsPage />} />
           <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
           <Route path="/industries" element={<IndustriesPage />} />
