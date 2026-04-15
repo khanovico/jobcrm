@@ -6,6 +6,7 @@ import { ApplicationDetailPage } from "./pages/ApplicationDetailPage";
 import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { AuditPage } from "./pages/AuditPage";
 import { CompaniesPage } from "./pages/CompaniesPage";
+import { CompanyDetailPage } from "./pages/CompanyDetailPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { IndustriesPage } from "./pages/IndustriesPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -26,6 +27,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/companies" element={<CompaniesPage />} />
+          <Route path="/companies/:companyId" element={<CompanyDetailPage />} />
           <Route path="/profiles" element={<ProfilesPage />} />
           <Route path="/applications" element={<ApplicationsPage />} />
           <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />

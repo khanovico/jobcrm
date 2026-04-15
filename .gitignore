@@ -1,3 +1,4 @@
+.tmp/
 .env
 .cursor/memory/work-report/
 app/node_modules/
