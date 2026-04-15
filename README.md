@@ -16,12 +16,31 @@ Milestone 1 delivers the core CRM foundation for JobCRM:
 
 ## Run Locally
 
-1. Copy environment files:
-  - `cp crm/.env.example crm/.env`
-  - `cp app/.env.example app/.env`
-2. Start services:
+### Python backend runtime env
+
+1. Create virtual environment:
+  - `python3 -m venv crm/.venv`
+2. Activate it:
+  - `source crm/.venv/bin/activate`
+3. Install backend dependencies:
+  - `pip install -r crm/requirements.txt`
+
+### Frontend/backend env files
+
+- `crm/.env`:
+  - `JWT_SECRET=change-me`
+  - `JWT_ALGORITHM=HS256`
+  - `JWT_EXP_MINUTES=120`
+  - `MONGO_URI=mongodb://mongo:27017`
+  - `MONGO_DB_NAME=jobcrm`
+- `app/.env`:
+  - `VITE_API_URL=http://localhost:8000`
+
+### Start with Docker
+
+1. Start services:
   - `docker compose up --build`
-3. Access:
+2. Access:
   - Frontend: `http://localhost:5173`
   - Backend: `http://localhost:8000`
 

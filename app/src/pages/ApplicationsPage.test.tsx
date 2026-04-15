@@ -14,45 +14,38 @@ describe("ApplicationsPage", () => {
 
   it("shows mark applied button", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify([
-          {
-            id: "a1",
-            company_id: "c1",
-            status: "preparation_ready",
-            applied: false,
-            created_at: "2026-01-01",
-            updated_at: "2026-01-01"
-          }
-        ]),
-        { status: 200 }
-      )
-    );
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify([{ id: "c1", name: "Acme", created_at: "", updated_at: "" }]), {
-        status: 200
-      })
-    );
-    fetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          id: "a1",
-          company_id: "c1",
-          status: "applied",
-          applied: true,
-          applied_at: "2026-01-01",
-          created_at: "2026-01-01",
-          updated_at: "2026-01-01"
-        }),
-        { status: 200 }
-      )
-    );
-    fetchMock.mockResolvedValue(
-      new Response(JSON.stringify([]), {
-        status: 200
-      })
-    );
+    const applicationRow = {
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01"
+    };
+    const companyRow = { id: "c1", name: "Acme", created_at: "", updated_at: "" };
+    const appliedPayload = {
+      id: "a1",
+      company_id: "c1",
+      status: "applied",
+      applied: true,
+      applied_at: "2026-01-01",
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01"
+    };
+
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/applications/") && url.includes("/mark-applied")) {
+        return Promise.resolve(new Response(JSON.stringify(appliedPayload), { status: 200 }));
+      }
+      if (url.endsWith("/applications")) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
 
     render(<ApplicationsPage />);
     expect(await screen.findByText("Mark Applied")).toBeInTheDocument();

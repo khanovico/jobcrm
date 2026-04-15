@@ -5,7 +5,8 @@ from passlib.context import CryptContext
 
 from app.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# pbkdf2_sha256 avoids native bcrypt wheels / passlib+bcrypt version mismatches across environments
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:

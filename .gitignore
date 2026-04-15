@@ -7,3 +7,4 @@ crm/.pytest_cache/
 *.pyc
 app/.env
 crm/.env
+crm/.venv/
