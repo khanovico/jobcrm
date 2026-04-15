@@ -10,3 +10,4 @@ crm/.env
 crm/.venv/
 app/test-results/
 app/playwright-report/
+.tmp/
