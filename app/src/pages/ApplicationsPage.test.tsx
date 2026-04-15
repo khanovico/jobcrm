@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationsPage } from "./ApplicationsPage";
@@ -47,7 +48,11 @@ describe("ApplicationsPage", () => {
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
 
-    render(<ApplicationsPage />);
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
     expect(await screen.findByText("Mark Applied")).toBeInTheDocument();
     await userEvent.click(screen.getByText("Mark Applied"));
     expect(fetchMock).toHaveBeenCalled();

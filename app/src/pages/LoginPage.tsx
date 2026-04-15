@@ -32,18 +32,29 @@ export const LoginPage = () => {
       <form className="card w-full max-w-md bg-base-100 p-6 shadow" onSubmit={onSubmit}>
         <h2 className="mb-4 text-2xl font-semibold">{mode === "register" ? "Register" : "Login"}</h2>
         {mode === "register" && (
-          <label className="form-control mb-2">
+          <label className="form-control mb-2" htmlFor="register-name">
             <span className="label-text">Name</span>
-            <input className="input input-bordered" value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              id="register-name"
+              className="input input-bordered"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </label>
         )}
-        <label className="form-control mb-2">
+        <label className="form-control mb-2" htmlFor="login-email">
           <span className="label-text">Email</span>
-          <input className="input input-bordered" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input
+            id="login-email"
+            className="input input-bordered"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
         </label>
-        <label className="form-control mb-4">
+        <label className="form-control mb-4" htmlFor="login-password">
           <span className="label-text">Password</span>
           <input
+            id="login-password"
             className="input input-bordered"
             type="password"
             value={password}

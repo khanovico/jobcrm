@@ -6,7 +6,10 @@ const links = [
   { to: "/", label: "Dashboard" },
   { to: "/companies", label: "Companies" },
   { to: "/profiles", label: "Profiles" },
-  { to: "/applications", label: "Applications" }
+  { to: "/applications", label: "Applications" },
+  { to: "/industries", label: "Industries" },
+  { to: "/audit", label: "Audit" },
+  { to: "/notifications", label: "Notifications" }
 ];
 
 export const Layout = () => {
