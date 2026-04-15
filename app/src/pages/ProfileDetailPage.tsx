@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { MarkdownModal } from "../components/MarkdownModal";
 import { api } from "../api";
 import { Profile, ProfileCreatePayload } from "../types";
 
@@ -24,6 +25,8 @@ export const ProfileDetailPage = () => {
   const [edRows, setEdRows] = useState<EdRow[]>([emptyEdRow()]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [bioPreviewOpen, setBioPreviewOpen] = useState(false);
+  const [nichePreviewOpen, setNichePreviewOpen] = useState(false);
 
   const load = async () => {
     if (!profileId || isNew) return;
@@ -287,24 +290,48 @@ export const ProfileDetailPage = () => {
               {isNew && <p className="mt-1 text-xs opacity-60">At least one row with a university name is required.</p>}
             </div>
 
-            <label className="form-control w-full">
-              <span className="label-text">Bio (markdown)</span>
+            <div className="form-control w-full">
+              <div className="label items-start pb-1 pt-0">
+                <span className="label-text">Bio (markdown)</span>
+                {bioMd.trim() ? (
+                  <button
+                    type="button"
+                    className="link link-primary label-text-alt text-sm font-medium"
+                    onClick={() => setBioPreviewOpen(true)}
+                  >
+                    View markdown
+                  </button>
+                ) : null}
+              </div>
               <textarea
                 className="textarea textarea-bordered min-h-[100px] w-full font-mono text-sm"
                 value={bioMd}
                 onChange={(e) => setBioMd(e.target.value)}
                 required={isNew}
+                aria-label="Bio markdown"
               />
-            </label>
-            <label className="form-control w-full">
-              <span className="label-text">Niche (markdown)</span>
+            </div>
+            <div className="form-control w-full">
+              <div className="label items-start pb-1 pt-0">
+                <span className="label-text">Niche (markdown)</span>
+                {nicheMd.trim() ? (
+                  <button
+                    type="button"
+                    className="link link-primary label-text-alt text-sm font-medium"
+                    onClick={() => setNichePreviewOpen(true)}
+                  >
+                    View markdown
+                  </button>
+                ) : null}
+              </div>
               <textarea
                 className="textarea textarea-bordered min-h-[100px] w-full font-mono text-sm"
                 value={nicheMd}
                 onChange={(e) => setNicheMd(e.target.value)}
                 required={isNew}
+                aria-label="Niche markdown"
               />
-            </label>
+            </div>
             <label className="form-control w-full">
               <span className="label-text">Resume (markdown, optional)</span>
               <textarea
@@ -327,6 +354,21 @@ export const ProfileDetailPage = () => {
           </form>
         </div>
       )}
+
+      <MarkdownModal
+        open={bioPreviewOpen}
+        onClose={() => setBioPreviewOpen(false)}
+        title={`Bio — ${isNew ? name.trim() || "New profile" : profile?.name ?? name}`}
+        markdown={bioMd}
+        size="full"
+      />
+      <MarkdownModal
+        open={nichePreviewOpen}
+        onClose={() => setNichePreviewOpen(false)}
+        title={`Niche — ${isNew ? name.trim() || "New profile" : profile?.name ?? name}`}
+        markdown={nicheMd}
+        size="full"
+      />
     </div>
   );
 };
