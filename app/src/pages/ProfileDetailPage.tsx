@@ -117,8 +117,8 @@ export const ProfileDetailPage = () => {
       resume_md: resumeMd.trim() ? resumeMd.trim() : null
     };
     try {
-      const created = await api.createProfile(payload);
-      navigate(`/profiles/${created.id}`, { replace: true });
+      await api.createProfile(payload);
+      navigate("/profiles");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -132,7 +132,7 @@ export const ProfileDetailPage = () => {
     setSaving(true);
     setError(null);
     try {
-      const updated = await api.updateProfile(profileId, {
+      await api.updateProfile(profileId, {
         name: name.trim(),
         location: location.trim() || null,
         email: email.trim() || null,
@@ -142,7 +142,7 @@ export const ProfileDetailPage = () => {
         niche_info_md: nicheMd.trim() || null,
         resume_md: resumeMd.trim() ? resumeMd.trim() : null
       });
-      setProfile(updated);
+      navigate("/profiles");
     } catch (e) {
       setError((e as Error).message);
     } finally {
