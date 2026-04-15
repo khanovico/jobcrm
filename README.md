@@ -14,35 +14,78 @@ Milestone 1 delivers the core CRM foundation for JobCRM:
 - Backend: FastAPI + Pydantic + JWT + MongoDB
 - Local orchestration: Docker Compose
 
-## Run Locally
+## Environment files
 
-### Python backend runtime env
+Copy examples if you do not already have local env files:
 
-1. Create virtual environment:
-  - `python3 -m venv crm/.venv`
-2. Activate it:
-  - `source crm/.venv/bin/activate`
-3. Install backend dependencies:
-  - `pip install -r crm/requirements.txt`
+- `cp crm/.env.example crm/.env`
+- `cp app/.env.example app/.env`
 
-### Frontend/backend env files
+For **local backend** talking to **Mongo in Docker** on the default port, set in `crm/.env`:
 
-- `crm/.env`:
-  - `JWT_SECRET=change-me`
-  - `JWT_ALGORITHM=HS256`
-  - `JWT_EXP_MINUTES=120`
-  - `MONGO_URI=mongodb://mongo:27017`
-  - `MONGO_DB_NAME=jobcrm`
-- `app/.env`:
-  - `VITE_API_URL=http://localhost:8000`
+- `MONGO_URI=mongodb://127.0.0.1:27017`
 
-### Start with Docker
+For **frontend** calling a **local** API:
 
-1. Start services:
-  - `docker compose up --build`
-2. Access:
-  - Frontend: `http://localhost:5173`
-  - Backend: `http://localhost:8000`
+- `app/.env` → `VITE_API_URL=http://localhost:8000`
+
+## Run modes
+
+### 1) Mongo, backend, and frontend (all via Docker)
+
+From the repo root:
+
+```bash
+docker compose up --build
+```
+
+- Frontend: `http://localhost:5173`
+- Backend API: `http://localhost:8000`
+- MongoDB: `localhost:27017` (mapped from the container)
+
+Images copy your source at **build** time. After you change Python or TypeScript, run **`docker compose up --build`** again (or `docker compose build` then `up`) so the image includes the new files.
+
+### 2) Mongo only (Docker) + backend and frontend on your machine
+
+Use this when you want hot reload and faster iteration without rebuilding images.
+
+**Terminal 1 — Mongo**
+
+```bash
+docker compose up mongo
+```
+
+Or in the background: `docker compose up -d mongo`
+
+**Terminal 2 — Backend**
+
+```bash
+python3 -m venv crm/.venv
+source crm/.venv/bin/activate
+pip install -r crm/requirements.txt
+cd crm
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Ensure `crm/.env` has `MONGO_URI=mongodb://127.0.0.1:27017` (and matching `MONGO_DB_NAME`).
+
+**Terminal 3 — Frontend**
+
+```bash
+cd app
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` (Vite prints the exact URL).
+
+### 3) Backend Python environment (one-time)
+
+```bash
+python3 -m venv crm/.venv
+source crm/.venv/bin/activate
+pip install -r crm/requirements.txt
+```
 
 ## API Highlights
 
@@ -55,10 +98,19 @@ Milestone 1 delivers the core CRM foundation for JobCRM:
 
 ## Testing
 
-- Backend (targeted):
-  - `pytest tests/test_application_rules.py -q`
-  - `pytest tests/test_api.py -q`
+- Backend (from `crm/` with venv active):
+
+  ```bash
+  cd crm
+  pytest tests/test_application_rules.py -q
+  pytest tests/test_api.py -q
+  ```
+
 - Frontend:
-  - `npm run test`
+
+  ```bash
+  cd app
+  npm run test
+  ```
 
 If dependency installation is blocked in your environment, run these commands after network access is available.
