@@ -33,6 +33,8 @@ Use them, spawn them, and delegate tasks to them whenever you think relevant or 
 ## Initial Instruction guide
 - You will be instructed in which branch you should work (create or existing branch) and to which branch you will raise the PR (raise or not - just update current pr) from initial task description.
 - You might be given a file (image, recording, etc.) as well as task detail, and it will be given as direct-download url. Download it into `.tmp` (this folder is not tracked), and refer.
+- Or you might be given with which execution mode you should follow. And below are the files you should be following for each given mode:
+    - Main Execution Mode: `.cursor/workflows/main-execution.md`
 
 ## Context Preservation
 We have common memory in `.cursor/memory` for preserving any reusable experiences, memories, issues etc so that afterwards we can reduce any repeated scan or reasoning.
