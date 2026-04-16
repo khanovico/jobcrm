@@ -14,7 +14,7 @@ This is a conceptual map of the CRM. Authoritative field types and validation li
 | **Application** | One job pursuit: links **one Company**, has **status** workflow, optional **job_post**, `archive_reason` when **archived**. |
 | **PerProfileApplication (PPA)** | Per candidate within an application: fit, analysis, **tailored_resume_link**, **cold_email_plan**, applied flags. |
 | **Email** | Draft/sent mail under a PPA (`kind`: cold / follow_up). |
-| **UserNotification** | In-app alerts (e.g. preparation ready); agent can **create** for a `user_id`. |
+| **UserNotification** | In-app alerts: `notification` kind, `type` (SUCCESS/FAILED/WARN), `payload` (`id`, `message`), optional `link` resolved server-side. Agent **POST** targets a `user_id`. |
 | **AuditEvent** | Append-only trace (`actor_type`: user \| agent). |
 
 ## Relationships (simplified)
