@@ -110,7 +110,9 @@ Core entities: Company, Industry, Profile, Application, PerProfileApplication, E
 
 Application workflow statuses: draft → pending_preparation → researching → analysis_ready → preparation_ready → applied → archived.
 
-Agent batch: GET /api/v1/agent/applications/pending?limit=50
+Agent reads:
+- GET /api/v1/agent/applications/pending?limit=50
+- GET /api/v1/agent/applications/{id}
 
 Agent writes are limited to Company, Application, PerProfileApplication, Email (and related application fields).
 
@@ -144,9 +146,10 @@ def mcp_guidance() -> str:
 1. Authenticate using `X-API-Key` for `/api/v1/agent/*`.
 2. Poll `GET /api/v1/agent/applications/pending` for work.
 3. Enrich companies via `PUT /api/v1/agent/companies/{id}`.
-4. Advance applications with validated status transitions via `PUT /api/v1/agent/applications/{id}`.
-5. Create per-profile rows with `POST /api/v1/agent/per-profile-applications` and emails with `POST /api/v1/agent/emails`.
-6. Read `llm.txt` for a concise capability summary.
+4. Read one application directly with `GET /api/v1/agent/applications/{id}` when id is known.
+5. Advance applications with validated status transitions via `PUT /api/v1/agent/applications/{id}`.
+6. Create per-profile rows with `POST /api/v1/agent/per-profile-applications` and emails with `POST /api/v1/agent/emails`.
+7. Read `llm.txt` for a concise capability summary.
 """
 
 
