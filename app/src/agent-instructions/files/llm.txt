@@ -10,8 +10,27 @@ Core entities: Company, Industry, Profile, Application, PerProfileApplication, E
 
 Application workflow statuses: draft → pending_preparation → researching → analysis_ready → preparation_ready → applied → archived.
 
-Agent batch: GET /api/v1/agent/applications/pending?limit=50
+New applications default to status pending_preparation.
 
-Agent writes are limited to Company, Application, PerProfileApplication, Email (and related application fields).
+Company has `indexed` (bool, default false). Agent ingests unindexed companies via GET /api/v1/agent/companies/unindexed (max 5, oldest created first), then sets indexed true (and other fields) via PUT /api/v1/agent/companies/{id} or PATCH /api/v1/agent/companies/bulk.
+
+Agent API (header X-API-Key on all):
+- GET /api/v1/agent/health — liveness; includes a trivial DB read
+- GET /api/v1/agent/applications/pending — pending_preparation applications, max 5, FIFO (oldest first)
+- GET /api/v1/agent/applications — optional query: status_filter, company_id, applied, email_sent, sort
+- GET /api/v1/agent/companies/unindexed?limit=5 — companies with indexed=false, oldest first
+- PUT /api/v1/agent/companies/{id} — update one company (e.g. indexed, overview)
+- PATCH /api/v1/agent/companies/bulk — body { "updates": [ { "company_id", "payload" } ] }
+- GET /api/v1/agent/profiles/ids — profile id list (created_at order)
+- GET /api/v1/agent/profiles/{id} — profile detail
+- GET /api/v1/agent/profiles — list profiles (paginated)
+- PUT /api/v1/agent/applications/{id} — status transitions, etc.
+- POST /api/v1/agent/per-profile-applications — create PPA (tailored resume link, cold_email_plan, …)
+- PUT /api/v1/agent/per-profile-applications/{id}
+- POST /api/v1/agent/emails
+- POST /api/v1/agent/notifications — body includes user_id, kind, title, body, optional link
+- GET /api/v1/agent/industries
+
+Agent writes are limited to Company, Application, PerProfileApplication, Email, Notifications (and related fields).
 
 See GET /sitemap.xml on this app origin for a route index.

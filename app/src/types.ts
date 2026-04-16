@@ -1,6 +1,7 @@
 export type Company = {
   id: string;
   name: string;
+  indexed?: boolean;
   website?: string | null;
   linkedin?: string | null;
   industry_ids?: string[];

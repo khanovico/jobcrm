@@ -161,3 +161,124 @@ def test_per_profile_and_email_mark_sent() -> None:
     assert marked.status_code == 200
     assert marked.json()["sent"] is True
     assert marked.json()["sent_at"] is not None
+
+
+def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa2"}, headers=h)
+    assert key_resp.status_code == 201
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    health = client.get("/api/v1/agent/health", headers=ak)
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert health.json()["database"] == "ok"
+
+    c_old = client.post("/api/v1/companies", json={"name": "Old Co", "indexed": False}, headers=h).json()
+    client.post("/api/v1/companies", json={"name": "Mid Co", "indexed": False}, headers=h)
+    client.post("/api/v1/companies", json={"name": "Indexed Co", "indexed": True}, headers=h)
+
+    unindexed = client.get("/api/v1/agent/companies/unindexed", headers=ak)
+    assert unindexed.status_code == 200
+    uj = unindexed.json()
+    assert len(uj) == 2
+    assert uj[0]["id"] == c_old["id"]
+    assert uj[0]["indexed"] is False
+
+    bulk = client.patch(
+        "/api/v1/agent/companies/bulk",
+        json={
+            "updates": [
+                {"company_id": c_old["id"], "payload": {"indexed": True, "overview": "Done"}},
+            ]
+        },
+        headers=ak,
+    )
+    assert bulk.status_code == 200
+    assert bulk.json()[0]["indexed"] is True
+    assert bulk.json()[0]["overview"] == "Done"
+
+    prof = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "AgentProf",
+            "location": "X",
+            "email": "ap@example.com",
+            "phone": "+10000000001",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "B",
+            "niche_info_md": "N",
+        },
+        headers=h,
+    ).json()
+
+    ids = client.get("/api/v1/agent/profiles/ids", headers=ak)
+    assert ids.status_code == 200
+    assert prof["id"] in ids.json()["profile_ids"]
+
+    one = client.get(f"/api/v1/agent/profiles/{prof['id']}", headers=ak)
+    assert one.status_code == 200
+    assert one.json()["name"] == "AgentProf"
+
+    user = client.post(
+        "/api/v1/auth/register",
+        json={"name": "U", "email": "notifyme@example.com", "password": "secret1234"},
+    ).json()
+
+    n = client.post(
+        "/api/v1/agent/notifications",
+        json={
+            "user_id": user["id"],
+            "kind": "agent_test",
+            "title": "Hi",
+            "body": "From agent",
+        },
+        headers=ak,
+    )
+    assert n.status_code == 201
+    login_u = client.post(
+        "/api/v1/auth/login",
+        json={"email": "notifyme@example.com", "password": "secret1234"},
+    )
+    assert login_u.status_code == 200
+    notes = client.get("/api/v1/notifications", headers=_headers(login_u.json()["access_token"]))
+    assert notes.status_code == 200
+    assert any(x["title"] == "Hi" for x in notes.json())
+
+
+def test_agent_list_applications_filters() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa3"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    company = client.post("/api/v1/companies", json={"name": "Co"}, headers=h).json()
+    app_sent = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "preparation_ready"},
+        headers=h,
+    ).json()
+    client.post(
+        f"/api/v1/applications/{app_sent['id']}/mark-email-sent",
+        json={"sent": True},
+        headers=h,
+    )
+
+    r = client.get(
+        "/api/v1/agent/applications?email_sent=true&status_filter=preparation_ready",
+        headers=ak,
+    )
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) == 1
+    assert rows[0]["email_sent"] is True

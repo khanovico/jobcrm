@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     # Dev/E2E only: use in-process data instead of Mongo (see README).
     use_memory_repository: bool = False
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
 
 settings = Settings()

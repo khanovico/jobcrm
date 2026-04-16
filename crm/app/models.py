@@ -156,6 +156,7 @@ class Industry(IndustryBase):
 
 class CompanyBase(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    indexed: bool = False
     website: str | None = None
     linkedin: str | None = None
     industry_ids: list[str] = Field(default_factory=list)
@@ -175,6 +176,7 @@ class CompanyCreate(CompanyBase):
 
 class CompanyUpdate(BaseModel):
     name: str | None = None
+    indexed: bool | None = None
     website: str | None = None
     linkedin: str | None = None
     industry_ids: list[str] | None = None
@@ -243,7 +245,7 @@ class JobPost(BaseModel):
 class ApplicationBase(BaseModel):
     company_id: str
     job_post: JobPost | None = None
-    status: ApplicationStatus = ApplicationStatus.draft
+    status: ApplicationStatus = ApplicationStatus.pending_preparation
     notes: str | None = None
 
 
@@ -430,6 +432,33 @@ class AgentApiKeyInDB(BaseModel):
 class AgentContext(BaseModel):
     key_id: str
     scopes: list[str]
+
+
+class AgentHealthResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    api: Literal["ok"] = "ok"
+    database: Literal["ok", "error"]
+
+
+class ProfileIdList(BaseModel):
+    profile_ids: list[str]
+
+
+class AgentCompanyUpdateItem(BaseModel):
+    company_id: str = Field(min_length=1)
+    payload: CompanyUpdate
+
+
+class AgentCompaniesBulkUpdateRequest(BaseModel):
+    updates: list[AgentCompanyUpdateItem] = Field(min_length=1, max_length=50)
+
+
+class AgentNotificationCreate(BaseModel):
+    user_id: str = Field(min_length=1)
+    kind: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+    link: str | None = None
 
 
 class GlobalSearchResult(BaseModel):

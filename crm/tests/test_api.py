@@ -33,6 +33,22 @@ def _valid_profile_create_payload() -> dict:
     }
 
 
+def test_create_application_defaults_to_pending_preparation() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"]},
+        headers=headers,
+    )
+    assert application.status_code == 201
+    assert application.json()["status"] == "pending_preparation"
+
+
 def test_auth_required_for_companies() -> None:
     app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
     client = TestClient(app)
@@ -48,7 +64,9 @@ def test_list_applications_includes_applied_profile_names() -> None:
     headers = _auth_headers(token)
 
     company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
-    profile = client.post("/api/v1/profiles", json={"name": "Alex Dev"}, headers=headers).json()
+    prof_payload = _valid_profile_create_payload()
+    prof_payload["name"] = "Alex Dev"
+    profile = client.post("/api/v1/profiles", json=prof_payload, headers=headers).json()
     application = client.post(
         "/api/v1/applications",
         json={"company_id": company["id"], "status": "draft"},

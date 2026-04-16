@@ -74,6 +74,10 @@ class BaseRepository:
     def list_companies(self, skip: int, limit: int, search: str | None) -> list[Company]:
         raise NotImplementedError
 
+    def list_companies_unindexed(self, limit: int) -> list[Company]:
+        """Companies with indexed=False, oldest created first (FIFO)."""
+        raise NotImplementedError
+
     def create_company(self, payload: CompanyCreate) -> Company:
         raise NotImplementedError
 
@@ -87,6 +91,9 @@ class BaseRepository:
         raise NotImplementedError
 
     def list_profiles(self, skip: int, limit: int, search: str | None) -> list[Profile]:
+        raise NotImplementedError
+
+    def list_profile_ids(self, skip: int, limit: int) -> list[str]:
         raise NotImplementedError
 
     def create_profile(self, payload: ProfileCreate) -> Profile:
@@ -318,6 +325,11 @@ class InMemoryRepository(BaseRepository):
         values.sort(key=lambda c: c.name.lower())
         return values[skip : skip + limit]
 
+    def list_companies_unindexed(self, limit: int) -> list[Company]:
+        values = [c for c in self.companies.values() if not c.indexed]
+        values.sort(key=lambda c: c.created_at)
+        return values[:limit]
+
     def create_company(self, payload: CompanyCreate) -> Company:
         now = utcnow()
         company = Company(id=self._new_id(), created_at=now, updated_at=now, **_as_dict(payload))
@@ -347,6 +359,10 @@ class InMemoryRepository(BaseRepository):
             values = [p for p in values if needle in p.name.lower()]
         values.sort(key=lambda p: p.name.lower())
         return values[skip : skip + limit]
+
+    def list_profile_ids(self, skip: int, limit: int) -> list[str]:
+        values = sorted(self.profiles.values(), key=lambda p: p.created_at)
+        return [p.id for p in values[skip : skip + limit]]
 
     def create_profile(self, payload: ProfileCreate) -> Profile:
         now = utcnow()

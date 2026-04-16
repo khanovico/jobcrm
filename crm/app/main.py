@@ -21,7 +21,10 @@ from app.models import (
     ActorType,
     AgentApiKeyCreate,
     AgentApiKeyCreated,
+    AgentCompaniesBulkUpdateRequest,
     AgentContext,
+    AgentHealthResponse,
+    AgentNotificationCreate,
     Application,
     ApplicationBootstrapCreate,
     ApplicationCreate,
@@ -49,6 +52,7 @@ from app.models import (
     PerProfileApplicationUpdate,
     Profile,
     ProfileCreate,
+    ProfileIdList,
     ProfileUpdate,
     TokenResponse,
     UserCreate,
@@ -794,9 +798,22 @@ def list_audit(
 # --- Agent routes ---
 
 
+@app.get("/api/v1/agent/health", response_model=AgentHealthResponse)
+def agent_health(
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> AgentHealthResponse:
+    require_agent_scope(agent, "read")
+    try:
+        repo.list_companies(0, 1, None)
+    except Exception:
+        return AgentHealthResponse(database="error")
+    return AgentHealthResponse(database="ok")
+
+
 @app.get("/api/v1/agent/applications/pending", response_model=list[Application])
 def agent_list_pending(
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=5, ge=1, le=5),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Application]:
@@ -813,6 +830,44 @@ def agent_list_companies(
 ) -> list[Company]:
     require_agent_scope(agent, "read")
     return repo.list_companies(skip=skip, limit=limit, search=None)
+
+
+@app.get("/api/v1/agent/companies/unindexed", response_model=list[Company])
+def agent_list_unindexed_companies(
+    limit: int = Query(default=5, ge=1, le=5),
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Company]:
+    require_agent_scope(agent, "read")
+    return repo.list_companies_unindexed(limit)
+
+
+@app.patch("/api/v1/agent/companies/bulk", response_model=list[Company])
+def agent_bulk_update_companies(
+    body: AgentCompaniesBulkUpdateRequest,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Company]:
+    require_agent_scope(agent, "write")
+    updated: list[Company] = []
+    for item in body.updates:
+        company = repo.update_company(item.company_id, item.payload)
+        if not company:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Company not found: {item.company_id}",
+            )
+        _audit(
+            repo,
+            actor_type=ActorType.agent,
+            actor_id=agent.key_id,
+            action="bulk_update",
+            entity_type="company",
+            entity_id=item.company_id,
+            metadata={"fields": list(item.payload.model_dump(exclude_none=True).keys())},
+        )
+        updated.append(company)
+    return updated
 
 
 @app.put("/api/v1/agent/companies/{company_id}", response_model=Company)
@@ -837,6 +892,30 @@ def agent_update_company(
     return company
 
 
+@app.get("/api/v1/agent/profiles/ids", response_model=ProfileIdList)
+def agent_list_profile_ids(
+    skip: int = 0,
+    limit: int = Query(default=200, ge=1, le=500),
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> ProfileIdList:
+    require_agent_scope(agent, "read")
+    return ProfileIdList(profile_ids=repo.list_profile_ids(skip, limit))
+
+
+@app.get("/api/v1/agent/profiles/{profile_id}", response_model=Profile)
+def agent_get_profile(
+    profile_id: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Profile:
+    require_agent_scope(agent, "read")
+    profile = repo.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    return profile
+
+
 @app.get("/api/v1/agent/profiles", response_model=list[Profile])
 def agent_list_profiles(
     skip: int = 0,
@@ -852,11 +931,24 @@ def agent_list_profiles(
 def agent_list_applications(
     skip: int = 0,
     limit: int = 200,
+    status_filter: ApplicationStatus | None = None,
+    company_id: str | None = None,
+    applied: bool | None = None,
+    email_sent: bool | None = None,
+    sort: str = "created_at_desc",
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ApplicationListItem]:
     require_agent_scope(agent, "read")
-    return repo.list_applications(skip, limit, None)
+    return repo.list_applications(
+        skip=skip,
+        limit=limit,
+        status=status_filter,
+        company_id=company_id,
+        applied=applied,
+        email_sent=email_sent,
+        sort=sort,
+    )
 
 
 @app.put("/api/v1/agent/applications/{application_id}", response_model=Application)
@@ -962,6 +1054,37 @@ def agent_create_email(
         entity_id=email.id,
     )
     return email
+
+
+@app.post(
+    "/api/v1/agent/notifications",
+    response_model=UserNotification,
+    status_code=status.HTTP_201_CREATED,
+)
+def agent_create_notification(
+    payload: AgentNotificationCreate,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> UserNotification:
+    require_agent_scope(agent, "write")
+    if not repo.get_user(payload.user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    note = repo.create_notification(
+        user_id=payload.user_id,
+        kind=payload.kind,
+        title=payload.title,
+        body=payload.body,
+        link=payload.link,
+    )
+    _audit(
+        repo,
+        actor_type=ActorType.agent,
+        actor_id=agent.key_id,
+        action="create",
+        entity_type="notification",
+        entity_id=note.id,
+    )
+    return note
 
 
 @app.get("/api/v1/agent/industries", response_model=list[Industry])
