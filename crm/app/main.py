@@ -54,6 +54,7 @@ from app.models import (
     ProfileCreate,
     ProfileIdList,
     ProfileUpdate,
+    RegistrationStatus,
     TokenResponse,
     UserCreate,
     UserInDB,
@@ -102,6 +103,11 @@ def health() -> dict[str, str]:
 
 @app.post("/api/v1/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, repo: BaseRepository = Depends(get_repository)) -> UserPublic:
+    if repo.has_registered_user():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration disabled: user already exists",
+        )
     try:
         user = repo.create_user(payload, hash_password(payload.password))
     except ValueError as exc:
@@ -114,6 +120,11 @@ def register(payload: UserCreate, repo: BaseRepository = Depends(get_repository)
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
+
+
+@app.get("/api/v1/auth/registration-status", response_model=RegistrationStatus)
+def registration_status(repo: BaseRepository = Depends(get_repository)) -> RegistrationStatus:
+    return RegistrationStatus(registration_open=not repo.has_registered_user())
 
 
 @app.post("/api/v1/auth/login", response_model=TokenResponse)

@@ -15,6 +15,6 @@ describe("App", () => {
         </AuthProvider>
       </MemoryRouter>
     );
-    expect(screen.getByText("Register")).toBeInTheDocument();
+    expect(screen.getByText("Login")).toBeInTheDocument();
   });
 });

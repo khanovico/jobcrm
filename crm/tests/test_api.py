@@ -100,6 +100,40 @@ def test_auth_me_returns_user() -> None:
     assert "admin" in body
 
 
+def test_registration_status_changes_after_first_user() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+
+    before = client.get("/api/v1/auth/registration-status")
+    assert before.status_code == 200
+    assert before.json() == {"registration_open": True}
+
+    payload = {"name": "Owner", "email": "owner@example.com", "password": "secret1234"}
+    created = client.post("/api/v1/auth/register", json=payload)
+    assert created.status_code == 201
+
+    after = client.get("/api/v1/auth/registration-status")
+    assert after.status_code == 200
+    assert after.json() == {"registration_open": False}
+
+
+def test_register_rejected_when_user_already_exists() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+
+    first = {"name": "Owner", "email": "owner@example.com", "password": "secret1234"}
+    second = {"name": "Second", "email": "second@example.com", "password": "secret1234"}
+
+    created = client.post("/api/v1/auth/register", json=first)
+    assert created.status_code == 201
+
+    blocked = client.post("/api/v1/auth/register", json=second)
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Registration disabled: user already exists"
+
+
 def test_auth_required_for_companies() -> None:
     app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
     client = TestClient(app)

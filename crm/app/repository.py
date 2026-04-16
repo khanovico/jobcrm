@@ -54,6 +54,9 @@ class BaseRepository:
     def get_user(self, user_id: str) -> UserInDB | None:
         raise NotImplementedError
 
+    def has_registered_user(self) -> bool:
+        raise NotImplementedError
+
     def list_industries(
         self, skip: int, limit: int, search: str | None
     ) -> list[Industry]:
@@ -283,6 +286,9 @@ class InMemoryRepository(BaseRepository):
 
     def get_user(self, user_id: str) -> UserInDB | None:
         return self.users.get(user_id)
+
+    def has_registered_user(self) -> bool:
+        return bool(self.users)
 
     def list_industries(self, skip: int, limit: int, search: str | None) -> list[Industry]:
         values = list(self.industries.values())

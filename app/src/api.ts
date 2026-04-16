@@ -11,6 +11,7 @@ import {
   PerProfileApplication,
   Profile,
   ProfileCreatePayload,
+  RegistrationStatus,
   UserNotification,
   UserPublic
 } from "./types";
@@ -43,6 +44,8 @@ export const api = {
       body: JSON.stringify({ name, email, password })
     });
   },
+  getRegistrationStatus: () =>
+    request<RegistrationStatus>("/api/v1/auth/registration-status"),
   async login(email: string, password: string): Promise<string> {
     const result = await request<{ access_token: string }>("/api/v1/auth/login", {
       method: "POST",

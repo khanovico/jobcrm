@@ -226,15 +226,10 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
     assert one.status_code == 200
     assert one.json()["name"] == "AgentProf"
 
-    user = client.post(
-        "/api/v1/auth/register",
-        json={"name": "U", "email": "notifyme@example.com", "password": "secret1234"},
-    ).json()
-
     n = client.post(
         "/api/v1/agent/notifications",
         json={
-            "user_id": user["id"],
+            "user_id": client.get("/api/v1/auth/me", headers=h).json()["id"],
             "kind": "agent_test",
             "title": "Hi",
             "body": "From agent",
@@ -242,12 +237,7 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
         headers=ak,
     )
     assert n.status_code == 201
-    login_u = client.post(
-        "/api/v1/auth/login",
-        json={"email": "notifyme@example.com", "password": "secret1234"},
-    )
-    assert login_u.status_code == 200
-    notes = client.get("/api/v1/notifications", headers=_headers(login_u.json()["access_token"]))
+    notes = client.get("/api/v1/notifications", headers=h)
     assert notes.status_code == 200
     assert any(x["title"] == "Hi" for x in notes.json())
 

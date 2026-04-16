@@ -141,6 +141,10 @@ export type UserPublic = {
   updated_at: string;
 };
 
+export type RegistrationStatus = {
+  registration_open: boolean;
+};
+
 /** POST /api/v1/admin/agent-keys — response includes one-time raw_key */
 export type AgentApiKeyCreated = {
   id: string;

@@ -123,6 +123,10 @@ class TokenResponse(BaseModel):
     token_type: Literal["bearer"] = "bearer"
 
 
+class RegistrationStatus(BaseModel):
+    registration_open: bool
+
+
 class EducationEntry(BaseModel):
     university_name: str = Field(min_length=1)
     from_year: int | None = None
