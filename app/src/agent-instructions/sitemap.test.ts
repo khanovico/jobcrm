@@ -6,6 +6,7 @@ describe("buildSitemapXml", () => {
   it("includes app routes, agent docs, and API docs", () => {
     const xml = buildSitemapXml("http://localhost:5173", "http://localhost:8000");
     expect(xml).toContain("<loc>http://localhost:5173/</loc>");
+    expect(xml).toContain("<loc>http://localhost:5173/settings</loc>");
     expect(xml).toContain("<loc>http://localhost:5173/llm.txt</loc>");
     expect(xml).toContain("<loc>http://localhost:5173/mcp-guidance.md</loc>");
     expect(xml).toContain("<loc>http://localhost:5173/model-architecture.md</loc>");

@@ -13,6 +13,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfileDetailPage } from "./pages/ProfileDetailPage";
 import { ProfilesPage } from "./pages/ProfilesPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 const PrivateOutlet = () => {
   const { token } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/industries" element={<IndustriesPage />} />
           <Route path="/audit" element={<AuditPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
     </Routes>

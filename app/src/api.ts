@@ -1,5 +1,6 @@
 import {
   Application,
+  AgentApiKeyCreated,
   ApplicationListItem,
   AuditEvent,
   Company,
@@ -49,6 +50,12 @@ export const api = {
     });
     return result.access_token;
   },
+  getMe: () => request<UserPublic>("/api/v1/auth/me"),
+  createAgentApiKey: (payload: { name: string; scopes?: string[] }) =>
+    request<AgentApiKeyCreated>("/api/v1/admin/agent-keys", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
   getDashboardMetrics: () => request<DashboardMetrics>("/api/v1/metrics/dashboard"),
   globalSearch: (q: string, limit = 20) =>
     request<GlobalSearchResult>(`/api/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`),

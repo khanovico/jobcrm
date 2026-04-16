@@ -124,6 +124,18 @@ def login(payload: UserLogin, repo: BaseRepository = Depends(get_repository)) ->
     return TokenResponse(access_token=create_access_token(user.id))
 
 
+@app.get("/api/v1/auth/me", response_model=UserPublic)
+def auth_me(user: UserInDB = Depends(get_current_user)) -> UserPublic:
+    return UserPublic(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        admin=user.admin,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
 @app.get("/api/v1/metrics/dashboard", response_model=DashboardMetrics)
 def dashboard_metrics(
     user: UserInDB = Depends(get_current_user),

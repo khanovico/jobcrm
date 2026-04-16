@@ -137,6 +137,18 @@ export type UserPublic = {
   name: string;
   email: string;
   admin: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** POST /api/v1/admin/agent-keys — response includes one-time raw_key */
+export type AgentApiKeyCreated = {
+  id: string;
+  name: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+  raw_key: string;
 };
 
 export type DashboardMetrics = {

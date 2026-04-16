@@ -18,6 +18,7 @@ export function buildSitemapXml(appOrigin: string, apiOrigin: string): string {
     `${app}/industries`,
     `${app}/audit`,
     `${app}/notifications`,
+    `${app}/settings`,
     `${app}/llm.txt`,
     `${app}/mcp-guidance.md`,
     `${app}/model-architecture.md`,

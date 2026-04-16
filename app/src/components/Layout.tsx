@@ -9,7 +9,8 @@ const links = [
   { to: "/applications", label: "Applications", emoji: "📋" },
   { to: "/industries", label: "Industries", emoji: "🏭" },
   { to: "/audit", label: "Audit", emoji: "📜" },
-  { to: "/notifications", label: "Notifications", emoji: "🔔" }
+  { to: "/notifications", label: "Notifications", emoji: "🔔" },
+  { to: "/settings", label: "Settings", emoji: "⚙️" }
 ];
 
 export const Layout = () => {

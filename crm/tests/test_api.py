@@ -87,6 +87,19 @@ def test_create_application_defaults_to_pending_preparation() -> None:
     assert application.json()["status"] == "pending_preparation"
 
 
+def test_auth_me_returns_user() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    body = me.json()
+    assert body["email"] == "test@example.com"
+    assert "admin" in body
+
+
 def test_auth_required_for_companies() -> None:
     app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
     client = TestClient(app)
