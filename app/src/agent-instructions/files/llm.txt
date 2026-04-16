@@ -1,7 +1,8 @@
 # JobCRM — JAA entry point
 
 **Required Env Vars**
-JOBCRM_API_ORIGIN: Server url
+JOBCRM_APP_URL: APP Frontend url (for instructions)
+JOBCRM_API_ORIGIN: API Server url
 JOBCRM_X_API_KEY: x-api-key for agent access
 
 In case any of these two is missing, request human for further action.
@@ -12,10 +13,9 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 
 | Resource | Path | Purpose |
 |----------|------|---------|
-| Model architecture | GET /model-architecture.md | Entities, relationships, workflows, `indexed`, archive behavior |
-| API contracts | GET /api-contracts.md | JAA routes: query params, JSON request/response shapes |
-| MCP hints | GET /mcp-guidance.md | Polling and enrichment flow |
-| Machine sitemap | GET /sitemap.xml | App + API doc URLs |
+| Model architecture | GET {JOBCRM_APP_URL}/model-architecture.md | Entities, relationships, workflows, `indexed`, archive behavior |
+| API contracts | GET {JOBCRM_APP_URL}/api-contracts.md | JAA routes: query params, JSON request/response shapes |
+| MCP hints | GET {JOBCRM_APP_URL}/mcp-guidance.md | Polling and enrichment flow |
 
 **Authoritative JSON schemas**: OpenAPI at `{JOBCRM_API_ORIGIN}/docs` (e.g. http://localhost:8000/docs). Use `api-contracts.md` for a single JAA-oriented narrative; use `/docs` for exact field lists and enums.
 
@@ -23,7 +23,7 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 
 - Agent: `X-API-Key: {JOBCRM_X_API_KEY}` on `/api/v1/agent/*`
 
-**Base paths**
+**Base paths (JOBCRM_API_ORIGIN)**
 
 - API: `/api/v1/...`
 - Agent: `/api/v1/agent/...`

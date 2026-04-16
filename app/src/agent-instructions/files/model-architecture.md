@@ -1,6 +1,6 @@
 # JobCRM — data model (JAA-oriented)
 
-This is a conceptual map of the CRM. Authoritative field types and validation live in the API (`GET {API}/docs` OpenAPI). Use this document for **relationships and workflows**.
+This is a conceptual map of the CRM. Authoritative field types and validation live in the API (`GET {JOBCRM_API_ORIGIN}/docs` OpenAPI). Use this document for **relationships and workflows**.
 
 ## Core entities
 
@@ -59,5 +59,5 @@ Other fields on Application:
 
 ## Where to read schemas
 
-- **OpenAPI**: `{API_ORIGIN}/docs` (e.g. `http://localhost:8000/docs`) — full request/response models.
+- **OpenAPI**: `{JOBCRM_API_ORIGIN}/docs` (e.g. `http://localhost:8000/docs`) — full request/response models.
 - **`api-contracts.md`** (this app origin) — JAA-focused contract summary alongside **`llm.txt`**.
