@@ -4,22 +4,12 @@ globs: **/*.{ts,tsx}
 alwaysApply: false
 ---
 
-# TypeScript Frontend Organization Rules
+# TS organization
 
-- Keep file exports and primary component/hook declarations near the top for fast scanning.
-- Place small private helpers below the primary exported symbol unless shared elsewhere.
-- Split files that mix too many concerns (UI rendering, data fetching, heavy business rules).
-- Keep changes minimal and scoped to the task; avoid unrelated refactors in feature commits.
-- Prefer explicit return types for exported utilities and hooks to stabilize contracts.
-- Use constants/enums for repeated literals used across conditionals and UI states.
+- Exports + main symbol at top; private helpers below. Split files mixing UI + fetch + heavy logic.
+- Minimal scope per commit. Exported hooks/utils: explicit return types. Constants for repeated literals.
 
-## Example
 ```ts
-export function useLeadFilters(): LeadFiltersResult {
-  // hook logic
-}
-
-function normalizeFilterInput(value: string): string {
-  return value.trim().toLowerCase();
-}
+export function useLeadFilters(): LeadFiltersResult { ... }
+function normalize(s: string): string { return s.trim().toLowerCase(); }
 ```

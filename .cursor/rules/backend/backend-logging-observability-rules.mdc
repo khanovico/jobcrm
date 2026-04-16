@@ -4,16 +4,12 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Backend Logging And Observability Rules
+# Logging
 
-- Use structured logs with context fields (for example: request_id, user_id, endpoint, duration_ms).
-- Log at the right level (`debug`, `info`, `warning`, `error`) and avoid noisy duplicate entries.
-- Log unexpected failures with actionable context, then re-raise or map to API-safe errors.
-- Never log secrets or sensitive personal data.
-- Track core metrics for request latency, error rate, and throughput on critical endpoints.
-- Include correlation IDs in logs and error responses when available.
+- Structured logs: request_id, user_id, endpoint, duration_ms, etc. Right level; no duplicate noise.
+- Failures: actionable context → re-raise or map to API-safe errors. Never log secrets/PII.
+- Metrics: latency, errors, throughput on hot paths. Correlation IDs in logs + error responses when possible.
 
-## Example
 ```python
-logger.error("lead_create_failed", extra={"request_id": request_id, "lead_email": email_masked})
+logger.error("x_failed", extra={"request_id": rid})
 ```

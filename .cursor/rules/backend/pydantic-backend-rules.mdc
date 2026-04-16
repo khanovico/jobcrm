@@ -4,17 +4,13 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Pydantic Backend Rules
+# Pydantic
 
-- Use Pydantic models for API inputs/outputs; avoid raw dictionaries at route boundaries.
-- Prefer explicit field types and constraints (`Field`, enums, literals) over loose `Any`.
-- Keep separate models for create/update/read flows when fields differ.
-- Validate at boundaries (request parsing and config loading), not deep in business logic.
-- Keep model names stable and semantic to preserve API contract clarity.
+- Models at API boundaries; no raw `dict`. `Field`, enums, `Literal` over `Any`. Separate create/update/read models when fields differ.
+- Validate at edges (request + settings), not deep in domain. Stable model names.
 
-## Example
 ```python
-class CreateLeadRequest(BaseModel):
+class CreateLead(BaseModel):
     email: EmailStr
     source: Literal["web", "referral", "ads"]
 ```

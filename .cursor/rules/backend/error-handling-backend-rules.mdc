@@ -4,21 +4,13 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Backend Error Handling Rules
+# Errors
 
-- Raise domain-specific exceptions in services; map them to HTTP responses at API boundaries.
-- Do not swallow exceptions silently; log with useful context and re-raise or translate.
-- Return consistent error shapes (code/message/details) across endpoints.
-- Avoid leaking internals (stack traces, SQL errors, secrets) in API responses.
-- Use structured logging for failures, including correlation/request IDs when available.
-- Handle expected failure classes explicitly (validation, not found, conflict, permission, upstream timeout).
+- Domain exceptions in services → HTTP at boundary. Log + translate; never silent swallow.
+- Consistent `{code,message,details}` (or project standard). No stacks/SQL/secrets to clients.
+- Explicit handling: validation, 404, 409, 403, upstream timeout.
 
-## Example
 ```python
-try:
-    lead = await service.get_lead(lead_id)
-except LeadNotFoundError as exc:
-    raise HTTPException(status_code=404, detail=str(exc))
-except ExternalServiceTimeoutError:
-    raise HTTPException(status_code=504, detail="Upstream service timeout")
+except LeadNotFoundError as e:
+    raise HTTPException(404, detail=str(e))
 ```

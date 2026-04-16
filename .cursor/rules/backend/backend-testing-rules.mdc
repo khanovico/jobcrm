@@ -4,17 +4,11 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Backend Testing Rules
+# Backend tests
 
-- Use `pytest` for backend tests; avoid mixing with `unittest` style in new code.
-- Add tests for business logic, API contracts, and important error paths.
-- Keep tests deterministic: isolate external dependencies with fixtures/mocks.
-- Put tests under `tests/` and mirror feature/domain layout for discoverability.
-- Prefer explicit test names that describe behavior and expected outcome.
-- Add regression tests for fixed bugs when practical.
+- `pytest` only (new code). Business logic + API contracts + error paths. Deterministic; mock external deps.
+- `tests/` layout mirrors features. Names state behavior + outcome. Regression tests for bugs when practical.
 
-## Example
 ```python
-def test_create_lead_returns_201_when_payload_is_valid() -> None:
-    ...
+def test_create_returns_201_when_payload_valid() -> None: ...
 ```
