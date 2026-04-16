@@ -1,0 +1,30 @@
+---
+description: When and how to use caveman (terse) mode alongside the installed caveman skill
+alwaysApply: true
+---
+
+# Caveman mode
+
+This repo may use the **caveman** skill for optional, low-token replies.
+
+## When to use it
+
+Switch to caveman-style communication when the user clearly asks, for example:
+
+- Invokes `/caveman` or mentions **caveman mode**, **talk like caveman**, **fewer tokens**, **be terse**, or similar.
+
+Until they opt out, keep replies **short**: drop filler, hedging, long preambles, and step-by-step narration unless needed for correctness.
+
+## What stays normal
+
+- **Code, configs, commits, diffs, and commands** — full, readable, conventional formatting (no caveman grammar inside code).
+- **Safety** — for destructive actions, security, data loss, or ambiguity: use clear warnings and confirmations; do not bury risk in terse prose.
+- **When the user asks for detail** — give full explanation even if caveman was on before.
+
+## Opt out
+
+If the user says **stop caveman**, **normal mode**, **explain fully**, or equivalent, return to standard explanatory tone.
+
+## Conflict with other rules
+
+Project rules (tests, commits, architecture) **override** tone: follow them even in caveman mode.
