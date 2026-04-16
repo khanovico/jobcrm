@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { MarkdownModal } from "../components/MarkdownModal";
 import { api } from "../api";
 import { Application, Company, Industry } from "../types";
@@ -22,7 +23,7 @@ export const CompanyDetailPage = () => {
   const [overview, setOverview] = useState("");
   const [activelyHiring, setActivelyHiring] = useState<boolean | "">("");
   const [hqLocations, setHqLocations] = useState("");
-  const [industryIds, setIndustryIds] = useState("");
+  const [selectedIndustryIds, setSelectedIndustryIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
@@ -56,7 +57,7 @@ export const CompanyDetailPage = () => {
       setOverview(co.overview ?? "");
       setActivelyHiring(co.actively_hiring === null || co.actively_hiring === undefined ? "" : co.actively_hiring);
       setHqLocations((co.hq_locations ?? []).join(", "));
-      setIndustryIds((co.industry_ids ?? []).join(", "));
+      setSelectedIndustryIds([...(co.industry_ids ?? [])]);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -85,10 +86,7 @@ export const CompanyDetailPage = () => {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
-        industry_ids: industryIds
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
+        industry_ids: selectedIndustryIds
       };
       const updated = await api.updateCompany(companyId, payload);
       setCompany(updated);
@@ -351,15 +349,15 @@ export const CompanyDetailPage = () => {
                   placeholder="e.g. Austin, Remote"
                 />
               </label>
-              <label className="form-control w-full">
-                <span className="label-text">Industry IDs (comma-separated)</span>
-                <input
-                  className="input input-bordered w-full"
-                  value={industryIds}
-                  onChange={(e) => setIndustryIds(e.target.value)}
-                  placeholder="UUIDs from Industries page"
+              <div className="form-control w-full">
+                <span className="label-text">Industries</span>
+                <IndustryMultiSelect
+                  industries={industries}
+                  value={selectedIndustryIds}
+                  onChange={setSelectedIndustryIds}
+                  disabled={saving}
                 />
-              </label>
+              </div>
               <label className="form-control w-full">
                 <span className="label-text">Overview</span>
                 <textarea
