@@ -251,14 +251,20 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 ```json
 {
   "user_id": "uuid",
-  "kind": "string",
-  "title": "string",
-  "body": "string",
-  "link": "/optional/path"
+  "notification": "APPLICATION_UPDATE | COMPANY_UPDATE | SYSTEM_ERROR | FOLLOW_UP_DRAFT",
+  "type": "SUCCESS | FAILED | WARN",
+  "timestamp": "optional ISO-8601 datetime (default: server time)",
+  "check": false,
+  "payload": {
+    "id": "uuid-or-string (required for APPLICATION_UPDATE, COMPANY_UPDATE, FOLLOW_UP_DRAFT)",
+    "message": "human-readable text"
+  }
 }
 ```
 
-**Response 201** — **UserNotification**.
+`payload.id` meaning: application id, company id, or email id (for `FOLLOW_UP_DRAFT`), depending on `notification`. Optional for some `SYSTEM_ERROR` cases.
+
+**Response 201** — **UserNotification** (includes optional `link` when the server can resolve a path from `notification` + `payload.id`).
 
 ---
 
