@@ -4,18 +4,13 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# FastAPI Backend Rules
+# FastAPI
 
-- Define routes with explicit request and response schemas; avoid untyped payload handling.
-- Use `async def` for I/O-bound endpoints and integrations (DB, cache, external APIs).
-- Keep route handlers thin; move business logic into services/use-cases.
-- Prefer lifespan context managers over excessive startup/shutdown event hooks.
-- Use dependency injection (`Depends`) for auth, db sessions, and reusable cross-cutting concerns.
-- Return consistent HTTP errors via `HTTPException` or centralized exception handlers.
+- Typed request/response models. `async def` for I/O. Thin handlers → services. Lifespan over ad-hoc startup events.
+- `Depends` for auth, db, cross-cutting. `HTTPException` or global handlers.
 
-## Example
 ```python
-@router.post("/users", response_model=UserResponse, status_code=201)
-async def create_user(payload: CreateUserRequest, service: UserService = Depends(get_user_service)):
-    return await service.create_user(payload)
+@router.post("/users", response_model=UserOut, status_code=201)
+async def create_user(body: UserIn, svc: UserService = Depends(get_user_svc)):
+    return await svc.create(body)
 ```

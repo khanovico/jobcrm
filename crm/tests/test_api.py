@@ -21,6 +21,18 @@ def _auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _valid_profile_create_payload() -> dict:
+    return {
+        "name": "General SWE",
+        "location": "Austin, TX",
+        "email": "general@example.com",
+        "phone": "+15555550100",
+        "educations": [{"university_name": "State University", "from_year": 2018, "to_year": 2022}],
+        "bio_md": "Experienced software engineer.",
+        "niche_info_md": "Distributed systems and APIs.",
+    }
+
+
 def test_auth_required_for_companies() -> None:
     app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
     client = TestClient(app)
@@ -139,12 +151,22 @@ def test_company_profile_crud_happy_path() -> None:
     assert update_company.status_code == 200
     assert update_company.json()["overview"] == "Hiring fast"
 
-    profile_res = client.post("/api/v1/profiles", json={"name": "General SWE"}, headers=headers)
+    profile_res = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers)
     assert profile_res.status_code == 201
     profile = profile_res.json()
 
     delete_profile = client.delete(f"/api/v1/profiles/{profile['id']}", headers=headers)
     assert delete_profile.status_code == 204
+
+
+def test_profile_create_rejects_incomplete_payload() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    response = client.post("/api/v1/profiles", json={"name": "Only name"}, headers=headers)
+    assert response.status_code == 422
 
 
 def test_cors_preflight_register() -> None:

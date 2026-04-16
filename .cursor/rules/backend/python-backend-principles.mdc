@@ -4,19 +4,12 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Python Backend Principles
+# Python style
 
-- Write clear, typed, concise Python with explicit return types for public functions.
-- Prefer small, pure helper functions and composition over large monolithic handlers.
-- Keep modules focused; split files once they mix routing, business logic, and data access.
-- Use descriptive snake_case names (for example: `is_active`, `has_access`, `order_repo`).
-- Avoid hidden side effects; pass dependencies explicitly.
+- Typed public APIs; small pure helpers; explicit deps. Split when routing + logic + data mix.
+- `snake_case` names (`is_active`, `order_repo`). No hidden side effects.
 
-## Example
 ```python
-# Bad
-def process(u): ...
-
-# Good
-def process_user_signup(user_payload: dict) -> SignupResult: ...
+def process(u): ...  # bad
+def process_user_signup(p: UserIn) -> SignupResult: ...  # good
 ```

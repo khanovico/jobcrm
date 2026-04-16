@@ -9,6 +9,7 @@ import {
   Industry,
   PerProfileApplication,
   Profile,
+  ProfileCreatePayload,
   UserNotification,
   UserPublic
 } from "./types";
@@ -62,7 +63,8 @@ export const api = {
     request<Company>(`/api/v1/companies/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteCompany: (id: string) => request<void>(`/api/v1/companies/${id}`, { method: "DELETE" }),
   listProfiles: () => request<Profile[]>("/api/v1/profiles"),
-  createProfile: (payload: Partial<Profile> & { name: string }) =>
+  getProfile: (id: string) => request<Profile>(`/api/v1/profiles/${id}`),
+  createProfile: (payload: ProfileCreatePayload) =>
     request<Profile>("/api/v1/profiles", { method: "POST", body: JSON.stringify(payload) }),
   updateProfile: (id: string, payload: Partial<Profile>) =>
     request<Profile>(`/api/v1/profiles/${id}`, { method: "PUT", body: JSON.stringify(payload) }),

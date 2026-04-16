@@ -3,28 +3,8 @@ description: Memory-first workflow for cross-session and cross-agent continuity
 alwaysApply: true
 ---
 
-# Memory Preservation And Reuse
+# Memory
 
-## Purpose
-- Preserve reusable project knowledge across sessions and agents.
-- Make prior lessons discoverable before doing new implementation work.
-
-## Memory-First Execution Rule
-- Before starting execution, code generation, refactoring, or debugging, check `.cursor/memory/MEMORY.md`.
-- Use `MEMORY.md` as the playbook/index to decide which topic and lesson files to read.
-- Apply relevant prior lessons while planning and implementing.
-
-## Memory Structure
-- `.cursor/memory/MEMORY.md` is the top-level playbook and routing guide.
-- `.cursor/memory/<topic>/` folders group related knowledge domains.
-- `.cursor/memory/<topic>/*.md` stores individual lessons, decisions, pitfalls, and reusable patterns.
-
-## What To Store
-- Add lessons from reusable experiences during implementation, refactor, debugging, and execution.
-- Always store items the user explicitly asks to preserve.
-- Capture concise context: problem, solution, why it worked, and when to reuse it.
-
-## Update Discipline
-- If you discover a new reusable lesson, update the right topic file (or create one).
-- If a new topic appears, add a topic folder and update `MEMORY.md` so others can find it.
-- Keep entries short, actionable, and searchable.
+- Before big work: read `.cursor/memory/MEMORY.md`, then topic files under `.cursor/memory/<topic>/`.
+- Store reusable lessons (problem, fix, why, when to reuse); user-requested items always saved.
+- New topic → new folder + link from `MEMORY.md`. Keep entries short and searchable.

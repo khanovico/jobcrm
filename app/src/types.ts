@@ -24,18 +24,36 @@ export type Industry = {
   updated_at: string;
 };
 
+export type EducationEntry = {
+  university_name: string;
+  from_year?: number | null;
+  to_year?: number | null;
+};
+
 export type Profile = {
   id: string;
   name: string;
   location?: string | null;
   email?: string | null;
   phone?: string | null;
-  educations?: { university_name: string; from_year?: number | null; to_year?: number | null }[];
+  educations?: EducationEntry[];
   bio_md?: string | null;
   niche_info_md?: string | null;
   resume_md?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** POST /api/v1/profiles — all required except resume_md */
+export type ProfileCreatePayload = {
+  name: string;
+  location: string;
+  email: string;
+  phone: string;
+  educations: EducationEntry[];
+  bio_md: string;
+  niche_info_md: string;
+  resume_md?: string | null;
 };
 
 export type ApplicationStatus =

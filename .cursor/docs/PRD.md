@@ -404,9 +404,9 @@ This section tracks **what the repository implements today** versus the rest of 
 | Milestone (see §14) | Status |
 |---------------------|--------|
 | M1 – Core CRM foundation | **Implemented** (CRUD, workflow, UI shell, bootstrap create, metrics, search) |
-| M2 – JAA integration | **Implemented** (API key, `/api/v1/agent/*`, pending batch, scoped writes, rate limit) |
+| M2 – JAA integration | **Mostly implemented** — API key + `/api/v1/agent/*`, pending batch, scoped writes, per-key rate limit (in-memory). **Not** a separate long-running worker process; JAA is expected to poll HTTP (see §13 partial notes). |
 | M3 – Artifacts + execution | **Implemented** (PPA + emails, mark applied / mark sent, notifications on prep ready) |
-| M4 – Agent-friendly surfaces | **Implemented** (`llm.txt`, `sitemap.xml`, `mcp-guidance.md`) |
+| M4 – Agent-friendly surfaces | **Implemented** — `GET /llm.txt`, `GET /sitemap.xml`, `GET /mcp-guidance.md` (static content served by API; not a separate docs site generator). |
 
 ### Implemented
 

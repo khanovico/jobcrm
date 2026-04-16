@@ -4,19 +4,11 @@ globs: **/*.{tsx,jsx}
 alwaysApply: false
 ---
 
-# React Frontend Rules
+# React
 
-- Build small, reusable components with a single responsibility.
-- Keep component APIs explicit and typed; avoid large ambiguous prop objects.
-- Prefer composition over deep prop drilling and overgrown component files.
-- Keep state as local as possible; lift only when multiple siblings need shared state.
-- Extract repeated UI logic into custom hooks when it appears in multiple components.
-- Keep presentational components focused on rendering and interaction, not data orchestration.
+- Small single-purpose components; typed props. Composition over prop drilling.
+- Local state by default; lift when needed. Shared UI logic → custom hooks. Presentational vs data split.
 
-## Example
 ```tsx
-type SubmitButtonProps = {
-  isLoading: boolean;
-  onClick: () => void;
-};
+type BtnProps = { loading: boolean; onClick: () => void };
 ```

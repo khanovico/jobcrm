@@ -4,18 +4,13 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Backend Project Structure Rules
+# Structure
 
-- Keep routing, service/use-case logic, schemas/models, and data-access code in separate modules.
-- Do not place heavy business logic directly inside route handlers.
-- Group code by domain feature where possible to reduce cross-module coupling.
-- Keep shared utilities small and generic; avoid turning utils into a catch-all module.
-- Co-locate tests with the corresponding domain area under `tests/`.
-- Split files when they become hard to scan or mix unrelated responsibilities.
+- Separate routers, services, schemas, repositories. No fat route handlers.
+- Group by domain. Tiny shared utils only. Tests under `tests/` by domain. Split files that mix concerns.
 
-## Example
-```python
-# routers/leads.py -> HTTP layer
-# services/leads.py -> business logic
-# repositories/leads.py -> persistence logic
+```
+routers/leads.py  → HTTP
+services/leads.py → logic
+repositories/leads.py → persistence
 ```
