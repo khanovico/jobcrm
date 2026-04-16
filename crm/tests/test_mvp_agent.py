@@ -101,7 +101,9 @@ def test_preparation_ready_notification() -> None:
     assert notes.status_code == 200
     body = notes.json()
     assert len(body) >= 1
-    assert body[0]["kind"] == "preparation_ready"
+    assert body[0]["notification"] == "APPLICATION_UPDATE"
+    assert body[0]["type"] == "SUCCESS"
+    assert body[0]["payload"]["id"] == app_id
 
 
 def test_per_profile_and_email_mark_sent() -> None:
@@ -230,16 +232,16 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
         "/api/v1/agent/notifications",
         json={
             "user_id": client.get("/api/v1/auth/me", headers=h).json()["id"],
-            "kind": "agent_test",
-            "title": "Hi",
-            "body": "From agent",
+            "notification": "SYSTEM_ERROR",
+            "type": "SUCCESS",
+            "payload": {"message": "Hi — from agent"},
         },
         headers=ak,
     )
     assert n.status_code == 201
     notes = client.get("/api/v1/notifications", headers=h)
     assert notes.status_code == 200
-    assert any(x["title"] == "Hi" for x in notes.json())
+    assert any(x["payload"]["message"] == "Hi — from agent" for x in notes.json())
 
 
 def test_agent_list_applications_filters() -> None:
