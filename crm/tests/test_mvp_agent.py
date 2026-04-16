@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.deps import get_repository
 from app.main import app
-from app.models import ApplicationStatus
+from app.models import ApplicationCreate, ApplicationStatus
 from app.repository import InMemoryRepository
 
 
@@ -301,3 +301,148 @@ def test_agent_archive_application_with_reason() -> None:
     assert upd.status_code == 200
     assert upd.json()["status"] == "archived"
     assert upd.json()["archive_reason"] == "Role filled"
+
+
+def test_agent_notification_requires_payload_id_for_application_update() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-notif-1"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+    uid = client.get("/api/v1/auth/me", headers=h).json()["id"]
+
+    n = client.post(
+        "/api/v1/agent/notifications",
+        json={
+            "user_id": uid,
+            "notification": "APPLICATION_UPDATE",
+            "type": "SUCCESS",
+            "payload": {"message": "Missing id should fail"},
+        },
+        headers=ak,
+    )
+    assert n.status_code == 422
+
+
+def test_notifications_resolve_links_by_notification_and_payload_id() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-notif-2"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+    uid = client.get("/api/v1/auth/me", headers=h).json()["id"]
+
+    company = client.post("/api/v1/companies", json={"name": "Link Co"}, headers=h).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "preparation_ready"},
+        headers=h,
+    ).json()
+    profile = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Link Prof",
+            "location": "Remote",
+            "email": "link-prof@example.com",
+            "phone": "+10000000002",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "B",
+            "niche_info_md": "N",
+        },
+        headers=h,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 1,
+            "analysis": "Strong fit",
+        },
+        headers=h,
+    ).json()
+    email = client.post(
+        f"/api/v1/per-profile-applications/{ppa['id']}/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "follow_up",
+            "content": "Draft follow-up",
+        },
+        headers=h,
+    ).json()
+
+    create_payloads = [
+        {
+            "notification": "APPLICATION_UPDATE",
+            "type": "SUCCESS",
+            "payload": {"id": application["id"], "message": "Application updated"},
+        },
+        {
+            "notification": "COMPANY_UPDATE",
+            "type": "WARN",
+            "payload": {"id": company["id"], "message": "Company update available"},
+        },
+        {
+            "notification": "FOLLOW_UP_DRAFT",
+            "type": "SUCCESS",
+            "payload": {"id": email["id"], "message": "Follow-up draft ready"},
+        },
+    ]
+    for body in create_payloads:
+        n = client.post(
+            "/api/v1/agent/notifications",
+            json={"user_id": uid, **body},
+            headers=ak,
+        )
+        assert n.status_code == 201
+
+    notes = client.get("/api/v1/notifications", headers=h)
+    assert notes.status_code == 200
+    rows = notes.json()
+    by_kind = {n["notification"]: n for n in rows}
+    assert by_kind["APPLICATION_UPDATE"]["link"] == f"/applications/{application['id']}"
+    assert by_kind["COMPANY_UPDATE"]["link"] == f"/companies/{company['id']}"
+    assert by_kind["FOLLOW_UP_DRAFT"]["link"] == f"/applications/{application['id']}?emailId={email['id']}"
+
+
+def test_application_link_hidden_when_application_has_no_owner() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token_owner = _register_admin(client)
+    h_owner = _headers(token_owner)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-notif-3"}, headers=h_owner)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    uid = client.get("/api/v1/auth/me", headers=h_owner).json()["id"]
+    company = client.post("/api/v1/companies", json={"name": "Hidden Link Co"}, headers=h_owner).json()
+    application = repo.create_application(
+        ApplicationCreate(company_id=company["id"], status=ApplicationStatus.preparation_ready),
+        created_by_user_id=None,
+    )
+
+    n = client.post(
+        "/api/v1/agent/notifications",
+        json={
+            "user_id": uid,
+            "notification": "APPLICATION_UPDATE",
+            "type": "SUCCESS",
+            "payload": {"id": application.id, "message": "Should not expose link"},
+        },
+        headers=ak,
+    )
+    assert n.status_code == 201
+
+    notes = client.get("/api/v1/notifications", headers=h_owner)
+    assert notes.status_code == 200
+    rows = notes.json()
+    assert len(rows) >= 1
+    target = next(x for x in rows if x["payload"]["message"] == "Should not expose link")
+    assert target["link"] is None
