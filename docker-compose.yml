@@ -12,7 +12,7 @@ services:
     build:
       context: ./crm
     ports:
-      - "8511:8511"
+      - "8511:8500"
     env_file:
       - ./crm/.env
     depends_on:
