@@ -2,8 +2,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Modal } from "../components/Modal";
+import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
-import { Application, ApplicationStatus, Company } from "../types";
+import { ApplicationListItem, ApplicationStatus, Company } from "../types";
 
 const statuses: ApplicationStatus[] = [
   "draft",
@@ -23,12 +24,12 @@ const PlusIcon = () => (
 
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<Application[]>([]);
+  const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [editing, setEditing] = useState<Application | null>(null);
+  const [editing, setEditing] = useState<ApplicationListItem | null>(null);
 
   const [companyId, setCompanyId] = useState("");
   const [status, setStatus] = useState<ApplicationStatus>("draft");
@@ -79,7 +80,7 @@ export const ApplicationsPage = () => {
     setCreateOpen(true);
   };
 
-  const openEditModal = (application: Application) => {
+  const openEditModal = (application: ApplicationListItem) => {
     setError(null);
     setEditing(application);
     setCompanyId(application.company_id);
@@ -162,6 +163,7 @@ export const ApplicationsPage = () => {
               <tr>
                 <th>Company</th>
                 <th>Status</th>
+                <th className="min-w-[140px]">Applied profiles</th>
                 <th className="whitespace-nowrap">Applied</th>
                 <th className="whitespace-nowrap">Updated</th>
                 <th className="text-right">Actions</th>
@@ -177,6 +179,9 @@ export const ApplicationsPage = () => {
                   <td className="font-medium">{companyNameById(application.company_id)}</td>
                   <td>
                     <span className="badge badge-ghost badge-sm">{application.status}</span>
+                  </td>
+                  <td className="max-w-[220px]" onClick={(e) => e.stopPropagation()}>
+                    <ProfileNameChips profiles={application.applied_profiles ?? []} />
                   </td>
                   <td className="whitespace-nowrap text-xs opacity-80">{application.applied_at ?? "—"}</td>
                   <td className="whitespace-nowrap text-xs opacity-80">

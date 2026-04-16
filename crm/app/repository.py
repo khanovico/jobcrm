@@ -10,9 +10,11 @@ from app.config import settings
 from app.models import (
     AgentApiKeyCreate,
     AgentApiKeyInDB,
+    AppliedProfileName,
     Application,
     ApplicationBootstrapCreate,
     ApplicationCreate,
+    ApplicationListItem,
     ApplicationStatus,
     ApplicationUpdate,
     AuditEvent,
@@ -108,7 +110,7 @@ class BaseRepository:
         applied: bool | None = None,
         email_sent: bool | None = None,
         sort: str = "created_at_desc",
-    ) -> list[Application]:
+    ) -> list[ApplicationListItem]:
         raise NotImplementedError
 
     def list_pending_applications(self, limit: int) -> list[Application]:
@@ -368,6 +370,20 @@ class InMemoryRepository(BaseRepository):
     def delete_profile(self, profile_id: str) -> bool:
         return self.profiles.pop(profile_id, None) is not None
 
+    def _applied_profile_names_for_application(self, application_id: str) -> list[AppliedProfileName]:
+        rows = [
+            p
+            for p in self.per_profile_applications.values()
+            if p.application_id == application_id and p.applied
+        ]
+        rows = sorted(rows, key=lambda p: (p.order_index, p.created_at))
+        out: list[AppliedProfileName] = []
+        for ppa in rows:
+            prof = self.get_profile(ppa.profile_id)
+            name = prof.name if prof else ppa.profile_id
+            out.append(AppliedProfileName(profile_id=ppa.profile_id, profile_name=name))
+        return out
+
     def list_applications(
         self,
         skip: int,
@@ -377,7 +393,7 @@ class InMemoryRepository(BaseRepository):
         applied: bool | None = None,
         email_sent: bool | None = None,
         sort: str = "created_at_desc",
-    ) -> list[Application]:
+    ) -> list[ApplicationListItem]:
         values = list(self.applications.values())
         if status:
             values = [a for a in values if a.status == status]
@@ -388,7 +404,14 @@ class InMemoryRepository(BaseRepository):
         if email_sent is not None:
             values = [a for a in values if a.email_sent is email_sent]
         values = _sort_applications(values, sort)
-        return values[skip : skip + limit]
+        sliced = values[skip : skip + limit]
+        return [
+            ApplicationListItem(
+                **a.model_dump(),
+                applied_profiles=self._applied_profile_names_for_application(a.id),
+            )
+            for a in sliced
+        ]
 
     def list_pending_applications(self, limit: int) -> list[Application]:
         pending = [
@@ -638,11 +661,14 @@ class InMemoryRepository(BaseRepository):
         if not self.get_profile(payload.profile_id):
             raise ValueError("Invalid profile_id")
         now = utcnow()
+        payload_dict = _as_dict(payload)
+        if payload_dict.get("applied") and payload_dict.get("applied_at") is None:
+            payload_dict["applied_at"] = utcnow()
         ppa = PerProfileApplication(
             id=self._new_id(),
             created_at=now,
             updated_at=now,
-            **_as_dict(payload),
+            **payload_dict,
         )
         self.per_profile_applications[ppa.id] = ppa
         return ppa
@@ -658,9 +684,13 @@ class InMemoryRepository(BaseRepository):
             return None
         if payload.profile_id and not self.get_profile(payload.profile_id):
             raise ValueError("Invalid profile_id")
-        merged = ppa.model_copy(
-            update={**payload.model_dump(exclude_none=True), "updated_at": utcnow()}
-        )
+        updates = payload.model_dump(exclude_none=True)
+        if updates.get("applied") is True:
+            if "applied_at" not in updates or updates["applied_at"] is None:
+                updates["applied_at"] = ppa.applied_at or utcnow()
+        elif updates.get("applied") is False:
+            updates["applied_at"] = None
+        merged = ppa.model_copy(update={**updates, "updated_at": utcnow()})
         self.per_profile_applications[ppa_id] = merged
         return merged
 

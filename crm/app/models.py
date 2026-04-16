@@ -306,6 +306,8 @@ class PerProfileApplicationBase(BaseModel):
     analysis: str = ""
     tailored_resume_link: str | None = None
     cold_email_plan: ColdEmailPlan | None = None
+    applied: bool = False
+    applied_at: datetime | None = None
 
 
 class PerProfileApplicationCreate(PerProfileApplicationBase):
@@ -319,12 +321,27 @@ class PerProfileApplicationUpdate(BaseModel):
     analysis: str | None = None
     tailored_resume_link: str | None = None
     cold_email_plan: ColdEmailPlan | None = None
+    applied: bool | None = None
+    applied_at: datetime | None = None
 
 
 class PerProfileApplication(PerProfileApplicationBase):
     id: str
     created_at: datetime
     updated_at: datetime
+
+
+class AppliedProfileName(BaseModel):
+    """Profile display for application list (per-profile applied)."""
+
+    profile_id: str
+    profile_name: str
+
+
+class ApplicationListItem(Application):
+    """Application with resolved names for profiles marked applied on per-profile rows."""
+
+    applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
 
 
 class EmailBase(BaseModel):
