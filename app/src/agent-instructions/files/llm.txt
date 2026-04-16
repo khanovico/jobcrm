@@ -1,0 +1,17 @@
+# JobCRM — agent-facing overview
+
+API base URL: configure `VITE_API_URL` in the web app (default local: http://localhost:8000).
+
+Auth:
+- Human: Authorization: Bearer <JWT> from POST /api/v1/auth/login
+- Agent: X-API-Key: <key> with scopes read and write
+
+Core entities: Company, Industry, Profile, Application, PerProfileApplication, Email.
+
+Application workflow statuses: draft → pending_preparation → researching → analysis_ready → preparation_ready → applied → archived.
+
+Agent batch: GET /api/v1/agent/applications/pending?limit=50
+
+Agent writes are limited to Company, Application, PerProfileApplication, Email (and related application fields).
+
+See GET /sitemap.xml on this app origin for a route index.

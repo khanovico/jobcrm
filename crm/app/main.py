@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 
 from app.agent_auth import generate_api_key, hash_api_key
@@ -94,60 +94,6 @@ def _audit(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-@app.get("/llm.txt", response_class=PlainTextResponse)
-def llm_txt() -> str:
-    return """# JobCRM — agent-facing overview
-
-Base URL: /api/v1 for human JWT APIs; /api/v1/agent for JAA (API key).
-
-Auth:
-- Human: Authorization: Bearer <JWT> from POST /api/v1/auth/login
-- Agent: X-API-Key: <key> with scopes read and write
-
-Core entities: Company, Industry, Profile, Application, PerProfileApplication, Email.
-
-Application workflow statuses: draft → pending_preparation → researching → analysis_ready → preparation_ready → applied → archived.
-
-Agent batch: GET /api/v1/agent/applications/pending?limit=50
-
-Agent writes are limited to Company, Application, PerProfileApplication, Email (and related application fields).
-
-See GET /sitemap.xml for route index.
-"""
-
-
-@app.get("/sitemap.xml", response_class=PlainTextResponse)
-def sitemap_xml() -> str:
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-        "<url><loc>http://localhost:5173/</loc></url>",
-        "<url><loc>http://localhost:5173/applications</loc></url>",
-        "<url><loc>http://localhost:5173/companies</loc></url>",
-        "<url><loc>http://localhost:5173/profiles</loc></url>",
-        "<url><loc>http://localhost:5173/audit</loc></url>",
-        "<url><loc>http://localhost:5173/notifications</loc></url>",
-        "<url><loc>http://localhost:8000/docs</loc></url>",
-        "<url><loc>http://localhost:8000/llm.txt</loc></url>",
-        "<url><loc>http://localhost:8000/mcp-guidance.md</loc></url>",
-        "</urlset>",
-    ]
-    return "\n".join(lines)
-
-
-@app.get("/mcp-guidance.md", response_class=PlainTextResponse)
-def mcp_guidance() -> str:
-    return """# MCP / agent guidance
-
-1. Authenticate using `X-API-Key` for `/api/v1/agent/*`.
-2. Poll `GET /api/v1/agent/applications/pending` for work.
-3. Enrich companies via `PUT /api/v1/agent/companies/{id}`.
-4. Advance applications with validated status transitions via `PUT /api/v1/agent/applications/{id}`.
-5. Create per-profile rows with `POST /api/v1/agent/per-profile-applications` and emails with `POST /api/v1/agent/emails`.
-6. Read `llm.txt` for a concise capability summary.
-"""
 
 
 @app.post("/api/v1/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
