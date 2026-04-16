@@ -47,7 +47,7 @@ FIFO **`pending_preparation`**, oldest `created_at` first.
 **Query (all optional)**
 
 | Param | Type | Notes |
-|-------|------|------|
+|-------|------|-------|
 | `skip` | int | Pagination |
 | `limit` | int | Max 200 typical |
 | `status_filter` | enum | Same values as `ApplicationStatus` |
