@@ -65,6 +65,16 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 
 ---
 
+### `GET /api/v1/agent/applications/{application_id}`
+
+**Path**: `application_id` — string UUID.
+
+**Response 200** — full **Application** (same as user `GET /api/v1/applications/{application_id}`).
+
+**Response 404** — application not found.
+
+---
+
 ### `PUT /api/v1/agent/applications/{application_id}`
 
 **Path**: `application_id` — string UUID.
