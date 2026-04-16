@@ -33,6 +33,73 @@ def _valid_profile_create_payload() -> dict:
     }
 
 
+def test_list_applications_exclude_archived() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    active = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "pending_preparation"},
+        headers=headers,
+    ).json()
+    archived = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "draft"},
+        headers=headers,
+    ).json()
+    client.put(
+        f"/api/v1/applications/{archived['id']}",
+        json={"status": "archived", "archive_reason": "done"},
+        headers=headers,
+    )
+    listed = client.get(
+        "/api/v1/applications",
+        params={"exclude_status": "archived"},
+        headers=headers,
+    ).json()
+    assert len(listed) == 1
+    assert listed[0]["id"] == active["id"]
+    only_arch = client.get(
+        "/api/v1/applications",
+        params={"status_filter": "archived"},
+        headers=headers,
+    ).json()
+    assert len(only_arch) == 1
+    assert only_arch[0]["archive_reason"] == "done"
+
+
+def test_create_application_defaults_to_pending_preparation() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"]},
+        headers=headers,
+    )
+    assert application.status_code == 201
+    assert application.json()["status"] == "pending_preparation"
+
+
+def test_auth_me_returns_user() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    me = client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    body = me.json()
+    assert body["email"] == "test@example.com"
+    assert "admin" in body
+
+
 def test_auth_required_for_companies() -> None:
     app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
     client = TestClient(app)
@@ -48,7 +115,9 @@ def test_list_applications_includes_applied_profile_names() -> None:
     headers = _auth_headers(token)
 
     company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
-    profile = client.post("/api/v1/profiles", json={"name": "Alex Dev"}, headers=headers).json()
+    prof_payload = _valid_profile_create_payload()
+    prof_payload["name"] = "Alex Dev"
+    profile = client.post("/api/v1/profiles", json=prof_payload, headers=headers).json()
     application = client.post(
         "/api/v1/applications",
         json={"company_id": company["id"], "status": "draft"},

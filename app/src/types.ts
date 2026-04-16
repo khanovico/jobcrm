@@ -1,6 +1,7 @@
 export type Company = {
   id: string;
   name: string;
+  indexed?: boolean;
   website?: string | null;
   linkedin?: string | null;
   industry_ids?: string[];
@@ -80,6 +81,8 @@ export type Application = {
   email_sent: boolean;
   email_sent_at?: string | null;
   notes?: string | null;
+  /** Set when status is archived (human or JAA). */
+  archive_reason?: string | null;
   created_by_user_id?: string | null;
   created_at: string;
   updated_at: string;
@@ -134,6 +137,18 @@ export type UserPublic = {
   name: string;
   email: string;
   admin: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** POST /api/v1/admin/agent-keys — response includes one-time raw_key */
+export type AgentApiKeyCreated = {
+  id: string;
+  name: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+  raw_key: string;
 };
 
 export type DashboardMetrics = {

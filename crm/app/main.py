@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 
 from app.agent_auth import generate_api_key, hash_api_key
@@ -21,7 +21,10 @@ from app.models import (
     ActorType,
     AgentApiKeyCreate,
     AgentApiKeyCreated,
+    AgentCompaniesBulkUpdateRequest,
     AgentContext,
+    AgentHealthResponse,
+    AgentNotificationCreate,
     Application,
     ApplicationBootstrapCreate,
     ApplicationCreate,
@@ -49,6 +52,7 @@ from app.models import (
     PerProfileApplicationUpdate,
     Profile,
     ProfileCreate,
+    ProfileIdList,
     ProfileUpdate,
     TokenResponse,
     UserCreate,
@@ -96,60 +100,6 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/llm.txt", response_class=PlainTextResponse)
-def llm_txt() -> str:
-    return """# JobCRM — agent-facing overview
-
-Base URL: /api/v1 for human JWT APIs; /api/v1/agent for JAA (API key).
-
-Auth:
-- Human: Authorization: Bearer <JWT> from POST /api/v1/auth/login
-- Agent: X-API-Key: <key> with scopes read and write
-
-Core entities: Company, Industry, Profile, Application, PerProfileApplication, Email.
-
-Application workflow statuses: draft → pending_preparation → researching → analysis_ready → preparation_ready → applied → archived.
-
-Agent batch: GET /api/v1/agent/applications/pending?limit=50
-
-Agent writes are limited to Company, Application, PerProfileApplication, Email (and related application fields).
-
-See GET /sitemap.xml for route index.
-"""
-
-
-@app.get("/sitemap.xml", response_class=PlainTextResponse)
-def sitemap_xml() -> str:
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-        "<url><loc>http://localhost:5173/</loc></url>",
-        "<url><loc>http://localhost:5173/applications</loc></url>",
-        "<url><loc>http://localhost:5173/companies</loc></url>",
-        "<url><loc>http://localhost:5173/profiles</loc></url>",
-        "<url><loc>http://localhost:5173/audit</loc></url>",
-        "<url><loc>http://localhost:5173/notifications</loc></url>",
-        "<url><loc>http://localhost:8000/docs</loc></url>",
-        "<url><loc>http://localhost:8000/llm.txt</loc></url>",
-        "<url><loc>http://localhost:8000/mcp-guidance.md</loc></url>",
-        "</urlset>",
-    ]
-    return "\n".join(lines)
-
-
-@app.get("/mcp-guidance.md", response_class=PlainTextResponse)
-def mcp_guidance() -> str:
-    return """# MCP / agent guidance
-
-1. Authenticate using `X-API-Key` for `/api/v1/agent/*`.
-2. Poll `GET /api/v1/agent/applications/pending` for work.
-3. Enrich companies via `PUT /api/v1/agent/companies/{id}`.
-4. Advance applications with validated status transitions via `PUT /api/v1/agent/applications/{id}`.
-5. Create per-profile rows with `POST /api/v1/agent/per-profile-applications` and emails with `POST /api/v1/agent/emails`.
-6. Read `llm.txt` for a concise capability summary.
-"""
-
-
 @app.post("/api/v1/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, repo: BaseRepository = Depends(get_repository)) -> UserPublic:
     try:
@@ -174,12 +124,29 @@ def login(payload: UserLogin, repo: BaseRepository = Depends(get_repository)) ->
     return TokenResponse(access_token=create_access_token(user.id))
 
 
+@app.get("/api/v1/auth/me", response_model=UserPublic)
+def auth_me(user: UserInDB = Depends(get_current_user)) -> UserPublic:
+    return UserPublic(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        admin=user.admin,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
 @app.get("/api/v1/metrics/dashboard", response_model=DashboardMetrics)
 def dashboard_metrics(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> DashboardMetrics:
-    apps = repo.list_applications(0, 10_000, None)
+    apps = repo.list_applications(
+        skip=0,
+        limit=10_000,
+        status=None,
+        exclude_status=ApplicationStatus.archived,
+    )
     pending = sum(1 for a in apps if a.status == ApplicationStatus.pending_preparation)
     ready = sum(1 for a in apps if a.status == ApplicationStatus.preparation_ready)
     actions = sum(
@@ -476,6 +443,7 @@ def list_applications(
     skip: int = 0,
     limit: int = 50,
     status_filter: ApplicationStatus | None = None,
+    exclude_status: ApplicationStatus | None = None,
     company_id: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
@@ -491,6 +459,7 @@ def list_applications(
         applied=applied,
         email_sent=email_sent,
         sort=sort,
+        exclude_status=exclude_status,
     )
 
 
@@ -848,9 +817,22 @@ def list_audit(
 # --- Agent routes ---
 
 
+@app.get("/api/v1/agent/health", response_model=AgentHealthResponse)
+def agent_health(
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> AgentHealthResponse:
+    require_agent_scope(agent, "read")
+    try:
+        repo.list_companies(0, 1, None)
+    except Exception:
+        return AgentHealthResponse(database="error")
+    return AgentHealthResponse(database="ok")
+
+
 @app.get("/api/v1/agent/applications/pending", response_model=list[Application])
 def agent_list_pending(
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=5, ge=1, le=5),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Application]:
@@ -867,6 +849,44 @@ def agent_list_companies(
 ) -> list[Company]:
     require_agent_scope(agent, "read")
     return repo.list_companies(skip=skip, limit=limit, search=None)
+
+
+@app.get("/api/v1/agent/companies/unindexed", response_model=list[Company])
+def agent_list_unindexed_companies(
+    limit: int = Query(default=5, ge=1, le=5),
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Company]:
+    require_agent_scope(agent, "read")
+    return repo.list_companies_unindexed(limit)
+
+
+@app.patch("/api/v1/agent/companies/bulk", response_model=list[Company])
+def agent_bulk_update_companies(
+    body: AgentCompaniesBulkUpdateRequest,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Company]:
+    require_agent_scope(agent, "write")
+    updated: list[Company] = []
+    for item in body.updates:
+        company = repo.update_company(item.company_id, item.payload)
+        if not company:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Company not found: {item.company_id}",
+            )
+        _audit(
+            repo,
+            actor_type=ActorType.agent,
+            actor_id=agent.key_id,
+            action="bulk_update",
+            entity_type="company",
+            entity_id=item.company_id,
+            metadata={"fields": list(item.payload.model_dump(exclude_none=True).keys())},
+        )
+        updated.append(company)
+    return updated
 
 
 @app.put("/api/v1/agent/companies/{company_id}", response_model=Company)
@@ -891,6 +911,30 @@ def agent_update_company(
     return company
 
 
+@app.get("/api/v1/agent/profiles/ids", response_model=ProfileIdList)
+def agent_list_profile_ids(
+    skip: int = 0,
+    limit: int = Query(default=200, ge=1, le=500),
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> ProfileIdList:
+    require_agent_scope(agent, "read")
+    return ProfileIdList(profile_ids=repo.list_profile_ids(skip, limit))
+
+
+@app.get("/api/v1/agent/profiles/{profile_id}", response_model=Profile)
+def agent_get_profile(
+    profile_id: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Profile:
+    require_agent_scope(agent, "read")
+    profile = repo.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    return profile
+
+
 @app.get("/api/v1/agent/profiles", response_model=list[Profile])
 def agent_list_profiles(
     skip: int = 0,
@@ -906,11 +950,26 @@ def agent_list_profiles(
 def agent_list_applications(
     skip: int = 0,
     limit: int = 200,
+    status_filter: ApplicationStatus | None = None,
+    exclude_status: ApplicationStatus | None = None,
+    company_id: str | None = None,
+    applied: bool | None = None,
+    email_sent: bool | None = None,
+    sort: str = "created_at_desc",
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ApplicationListItem]:
     require_agent_scope(agent, "read")
-    return repo.list_applications(skip, limit, None)
+    return repo.list_applications(
+        skip=skip,
+        limit=limit,
+        status=status_filter,
+        company_id=company_id,
+        applied=applied,
+        email_sent=email_sent,
+        sort=sort,
+        exclude_status=exclude_status,
+    )
 
 
 @app.put("/api/v1/agent/applications/{application_id}", response_model=Application)
@@ -1016,6 +1075,37 @@ def agent_create_email(
         entity_id=email.id,
     )
     return email
+
+
+@app.post(
+    "/api/v1/agent/notifications",
+    response_model=UserNotification,
+    status_code=status.HTTP_201_CREATED,
+)
+def agent_create_notification(
+    payload: AgentNotificationCreate,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> UserNotification:
+    require_agent_scope(agent, "write")
+    if not repo.get_user(payload.user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    note = repo.create_notification(
+        user_id=payload.user_id,
+        kind=payload.kind,
+        title=payload.title,
+        body=payload.body,
+        link=payload.link,
+    )
+    _audit(
+        repo,
+        actor_type=ActorType.agent,
+        actor_id=agent.key_id,
+        action="create",
+        entity_type="notification",
+        entity_id=note.id,
+    )
+    return note
 
 
 @app.get("/api/v1/agent/industries", response_model=list[Industry])

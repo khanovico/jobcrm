@@ -25,7 +25,9 @@ Failing tests only due to OS/deps you can’t fix → may bypass if change is cl
 
 - Branch / PR target from task.
 - Assets via URL → save under `.tmp/` (untracked).
-- Execution mode → e.g. Main: `.cursor/workflows/main-execution.md`
+- Execution mode → 
+  Main: `.cursor/workflows/main-execution.md`
+- General Execution Rule: Plan first, Plan -> SubPlan -> Todos -> Step by Step
 
 ## Memory
 

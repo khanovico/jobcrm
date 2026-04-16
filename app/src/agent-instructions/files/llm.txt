@@ -1,0 +1,38 @@
+# JobCRM — JAA entry point
+
+Read these from the **web app origin** (same host/port as the UI in dev), not the API port unless you proxy them together.
+
+| Resource | Path | Purpose |
+|----------|------|---------|
+| Model architecture | GET /model-architecture.md | Entities, relationships, workflows, `indexed`, archive behavior |
+| API contracts | GET /api-contracts.md | JAA routes: query params, JSON request/response shapes |
+| MCP hints | GET /mcp-guidance.md | Polling and enrichment flow |
+| Machine sitemap | GET /sitemap.xml | App + API doc URLs |
+
+**Authoritative JSON schemas**: OpenAPI at `{API_ORIGIN}/docs` (e.g. http://localhost:8000/docs). Use `api-contracts.md` for a single JAA-oriented narrative; use `/docs` for exact field lists and enums.
+
+**Auth**
+
+- Human UI/API: `Authorization: Bearer <JWT>` from `POST /api/v1/auth/login`
+- Agent: `X-API-Key: <key>` on `/api/v1/agent/*`
+
+**Base paths**
+
+- API: `/api/v1/...`
+- Agent: `/api/v1/agent/...`
+
+**Quick JAA route list** (details + payloads → `api-contracts.md`)
+
+- GET /api/v1/agent/health
+- GET /api/v1/agent/applications/pending — pending_preparation, max 5 FIFO
+- GET /api/v1/agent/applications — filters: `status_filter`, `exclude_status`, `email_sent`, `company_id`, …
+- PUT /api/v1/agent/applications/{id} — status transitions; optional `archive_reason` when `status` is `archived`
+- GET /api/v1/agent/companies/unindexed — companies with `indexed=false`, max 5, oldest first
+- PUT /api/v1/agent/companies/{id} — PATCH bulk: /api/v1/agent/companies/bulk
+- GET /api/v1/agent/profiles/ids — GET /api/v1/agent/profiles/{id} — GET /api/v1/agent/profiles
+- POST/PUT /api/v1/agent/per-profile-applications
+- POST /api/v1/agent/emails
+- POST /api/v1/agent/notifications
+- GET /api/v1/agent/industries
+
+Agent writes are scoped to Company, Application, PerProfileApplication, Email, Notifications (see server policies).

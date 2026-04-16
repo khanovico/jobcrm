@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { NewApplicationModal } from "../components/NewApplicationModal";
 import { Modal } from "../components/Modal";
 import { api } from "../api";
 import { Company } from "../types";
@@ -12,6 +13,8 @@ export const CompaniesPage = () => {
   const [website, setWebsite] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [applicationOpen, setApplicationOpen] = useState(false);
+  const [applyCompanyId, setApplyCompanyId] = useState<string | null>(null);
 
   const load = async () => setItems(await api.listCompanies());
   useEffect(() => {
@@ -64,7 +67,7 @@ export const CompaniesPage = () => {
                 <th>Name</th>
                 <th>Website</th>
                 <th className="whitespace-nowrap">Updated</th>
-                <th className="w-24 text-right">Actions</th>
+                <th className="min-w-[140px] text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -82,18 +85,32 @@ export const CompaniesPage = () => {
                     {new Date(company.updated_at).toLocaleString()}
                   </td>
                   <td className="text-right">
-                    <button
-                      type="button"
-                      className="btn btn-xs btn-error btn-outline"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!window.confirm(`Delete “${company.name}”?`)) return;
-                        await api.deleteCompany(company.id);
-                        await load();
-                      }}
-                    >
-                      Delete
-                    </button>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-primary btn-outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setError(null);
+                          setApplyCompanyId(company.id);
+                          setApplicationOpen(true);
+                        }}
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-error btn-outline"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`Delete “${company.name}”?`)) return;
+                          await api.deleteCompany(company.id);
+                          await load();
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -145,6 +162,23 @@ export const CompaniesPage = () => {
           </div>
         </form>
       </Modal>
+
+      <NewApplicationModal
+        open={applicationOpen}
+        onClose={() => {
+          setApplicationOpen(false);
+          setApplyCompanyId(null);
+        }}
+        companies={items}
+        editing={null}
+        initialCompanyId={applyCompanyId}
+        onSuccess={async () => {
+          await load();
+          setApplicationOpen(false);
+          setApplyCompanyId(null);
+          navigate("/applications");
+        }}
+      />
     </div>
   );
 };

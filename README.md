@@ -45,7 +45,7 @@ docker compose up --build
 - Backend API: `http://localhost:8000`
 - MongoDB: `localhost:27017` (mapped from the container)
 
-Images copy your source at **build** time. After you change Python or TypeScript, run **`docker compose up --build`** again (or `docker compose build` then `up`) so the image includes the new files.
+Images copy your source at **build** time. After you change Python or TypeScript, run `**docker compose up --build`** again (or `docker compose build` then `up`) so the image includes the new files.
 
 ### 2) Mongo only (Docker) + backend and frontend on your machine
 
@@ -106,27 +106,22 @@ pip install -r crm/requirements.txt
 - Per-profile + emails: `/api/v1/applications/{id}/per-profile-applications`, `/api/v1/per-profile-applications/{id}/emails`, `POST /api/v1/emails/{id}/mark-sent`
 - JAA (API key header `X-API-Key`): `/api/v1/agent/applications/pending`, `/api/v1/agent/...` (read + scoped write)
 - `POST /api/v1/admin/agent-keys` (admin JWT) — returns one-time `raw_key`
-- Static: `GET /llm.txt`, `GET /sitemap.xml`, `GET /mcp-guidance.md`
+- Agent-facing docs (served by the **web app**, not the API): `GET /llm.txt`, `GET /sitemap.xml`, `GET /mcp-guidance.md` on the Vite app origin (see `app/src/agent-instructions/`)
 
 ## Testing
 
 - Backend (from `crm/` with venv active):
-
   ```bash
   cd crm
   pytest tests/test_application_rules.py -q
   pytest tests/test_api.py -q
   ```
-
 - Frontend:
-
   ```bash
   cd app
   npm run test
   ```
-
 - E2E (Playwright; starts API with `USE_MEMORY_REPOSITORY=true` and Vite — first run may download browsers):
-
   ```bash
   cd app
   npx playwright install chromium

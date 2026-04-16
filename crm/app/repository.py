@@ -74,6 +74,10 @@ class BaseRepository:
     def list_companies(self, skip: int, limit: int, search: str | None) -> list[Company]:
         raise NotImplementedError
 
+    def list_companies_unindexed(self, limit: int) -> list[Company]:
+        """Companies with indexed=False, oldest created first (FIFO)."""
+        raise NotImplementedError
+
     def create_company(self, payload: CompanyCreate) -> Company:
         raise NotImplementedError
 
@@ -87,6 +91,9 @@ class BaseRepository:
         raise NotImplementedError
 
     def list_profiles(self, skip: int, limit: int, search: str | None) -> list[Profile]:
+        raise NotImplementedError
+
+    def list_profile_ids(self, skip: int, limit: int) -> list[str]:
         raise NotImplementedError
 
     def create_profile(self, payload: ProfileCreate) -> Profile:
@@ -110,6 +117,7 @@ class BaseRepository:
         applied: bool | None = None,
         email_sent: bool | None = None,
         sort: str = "created_at_desc",
+        exclude_status: ApplicationStatus | None = None,
     ) -> list[ApplicationListItem]:
         raise NotImplementedError
 
@@ -318,6 +326,11 @@ class InMemoryRepository(BaseRepository):
         values.sort(key=lambda c: c.name.lower())
         return values[skip : skip + limit]
 
+    def list_companies_unindexed(self, limit: int) -> list[Company]:
+        values = [c for c in self.companies.values() if not c.indexed]
+        values.sort(key=lambda c: c.created_at)
+        return values[:limit]
+
     def create_company(self, payload: CompanyCreate) -> Company:
         now = utcnow()
         company = Company(id=self._new_id(), created_at=now, updated_at=now, **_as_dict(payload))
@@ -347,6 +360,10 @@ class InMemoryRepository(BaseRepository):
             values = [p for p in values if needle in p.name.lower()]
         values.sort(key=lambda p: p.name.lower())
         return values[skip : skip + limit]
+
+    def list_profile_ids(self, skip: int, limit: int) -> list[str]:
+        values = sorted(self.profiles.values(), key=lambda p: p.created_at)
+        return [p.id for p in values[skip : skip + limit]]
 
     def create_profile(self, payload: ProfileCreate) -> Profile:
         now = utcnow()
@@ -393,10 +410,13 @@ class InMemoryRepository(BaseRepository):
         applied: bool | None = None,
         email_sent: bool | None = None,
         sort: str = "created_at_desc",
+        exclude_status: ApplicationStatus | None = None,
     ) -> list[ApplicationListItem]:
         values = list(self.applications.values())
         if status:
             values = [a for a in values if a.status == status]
+        if exclude_status:
+            values = [a for a in values if a.status != exclude_status]
         if company_id:
             values = [a for a in values if a.company_id == company_id]
         if applied is not None:
@@ -432,6 +452,7 @@ class InMemoryRepository(BaseRepository):
             applied_at=None,
             email_sent=False,
             email_sent_at=None,
+            archive_reason=None,
             created_by_user_id=created_by_user_id,
             **_as_dict(payload),
         )

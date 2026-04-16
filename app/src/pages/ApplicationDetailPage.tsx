@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { api } from "../api";
 import { Application, Company, Email, PerProfileApplication, Profile } from "../types";
 
@@ -12,6 +13,7 @@ export const ApplicationDetailPage = () => {
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [emailsByPpa, setEmailsByPpa] = useState<Record<string, Email[]>>({});
   const [error, setError] = useState<string | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const load = async () => {
     if (!applicationId) return;
@@ -63,6 +65,11 @@ export const ApplicationDetailPage = () => {
             <h2 className="text-xl font-semibold">Application</h2>
             <p className="text-sm opacity-80">Company: {company?.name ?? application.company_id}</p>
             <p className="text-sm">Status: {application.status}</p>
+            {application.status === "archived" && application.archive_reason && (
+              <p className="text-sm text-warning">
+                <span className="font-medium">Why archived:</span> {application.archive_reason}
+              </p>
+            )}
             <p className="text-sm">Applied: {application.applied_at ?? "—"}</p>
             <p className="text-sm">Email sent (tracker): {application.email_sent_at ?? "—"}</p>
             {application.job_post?.job_link && (
@@ -75,28 +82,33 @@ export const ApplicationDetailPage = () => {
                 Job link
               </a>
             )}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="btn btn-success btn-sm"
-                onClick={async () => {
-                  await api.markApplied(application.id, true);
-                  await load();
-                }}
-              >
-                Mark applied
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline btn-sm"
-                onClick={async () => {
-                  await api.markApplicationEmailSent(application.id, true);
-                  await load();
-                }}
-              >
-                Mark email sent
-              </button>
-            </div>
+            {application.status !== "archived" && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn btn-success btn-sm"
+                  onClick={async () => {
+                    await api.markApplied(application.id, true);
+                    await load();
+                  }}
+                >
+                  Mark applied
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={async () => {
+                    await api.markApplicationEmailSent(application.id, true);
+                    await load();
+                  }}
+                >
+                  Mark email sent
+                </button>
+                <button type="button" className="btn btn-warning btn-outline btn-sm" onClick={() => setArchiveOpen(true)}>
+                  Archive
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="card bg-base-100 p-4 shadow">
@@ -156,6 +168,14 @@ export const ApplicationDetailPage = () => {
               {ppas.length === 0 && <p className="text-sm opacity-70">No per-profile rows yet.</p>}
             </div>
           </div>
+
+          <ArchiveApplicationModal
+            open={archiveOpen}
+            onClose={() => setArchiveOpen(false)}
+            applicationId={application.id}
+            companyLabel={company?.name ?? application.company_id}
+            onArchived={load}
+          />
         </>
       )}
     </div>
