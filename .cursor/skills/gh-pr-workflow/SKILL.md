@@ -5,6 +5,33 @@ description: Uses GitHub CLI (gh) to create, update, review, and merge pull requ
 
 # GitHub CLI PR Workflow
 
+## SSH agent (do this first when using SSH remotes)
+
+If `origin` uses **SSH** (`git@github.com:...`), Git and `gh` need your key loaded. **Enable the agent and add the key before** `git fetch`, `git push`, or `gh` operations that hit GitHub.
+
+Default key path for this workflow: **`~/khan_key`**. Change the path if your key lives elsewhere.
+
+```bash
+# Start agent in the current shell (if not already running)
+eval "$(ssh-agent -s)"
+
+# Add the GitHub key (enter passphrase if the key has one)
+ssh-add ~/khan_key
+
+# Confirm the key is loaded
+ssh-add -l
+```
+
+Optional sanity check against GitHub:
+
+```bash
+ssh -T git@github.com
+```
+
+You should see a success or “Hi username!” message. If you get **Permission denied (publickey)** or **Could not read from remote**, the agent is not holding the right key—re-run `ssh-add` and ensure `git remote -v` matches how you authenticate (SSH vs HTTPS).
+
+---
+
 ## Initial setup (gh)
 
 1. **Install** the GitHub CLI (pick one that matches the OS):
@@ -32,6 +59,7 @@ description: Uses GitHub CLI (gh) to create, update, review, and merge pull requ
 
 ## Prerequisites (ongoing)
 
+- **SSH**: if using an SSH remote, **SSH agent is running** and **`~/khan_key` is added** (`ssh-add -l` shows it)—see the **SSH agent** section at the top of this skill.
 - `gh` installed and authenticated (`gh auth status` succeeds).
 - Remote `origin` points at GitHub; branch pushed before `gh pr create` unless using web flow.
 - **Branch is up to date with `main`** before you rely on CI or request review (see below).
@@ -68,6 +96,8 @@ description: Uses GitHub CLI (gh) to create, update, review, and merge pull requ
    ```
 
 ## Create or open a PR
+
+Use an SSH remote? Confirm **`ssh-add -l`** lists `~/khan_key` before pushing.
 
 ```bash
 # From current branch (pushes if needed interactively; or push first)
