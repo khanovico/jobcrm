@@ -1,5 +1,13 @@
 # JobCRM — JAA entry point
 
+**Required Env Vars**
+JOBCRM_API_ORIGIN: Server url
+JOBCRM_X_API_KEY: x-api-key for agent access
+
+In case any of these two is missing, request human for further action.
+
+If all is available, read below instructions:
+
 Read these from the **web app origin** (same host/port as the UI in dev), not the API port unless you proxy them together.
 
 | Resource | Path | Purpose |
@@ -9,30 +17,33 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 | MCP hints | GET /mcp-guidance.md | Polling and enrichment flow |
 | Machine sitemap | GET /sitemap.xml | App + API doc URLs |
 
-**Authoritative JSON schemas**: OpenAPI at `{API_ORIGIN}/docs` (e.g. http://localhost:8000/docs). Use `api-contracts.md` for a single JAA-oriented narrative; use `/docs` for exact field lists and enums.
+**Authoritative JSON schemas**: OpenAPI at `{JOBCRM_API_ORIGIN}/docs` (e.g. http://localhost:8000/docs). Use `api-contracts.md` for a single JAA-oriented narrative; use `/docs` for exact field lists and enums.
 
 **Auth**
 
-- Human UI/API: `Authorization: Bearer <JWT>` from `POST /api/v1/auth/login`
-- Agent: `X-API-Key: <key>` on `/api/v1/agent/*`
+- Agent: `X-API-Key: {JOBCRM_X_API_KEY}` on `/api/v1/agent/*`
 
 **Base paths**
 
 - API: `/api/v1/...`
 - Agent: `/api/v1/agent/...`
 
-**Quick JAA route list** (details + payloads → `api-contracts.md`)
+**Quick JAA route list** (lookup level; full contracts in `api-contracts.md`)
 
-- GET /api/v1/agent/health
-- GET /api/v1/agent/applications/pending — pending_preparation, max 5 FIFO
-- GET /api/v1/agent/applications — filters: `status_filter`, `exclude_status`, `email_sent`, `company_id`, …
-- PUT /api/v1/agent/applications/{id} — status transitions; optional `archive_reason` when `status` is `archived`
-- GET /api/v1/agent/companies/unindexed — companies with `indexed=false`, max 5, oldest first
-- PUT /api/v1/agent/companies/{id} — PATCH bulk: /api/v1/agent/companies/bulk
-- GET /api/v1/agent/profiles/ids — GET /api/v1/agent/profiles/{id} — GET /api/v1/agent/profiles
-- POST/PUT /api/v1/agent/per-profile-applications
-- POST /api/v1/agent/emails
-- POST /api/v1/agent/notifications
-- GET /api/v1/agent/industries
+- GET `/api/v1/agent/health` — liveness + lightweight DB connectivity check (`status`, `api`, `database`).
+- GET `/api/v1/agent/applications/pending` — pull next preparation queue (`pending_preparation` only), FIFO oldest first, max 5.
+- GET `/api/v1/agent/applications` — list/search applications with filters (`status_filter`, `exclude_status`, `email_sent`, `company_id`, `applied`, pagination/sort).
+- PUT `/api/v1/agent/applications/{id}` — update application fields/status; use for lifecycle moves (`researching`, `preparation_ready`, `archived`, etc.); include optional `archive_reason` when archiving.
+- GET `/api/v1/agent/companies/unindexed` — fetch enrichment backlog (`indexed=false`), oldest-first FIFO, max 5.
+- PUT `/api/v1/agent/companies/{id}` — update one company profile/enrichment fields (`overview`, `analysis_links`, `indexed`, etc.).
+- PATCH `/api/v1/agent/companies/bulk` — batch company updates in one request (`updates[]` of `{company_id, payload}`).
+- GET `/api/v1/agent/profiles/ids` — lightweight profile id scan for planning/matching.
+- GET `/api/v1/agent/profiles/{id}` — full profile detail (bio, niche, resume/context) for tailoring.
+- GET `/api/v1/agent/profiles` — paginated profile listing when bulk context is needed.
+- POST `/api/v1/agent/per-profile-applications` — create a PPA record for a chosen profile under an application.
+- PUT `/api/v1/agent/per-profile-applications/{id}` — update PPA analysis outputs (`fit_score`, `analysis`, `tailored_resume_link`, `cold_email_plan`).
+- POST `/api/v1/agent/emails` — create tracked outbound drafts/follow-ups tied to a PPA.
+- POST `/api/v1/agent/notifications` — create user-facing notification events (`user_id`, `kind`, `title`, `body`, optional `link`).
+- GET `/api/v1/agent/industries` — read industry taxonomy to standardize company tagging/context.
 
 Agent writes are scoped to Company, Application, PerProfileApplication, Email, Notifications (see server policies).
