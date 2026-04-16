@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { api } from "../api";
@@ -7,6 +7,8 @@ import { Application, Company, Email, PerProfileApplication, Profile } from "../
 
 export const ApplicationDetailPage = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
+  const [searchParams] = useSearchParams();
+  const focusEmailId = searchParams.get("emailId");
   const [application, setApplication] = useState<Application | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
   const [ppas, setPpas] = useState<PerProfileApplication[]>([]);
@@ -44,6 +46,14 @@ export const ApplicationDetailPage = () => {
   useEffect(() => {
     void load();
   }, [applicationId]);
+
+  useEffect(() => {
+    if (!focusEmailId) return;
+    const el = document.getElementById(`email-${focusEmailId}`);
+    if (el) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [focusEmailId, emailsByPpa, applicationId]);
 
   if (!applicationId) return <div>Missing id</div>;
 
@@ -139,7 +149,14 @@ export const ApplicationDetailPage = () => {
                     <h4 className="text-sm font-semibold">Emails</h4>
                     <ul className="space-y-2">
                       {(emailsByPpa[ppa.id] ?? []).map((em) => (
-                        <li key={em.id} className="rounded bg-base-200 p-2 text-sm">
+                        <li
+                          key={em.id}
+                          id={`email-${em.id}`}
+                          className={[
+                            "rounded bg-base-200 p-2 text-sm",
+                            focusEmailId === em.id ? "ring-2 ring-primary ring-offset-2 ring-offset-base-200" : ""
+                          ].join(" ")}
+                        >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="badge badge-outline">{em.kind}</span>
                             <span className="text-xs opacity-70">

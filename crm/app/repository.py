@@ -36,6 +36,9 @@ from app.models import (
     Profile,
     ProfileCreate,
     ProfileUpdate,
+    NotificationKind,
+    NotificationPayload,
+    NotificationSeverity,
     UserCreate,
     UserInDB,
     UserNotification,
@@ -178,10 +181,11 @@ class BaseRepository:
         self,
         *,
         user_id: str,
-        kind: str,
-        title: str,
-        body: str,
-        link: str | None = None,
+        notification: NotificationKind,
+        notification_type: NotificationSeverity,
+        payload: NotificationPayload,
+        timestamp: datetime | None = None,
+        check: bool = False,
     ) -> UserNotification:
         raise NotImplementedError
 
@@ -618,21 +622,24 @@ class InMemoryRepository(BaseRepository):
         self,
         *,
         user_id: str,
-        kind: str,
-        title: str,
-        body: str,
-        link: str | None = None,
+        notification: NotificationKind,
+        notification_type: NotificationSeverity,
+        payload: NotificationPayload,
+        timestamp: datetime | None = None,
+        check: bool = False,
     ) -> UserNotification:
-        now = utcnow()
+        ts = timestamp or utcnow()
         note = UserNotification(
             id=self._new_id(),
             user_id=user_id,
-            kind=kind,
-            title=title,
-            body=body,
-            link=link,
+            notification=notification,
+            notification_type=notification_type,
+            timestamp=ts,
+            check=check,
+            payload=payload,
             read_at=None,
-            created_at=now,
+            created_at=ts,
+            link=None,
         )
         self.notifications[note.id] = note
         return note
@@ -641,7 +648,7 @@ class InMemoryRepository(BaseRepository):
         rows = [n for n in self.notifications.values() if n.user_id == user_id]
         if q.unread_only:
             rows = [n for n in rows if n.read_at is None]
-        rows.sort(key=lambda n: n.created_at, reverse=True)
+        rows.sort(key=lambda n: n.timestamp, reverse=True)
         return rows[q.skip : q.skip + q.limit]
 
     def mark_notification_read(self, user_id: str, notification_id: str) -> UserNotification | None:
@@ -946,13 +953,19 @@ class MongoRepository(InMemoryRepository):
         self,
         *,
         user_id: str,
-        kind: str,
-        title: str,
-        body: str,
-        link: str | None = None,
+        notification: NotificationKind,
+        notification_type: NotificationSeverity,
+        payload: NotificationPayload,
+        timestamp: datetime | None = None,
+        check: bool = False,
     ) -> UserNotification:
         note = super().create_notification(
-            user_id=user_id, kind=kind, title=title, body=body, link=link
+            user_id=user_id,
+            notification=notification,
+            notification_type=notification_type,
+            payload=payload,
+            timestamp=timestamp,
+            check=check,
         )
         self._sync()
         return note

@@ -173,15 +173,25 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type NotificationKind =
+  | "APPLICATION_UPDATE"
+  | "COMPANY_UPDATE"
+  | "SYSTEM_ERROR"
+  | "FOLLOW_UP_DRAFT";
+
+export type NotificationSeverity = "SUCCESS" | "FAILED" | "WARN";
+
 export type UserNotification = {
   id: string;
   user_id: string;
-  kind: string;
-  title: string;
-  body: string;
-  link?: string | null;
+  notification: NotificationKind;
+  type: NotificationSeverity;
+  timestamp: string;
+  check: boolean;
+  payload: { id: string | null; message: string };
   read_at?: string | null;
   created_at: string;
+  link?: string | null;
 };
 
 export type GlobalSearchResult = {

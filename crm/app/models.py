@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 def utcnow() -> datetime:
@@ -400,15 +400,79 @@ class AuditEvent(BaseModel):
     created_at: datetime
 
 
+class NotificationKind(str, Enum):
+    APPLICATION_UPDATE = "APPLICATION_UPDATE"
+    COMPANY_UPDATE = "COMPANY_UPDATE"
+    SYSTEM_ERROR = "SYSTEM_ERROR"
+    FOLLOW_UP_DRAFT = "FOLLOW_UP_DRAFT"
+
+
+class NotificationSeverity(str, Enum):
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+    WARN = "WARN"
+
+
+class NotificationPayload(BaseModel):
+    """Entity id when applicable; optional for some SYSTEM_ERROR cases."""
+
+    id: str | None = None
+    message: str = Field(min_length=1)
+
+
 class UserNotification(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     user_id: str
-    kind: str
-    title: str
-    body: str
-    link: str | None = None
+    notification: NotificationKind
+    notification_type: NotificationSeverity = Field(alias="type")
+    timestamp: datetime
+    check: bool = False
+    payload: NotificationPayload
     read_at: datetime | None = None
     created_at: datetime
+    link: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_notification(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "notification" in data and "payload" in data:
+            return data
+        if "kind" not in data:
+            return data
+        link = data.get("link") or ""
+        import re
+
+        m = re.search(r"/applications/([^/?#]+)", link)
+        app_id = m.group(1) if m else None
+        kind = str(data.get("kind", ""))
+        notif = (
+            NotificationKind.APPLICATION_UPDATE.value
+            if kind == "preparation_ready"
+            else NotificationKind.SYSTEM_ERROR.value
+        )
+        title = data.get("title") or ""
+        body = data.get("body") or ""
+        message = f"{title}\n{body}".strip() if title and body else (title or body or "Notification")
+        ts = data.get("timestamp") or data.get("created_at")
+        if ts is None:
+            ts = utcnow()
+        pid: str | None = app_id if notif == NotificationKind.APPLICATION_UPDATE.value else None
+        return {
+            "id": data["id"],
+            "user_id": data["user_id"],
+            "notification": notif,
+            "type": NotificationSeverity.SUCCESS.value,
+            "timestamp": ts,
+            "check": False,
+            "payload": {"id": pid, "message": message},
+            "read_at": data.get("read_at"),
+            "created_at": data.get("created_at", ts),
+            "link": data.get("link"),
+        }
 
 
 class AgentApiKeyCreate(BaseModel):
@@ -462,11 +526,27 @@ class AgentCompaniesBulkUpdateRequest(BaseModel):
 
 
 class AgentNotificationCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     user_id: str = Field(min_length=1)
-    kind: str = Field(min_length=1)
-    title: str = Field(min_length=1)
-    body: str = Field(min_length=1)
-    link: str | None = None
+    notification: NotificationKind
+    notification_type: NotificationSeverity = Field(alias="type")
+    timestamp: datetime | None = None
+    check: bool = False
+    payload: NotificationPayload
+
+    @model_validator(mode="after")
+    def _require_payload_id_when_needed(self) -> AgentNotificationCreate:
+        nid = self.notification
+        pid = self.payload.id
+        if nid in (
+            NotificationKind.APPLICATION_UPDATE,
+            NotificationKind.COMPANY_UPDATE,
+            NotificationKind.FOLLOW_UP_DRAFT,
+        ):
+            if not pid or not str(pid).strip():
+                raise ValueError(f"payload.id is required for {nid.value}")
+        return self
 
 
 class GlobalSearchResult(BaseModel):
