@@ -282,3 +282,30 @@ def test_agent_list_applications_filters() -> None:
     rows = r.json()
     assert len(rows) == 1
     assert rows[0]["email_sent"] is True
+
+
+def test_agent_archive_application_with_reason() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-arch"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    company = client.post("/api/v1/companies", json={"name": "Z"}, headers=h).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "pending_preparation"},
+        headers=h,
+    ).json()
+
+    upd = client.put(
+        f"/api/v1/agent/applications/{application['id']}",
+        json={"status": "archived", "archive_reason": "Role filled"},
+        headers=ak,
+    )
+    assert upd.status_code == 200
+    assert upd.json()["status"] == "archived"
+    assert upd.json()["archive_reason"] == "Role filled"

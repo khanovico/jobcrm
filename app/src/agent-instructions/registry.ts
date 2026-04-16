@@ -1,5 +1,7 @@
-import mcpGuidance from "./files/mcp-guidance.md?raw";
+import apiContracts from "./files/api-contracts.md?raw";
 import llmTxt from "./files/llm.txt?raw";
+import mcpGuidance from "./files/mcp-guidance.md?raw";
+import modelArchitecture from "./files/model-architecture.md?raw";
 
 export type AgentInstructionKind = "text" | "markdown";
 
@@ -26,6 +28,20 @@ export const AGENT_INSTRUCTION_FILES: readonly AgentInstructionFile[] = [
     kind: "markdown",
     title: "MCP / agent guidance",
     body: mcpGuidance,
+  },
+  {
+    id: "model-architecture",
+    publicPath: "/model-architecture.md",
+    kind: "markdown",
+    title: "CRM model architecture",
+    body: modelArchitecture,
+  },
+  {
+    id: "api-contracts",
+    publicPath: "/api-contracts.md",
+    kind: "markdown",
+    title: "JAA API contracts",
+    body: apiContracts,
   },
 ];
 

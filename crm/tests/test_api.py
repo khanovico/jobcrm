@@ -33,6 +33,44 @@ def _valid_profile_create_payload() -> dict:
     }
 
 
+def test_list_applications_exclude_archived() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    active = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "pending_preparation"},
+        headers=headers,
+    ).json()
+    archived = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "draft"},
+        headers=headers,
+    ).json()
+    client.put(
+        f"/api/v1/applications/{archived['id']}",
+        json={"status": "archived", "archive_reason": "done"},
+        headers=headers,
+    )
+    listed = client.get(
+        "/api/v1/applications",
+        params={"exclude_status": "archived"},
+        headers=headers,
+    ).json()
+    assert len(listed) == 1
+    assert listed[0]["id"] == active["id"]
+    only_arch = client.get(
+        "/api/v1/applications",
+        params={"status_filter": "archived"},
+        headers=headers,
+    ).json()
+    assert len(only_arch) == 1
+    assert only_arch[0]["archive_reason"] == "done"
+
+
 def test_create_application_defaults_to_pending_preparation() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

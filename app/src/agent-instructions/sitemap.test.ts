@@ -8,6 +8,8 @@ describe("buildSitemapXml", () => {
     expect(xml).toContain("<loc>http://localhost:5173/</loc>");
     expect(xml).toContain("<loc>http://localhost:5173/llm.txt</loc>");
     expect(xml).toContain("<loc>http://localhost:5173/mcp-guidance.md</loc>");
+    expect(xml).toContain("<loc>http://localhost:5173/model-architecture.md</loc>");
+    expect(xml).toContain("<loc>http://localhost:5173/api-contracts.md</loc>");
     expect(xml).toContain("<loc>http://localhost:8000/docs</loc>");
     expect(xml).not.toContain("&amp;amp;");
   });

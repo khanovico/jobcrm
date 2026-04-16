@@ -117,6 +117,7 @@ class BaseRepository:
         applied: bool | None = None,
         email_sent: bool | None = None,
         sort: str = "created_at_desc",
+        exclude_status: ApplicationStatus | None = None,
     ) -> list[ApplicationListItem]:
         raise NotImplementedError
 
@@ -409,10 +410,13 @@ class InMemoryRepository(BaseRepository):
         applied: bool | None = None,
         email_sent: bool | None = None,
         sort: str = "created_at_desc",
+        exclude_status: ApplicationStatus | None = None,
     ) -> list[ApplicationListItem]:
         values = list(self.applications.values())
         if status:
             values = [a for a in values if a.status == status]
+        if exclude_status:
+            values = [a for a in values if a.status != exclude_status]
         if company_id:
             values = [a for a in values if a.company_id == company_id]
         if applied is not None:
@@ -448,6 +452,7 @@ class InMemoryRepository(BaseRepository):
             applied_at=None,
             email_sent=False,
             email_sent_at=None,
+            archive_reason=None,
             created_by_user_id=created_by_user_id,
             **_as_dict(payload),
         )

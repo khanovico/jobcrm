@@ -129,7 +129,12 @@ def dashboard_metrics(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> DashboardMetrics:
-    apps = repo.list_applications(0, 10_000, None)
+    apps = repo.list_applications(
+        skip=0,
+        limit=10_000,
+        status=None,
+        exclude_status=ApplicationStatus.archived,
+    )
     pending = sum(1 for a in apps if a.status == ApplicationStatus.pending_preparation)
     ready = sum(1 for a in apps if a.status == ApplicationStatus.preparation_ready)
     actions = sum(
@@ -426,6 +431,7 @@ def list_applications(
     skip: int = 0,
     limit: int = 50,
     status_filter: ApplicationStatus | None = None,
+    exclude_status: ApplicationStatus | None = None,
     company_id: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
@@ -441,6 +447,7 @@ def list_applications(
         applied=applied,
         email_sent=email_sent,
         sort=sort,
+        exclude_status=exclude_status,
     )
 
 
@@ -932,6 +939,7 @@ def agent_list_applications(
     skip: int = 0,
     limit: int = 200,
     status_filter: ApplicationStatus | None = None,
+    exclude_status: ApplicationStatus | None = None,
     company_id: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
@@ -948,6 +956,7 @@ def agent_list_applications(
         applied=applied,
         email_sent=email_sent,
         sort=sort,
+        exclude_status=exclude_status,
     )
 
 

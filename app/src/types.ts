@@ -81,6 +81,8 @@ export type Application = {
   email_sent: boolean;
   email_sent_at?: string | null;
   notes?: string | null;
+  /** Set when status is archived (human or JAA). */
+  archive_reason?: string | null;
   created_by_user_id?: string | null;
   created_at: string;
   updated_at: string;

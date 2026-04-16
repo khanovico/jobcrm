@@ -20,6 +20,8 @@ export function buildSitemapXml(appOrigin: string, apiOrigin: string): string {
     `${app}/notifications`,
     `${app}/llm.txt`,
     `${app}/mcp-guidance.md`,
+    `${app}/model-architecture.md`,
+    `${app}/api-contracts.md`,
     `${api}/docs`,
   ];
 

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
@@ -12,22 +13,38 @@ const PlusIcon = () => (
   </svg>
 );
 
+export type ApplicationListMode = "active" | "archived" | "all";
+
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [listMode, setListMode] = useState<ApplicationListMode>("active");
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ApplicationListItem | null>(null);
 
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
+
   const companyNameById = (id: string) => companies.find((c) => c.id === id)?.name ?? id;
+
+  const listParams = useMemo(() => {
+    const p = new URLSearchParams();
+    if (listMode === "active") {
+      p.set("exclude_status", "archived");
+    } else if (listMode === "archived") {
+      p.set("status_filter", "archived");
+    }
+    return p;
+  }, [listMode]);
 
   const load = async () => {
     setError(null);
     try {
       const [applicationItems, companyItems] = await Promise.all([
-        api.listApplications(),
+        api.listApplications(listParams),
         api.listCompanies()
       ]);
       setItems(applicationItems);
@@ -39,7 +56,7 @@ export const ApplicationsPage = () => {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [listParams]);
 
   const openCreateModal = () => {
     setError(null);
@@ -63,7 +80,25 @@ export const ApplicationsPage = () => {
       <section className="card bg-base-100 p-4 shadow">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xl font-semibold">Applications</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="join join-horizontal border border-base-300">
+              {(
+                [
+                  ["active", "Active"],
+                  ["archived", "Archived"],
+                  ["all", "All"]
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`btn btn-sm join-item ${listMode === value ? "btn-active" : "btn-ghost"}`}
+                  onClick={() => setListMode(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
               Refresh
             </button>
@@ -121,26 +156,43 @@ export const ApplicationsPage = () => {
                       >
                         Edit
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-success"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          await api.markApplied(application.id, true);
-                          await load();
-                        }}
-                      >
-                        Mark Applied
-                      </button>
+                      {application.status !== "archived" && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-success"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await api.markApplied(application.id, true);
+                              await load();
+                            }}
+                          >
+                            Mark Applied
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-warning btn-outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setArchiveTarget(application);
+                              setArchiveOpen(true);
+                            }}
+                          >
+                            Archive
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {items.length === 0 && <p className="p-4 text-sm opacity-70">No applications yet.</p>}
+          {items.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
         </div>
-        <p className="mt-2 text-xs opacity-60">Click a row to open application detail.</p>
+        <p className="mt-2 text-xs opacity-60">
+          Click a row to open application detail. Use <strong>Active</strong> to hide archived, <strong>Archived</strong> to review closed pipelines, <strong>All</strong> for everything.
+        </p>
       </section>
 
       <NewApplicationModal
@@ -149,6 +201,17 @@ export const ApplicationsPage = () => {
         companies={companies}
         editing={editing}
         onSuccess={load}
+      />
+
+      <ArchiveApplicationModal
+        open={archiveOpen && !!archiveTarget}
+        onClose={() => {
+          setArchiveOpen(false);
+          setArchiveTarget(null);
+        }}
+        applicationId={archiveTarget?.id ?? ""}
+        companyLabel={archiveTarget ? companyNameById(archiveTarget.company_id) : ""}
+        onArchived={load}
       />
     </div>
   );

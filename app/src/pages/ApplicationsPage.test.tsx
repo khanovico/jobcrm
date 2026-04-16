@@ -13,6 +13,8 @@ describe("ApplicationsPage", () => {
     vi.unstubAllGlobals();
   });
 
+  const isApplicationsListRequest = (url: string) => url.split("?")[0].endsWith("/applications");
+
   const companyRow = { id: "c1", name: "Acme", created_at: "", updated_at: "" };
   const applicationRow = {
     id: "a1",
@@ -28,7 +30,7 @@ describe("ApplicationsPage", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.endsWith("/applications")) {
+      if (isApplicationsListRequest(url)) {
         return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
       }
       if (url.endsWith("/companies")) {
@@ -55,7 +57,7 @@ describe("ApplicationsPage", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.endsWith("/applications")) {
+      if (isApplicationsListRequest(url)) {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
       if (url.endsWith("/companies")) {
@@ -93,7 +95,7 @@ describe("ApplicationsPage", () => {
       if (url.includes("/applications/") && url.includes("/mark-applied")) {
         return Promise.resolve(new Response(JSON.stringify(appliedPayload), { status: 200 }));
       }
-      if (url.endsWith("/applications")) {
+      if (isApplicationsListRequest(url)) {
         return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
       }
       if (url.endsWith("/companies")) {

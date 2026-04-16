@@ -9,6 +9,14 @@ import { buildSitemapXml } from "./src/agent-instructions/sitemap";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const filesDir = path.resolve(__dirname, "src/agent-instructions/files");
 
+/** URL path → filename under filesDir */
+const STATIC_FILES: Record<string, string> = {
+  "/llm.txt": "llm.txt",
+  "/mcp-guidance.md": "mcp-guidance.md",
+  "/model-architecture.md": "model-architecture.md",
+  "/api-contracts.md": "api-contracts.md",
+};
+
 export type AgentInstructionPluginOptions = {
   appOrigin: string;
   apiOrigin: string;
@@ -18,6 +26,12 @@ function readInstructionFile(name: string): string {
   return fs.readFileSync(path.join(filesDir, name), "utf8");
 }
 
+function contentTypeForPath(urlPath: string): string {
+  if (urlPath.endsWith(".xml")) return "application/xml; charset=utf-8";
+  if (urlPath.endsWith(".md")) return "text/markdown; charset=utf-8";
+  return "text/plain; charset=utf-8";
+}
+
 export function agentInstructionAssetsPlugin(options: AgentInstructionPluginOptions): Plugin {
   return {
     name: "agent-instruction-assets",
@@ -25,35 +39,28 @@ export function agentInstructionAssetsPlugin(options: AgentInstructionPluginOpti
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = req.url?.split("?")[0] ?? "";
-        if (url === "/llm.txt") {
-          res.setHeader("Content-Type", "text/plain; charset=utf-8");
-          res.end(readInstructionFile("llm.txt"));
-          return;
-        }
-        if (url === "/mcp-guidance.md") {
-          res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-          res.end(readInstructionFile("mcp-guidance.md"));
-          return;
-        }
         if (url === "/sitemap.xml") {
           res.setHeader("Content-Type", "application/xml; charset=utf-8");
           res.end(buildSitemapXml(options.appOrigin, options.apiOrigin));
+          return;
+        }
+        const fileName = STATIC_FILES[url];
+        if (fileName) {
+          res.setHeader("Content-Type", contentTypeForPath(url));
+          res.end(readInstructionFile(fileName));
           return;
         }
         next();
       });
     },
     generateBundle() {
-      this.emitFile({
-        type: "asset",
-        fileName: "llm.txt",
-        source: readInstructionFile("llm.txt"),
-      });
-      this.emitFile({
-        type: "asset",
-        fileName: "mcp-guidance.md",
-        source: readInstructionFile("mcp-guidance.md"),
-      });
+      for (const [urlPath, fileName] of Object.entries(STATIC_FILES)) {
+        this.emitFile({
+          type: "asset",
+          fileName: urlPath.replace(/^\//, ""),
+          source: readInstructionFile(fileName),
+        });
+      }
       this.emitFile({
         type: "asset",
         fileName: "sitemap.xml",

@@ -264,6 +264,9 @@ class ApplicationUpdate(BaseModel):
     job_post: JobPost | None = None
     status: ApplicationStatus | None = None
     notes: str | None = None
+    archive_reason: str | None = Field(
+        default=None, description="Optional when setting status to archived (why removed)."
+    )
 
 
 class ApplicationMarkApplied(BaseModel):
@@ -291,6 +294,7 @@ class Application(BaseModel):
     email_sent: bool = False
     email_sent_at: datetime | None = None
     notes: str | None = None
+    archive_reason: str | None = None
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -471,6 +475,7 @@ class ApplicationListQuery(BaseModel):
     skip: int = 0
     limit: int = 50
     status: ApplicationStatus | None = None
+    exclude_status: ApplicationStatus | None = None
     company_id: str | None = None
     applied: bool | None = None
     email_sent: bool | None = None

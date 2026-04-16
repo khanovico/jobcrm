@@ -1,36 +1,38 @@
-# JobCRM — agent-facing overview
+# JobCRM — JAA entry point
 
-API base URL: configure `VITE_API_URL` in the web app (default local: http://localhost:8000).
+Read these from the **web app origin** (same host/port as the UI in dev), not the API port unless you proxy them together.
 
-Auth:
-- Human: Authorization: Bearer <JWT> from POST /api/v1/auth/login
-- Agent: X-API-Key: <key> with scopes read and write
+| Resource | Path | Purpose |
+|----------|------|---------|
+| Model architecture | GET /model-architecture.md | Entities, relationships, workflows, `indexed`, archive behavior |
+| API contracts | GET /api-contracts.md | JAA routes: query params, JSON request/response shapes |
+| MCP hints | GET /mcp-guidance.md | Polling and enrichment flow |
+| Machine sitemap | GET /sitemap.xml | App + API doc URLs |
 
-Core entities: Company, Industry, Profile, Application, PerProfileApplication, Email.
+**Authoritative JSON schemas**: OpenAPI at `{API_ORIGIN}/docs` (e.g. http://localhost:8000/docs). Use `api-contracts.md` for a single JAA-oriented narrative; use `/docs` for exact field lists and enums.
 
-Application workflow statuses: draft → pending_preparation → researching → analysis_ready → preparation_ready → applied → archived.
+**Auth**
 
-New applications default to status pending_preparation.
+- Human UI/API: `Authorization: Bearer <JWT>` from `POST /api/v1/auth/login`
+- Agent: `X-API-Key: <key>` on `/api/v1/agent/*`
 
-Company has `indexed` (bool, default false). Agent ingests unindexed companies via GET /api/v1/agent/companies/unindexed (max 5, oldest created first), then sets indexed true (and other fields) via PUT /api/v1/agent/companies/{id} or PATCH /api/v1/agent/companies/bulk.
+**Base paths**
 
-Agent API (header X-API-Key on all):
-- GET /api/v1/agent/health — liveness; includes a trivial DB read
-- GET /api/v1/agent/applications/pending — pending_preparation applications, max 5, FIFO (oldest first)
-- GET /api/v1/agent/applications — optional query: status_filter, company_id, applied, email_sent, sort
-- GET /api/v1/agent/companies/unindexed?limit=5 — companies with indexed=false, oldest first
-- PUT /api/v1/agent/companies/{id} — update one company (e.g. indexed, overview)
-- PATCH /api/v1/agent/companies/bulk — body { "updates": [ { "company_id", "payload" } ] }
-- GET /api/v1/agent/profiles/ids — profile id list (created_at order)
-- GET /api/v1/agent/profiles/{id} — profile detail
-- GET /api/v1/agent/profiles — list profiles (paginated)
-- PUT /api/v1/agent/applications/{id} — status transitions, etc.
-- POST /api/v1/agent/per-profile-applications — create PPA (tailored resume link, cold_email_plan, …)
-- PUT /api/v1/agent/per-profile-applications/{id}
+- API: `/api/v1/...`
+- Agent: `/api/v1/agent/...`
+
+**Quick JAA route list** (details + payloads → `api-contracts.md`)
+
+- GET /api/v1/agent/health
+- GET /api/v1/agent/applications/pending — pending_preparation, max 5 FIFO
+- GET /api/v1/agent/applications — filters: `status_filter`, `exclude_status`, `email_sent`, `company_id`, …
+- PUT /api/v1/agent/applications/{id} — status transitions; optional `archive_reason` when `status` is `archived`
+- GET /api/v1/agent/companies/unindexed — companies with `indexed=false`, max 5, oldest first
+- PUT /api/v1/agent/companies/{id} — PATCH bulk: /api/v1/agent/companies/bulk
+- GET /api/v1/agent/profiles/ids — GET /api/v1/agent/profiles/{id} — GET /api/v1/agent/profiles
+- POST/PUT /api/v1/agent/per-profile-applications
 - POST /api/v1/agent/emails
-- POST /api/v1/agent/notifications — body includes user_id, kind, title, body, optional link
+- POST /api/v1/agent/notifications
 - GET /api/v1/agent/industries
 
-Agent writes are limited to Company, Application, PerProfileApplication, Email, Notifications (and related fields).
-
-See GET /sitemap.xml on this app origin for a route index.
+Agent writes are scoped to Company, Application, PerProfileApplication, Email, Notifications (see server policies).
