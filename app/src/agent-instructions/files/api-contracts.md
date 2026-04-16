@@ -1,11 +1,11 @@
 # JobCRM — JAA (Job Application Agent) HTTP contracts
 
 **Base URL**: `{API_ORIGIN}/api/v1` — replace `API_ORIGIN` (e.g. `http://localhost:8000`).  
-**Auth**: every route below requires header **`X-API-Key: <raw_key>`** unless noted.  
+**Auth**: every route below requires header `**X-API-Key: <raw_key>`** unless noted.  
 **Content-Type**: `application/json` for bodies.  
-**Errors**: typically **`401`** (missing/invalid key), **`403`** (scope), **`404`** (entity), **`422`** (validation), **`429`** (rate limit). Success bodies match the **response** shapes below.
+**Errors**: typically `**401`** (missing/invalid key), `**403**` (scope), `**404**` (entity), `**422**` (validation), `**429**` (rate limit). Success bodies match the **response** shapes below.
 
-OpenAPI with interactive schemas: **`GET {API_ORIGIN}/docs`**.
+OpenAPI with interactive schemas: `**GET {API_ORIGIN}/docs`**.
 
 ---
 
@@ -33,12 +33,14 @@ OpenAPI with interactive schemas: **`GET {API_ORIGIN}/docs`**.
 
 **Query**
 
-| Param | Type | Default | Max |
-|-------|------|---------|-----|
-| `limit` | int | 5 | 5 |
+
+| Param   | Type | Default | Max |
+| ------- | ---- | ------- | --- |
+| `limit` | int  | 5       | 5   |
+
 
 **Response 200** — JSON array of **Application** objects (see OpenAPI schema).  
-FIFO **`pending_preparation`**, oldest `created_at` first.
+FIFO `**pending_preparation`**, oldest `created_at` first.
 
 ---
 
@@ -46,16 +48,18 @@ FIFO **`pending_preparation`**, oldest `created_at` first.
 
 **Query (all optional)**
 
-| Param | Type | Notes |
-|-------|------|-------|
-| `skip` | int | Pagination |
-| `limit` | int | Max 200 typical |
-| `status_filter` | enum | Same values as `ApplicationStatus` |
-| `exclude_status` | enum | Exclude rows with this status (e.g. `archived` to hide archived) |
-| `company_id` | uuid string | Filter |
-| `applied` | bool | |
-| `email_sent` | bool | |
-| `sort` | string | `created_at_desc` \| `created_at_asc` \| `updated_at_desc` |
+
+| Param            | Type        | Notes                                                            |
+| ---------------- | ----------- | ---------------------------------------------------------------- |
+| `skip`           | int         | Pagination                                                       |
+| `limit`          | int         | Max 200 typical                                                  |
+| `status_filter`  | enum        | Same values as `ApplicationStatus`                               |
+| `exclude_status` | enum        | Exclude rows with this status (e.g. `archived` to hide archived) |
+| `company_id`     | uuid string | Filter                                                           |
+| `applied`        | bool        |                                                                  |
+| `email_sent`     | bool        |                                                                  |
+| `sort`           | string      | `created_at_desc` | `created_at_asc` | `updated_at_desc`         |
+
 
 **Response 200** — JSON array of **ApplicationListItem** (application + `applied_profiles[]`).
 
@@ -92,9 +96,11 @@ FIFO **`pending_preparation`**, oldest `created_at` first.
 
 **Query**
 
-| Param | Type | Default | Max |
-|-------|------|---------|-----|
-| `limit` | int | 5 | 5 |
+
+| Param   | Type | Default | Max |
+| ------- | ---- | ------- | --- |
+| `limit` | int  | 5       | 5   |
+
 
 **Response 200** — JSON array of **Company** with `indexed: false`, oldest first.
 
@@ -266,4 +272,4 @@ FIFO **`pending_preparation`**, oldest `created_at` first.
 
 ## Human JWT routes (same API origin)
 
-Register/login and user CRUD use **`Authorization: Bearer <jwt>`**. JAA typically does not call these. Schemas in **`/docs`**.
+Register/login and user CRUD use `**Authorization: Bearer <jwt>`**. JAA typically does not call these. Schemas in `**/docs**`.
