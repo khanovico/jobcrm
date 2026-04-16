@@ -913,6 +913,19 @@ def agent_list_applications(
     return repo.list_applications(skip, limit, None)
 
 
+@app.get("/api/v1/agent/applications/{application_id}", response_model=Application)
+def agent_get_application(
+    application_id: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Application:
+    require_agent_scope(agent, "read")
+    application = repo.get_application(application_id)
+    if not application:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    return application
+
+
 @app.put("/api/v1/agent/applications/{application_id}", response_model=Application)
 def agent_update_application(
     application_id: str,

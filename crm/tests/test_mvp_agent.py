@@ -61,6 +61,14 @@ def test_agent_pending_and_company_update() -> None:
     )
     assert pending.status_code == 200
     assert len(pending.json()) == 1
+    pending_application_id = pending.json()[0]["id"]
+
+    by_id = client.get(
+        f"/api/v1/agent/applications/{pending_application_id}",
+        headers={"X-API-Key": raw_key},
+    )
+    assert by_id.status_code == 200
+    assert by_id.json()["id"] == pending_application_id
 
     company_list = client.get("/api/v1/companies", headers=h).json()
     company_id = company_list[0]["id"]
