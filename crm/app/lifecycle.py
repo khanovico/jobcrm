@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from app.models import Application, ApplicationStatus
+from app.models import (
+    Application,
+    ApplicationStatus,
+    NotificationKind,
+    NotificationPayload,
+    NotificationSeverity,
+)
 from app.repository import BaseRepository
 
 
@@ -16,8 +22,10 @@ def notify_if_preparation_ready(
         return
     repo.create_notification(
         user_id=uid,
-        kind="preparation_ready",
-        title="Application preparation ready",
-        body="Review profile matches, resume link, and email plan.",
-        link=f"/applications/{after.id}",
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(
+            id=after.id,
+            message="Application preparation ready — review profile matches, resume link, and email plan.",
+        ),
     )

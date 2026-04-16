@@ -17,6 +17,7 @@ from app.deps import (
     require_agent_scope,
 )
 from app.lifecycle import notify_if_preparation_ready
+from app.notification_links import enrich_notification_link
 from app.models import (
     ActorType,
     AgentApiKeyCreate,
@@ -773,17 +774,22 @@ def mark_email_sent_route(
     return email
 
 
-@app.get("/api/v1/notifications", response_model=list[UserNotification])
+@app.get(
+    "/api/v1/notifications",
+    response_model=list[UserNotification],
+    response_model_by_alias=True,
+)
 def list_notifications_route(
     skip: int = 0,
     limit: int = 50,
     unread_only: bool = False,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
-):
-    return repo.list_notifications(
+) -> list[UserNotification]:
+    rows = repo.list_notifications(
         user.id, NotificationListQuery(skip=skip, limit=limit, unread_only=unread_only)
     )
+    return [enrich_notification_link(repo, user.id, n) for n in rows]
 
 
 @app.post("/api/v1/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)
@@ -1091,22 +1097,24 @@ def agent_create_email(
 @app.post(
     "/api/v1/agent/notifications",
     response_model=UserNotification,
+    response_model_by_alias=True,
     status_code=status.HTTP_201_CREATED,
 )
 def agent_create_notification(
-    payload: AgentNotificationCreate,
+    body: AgentNotificationCreate,
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
 ) -> UserNotification:
     require_agent_scope(agent, "write")
-    if not repo.get_user(payload.user_id):
+    if not repo.get_user(body.user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     note = repo.create_notification(
-        user_id=payload.user_id,
-        kind=payload.kind,
-        title=payload.title,
-        body=payload.body,
-        link=payload.link,
+        user_id=body.user_id,
+        notification=body.notification,
+        notification_type=body.notification_type,
+        timestamp=body.timestamp,
+        check=body.check,
+        payload=body.payload,
     )
     _audit(
         repo,
@@ -1116,7 +1124,7 @@ def agent_create_notification(
         entity_type="notification",
         entity_id=note.id,
     )
-    return note
+    return enrich_notification_link(repo, body.user_id, note)
 
 
 @app.get("/api/v1/agent/industries", response_model=list[Industry])
