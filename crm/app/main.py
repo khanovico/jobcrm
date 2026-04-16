@@ -25,6 +25,7 @@ from app.models import (
     Application,
     ApplicationBootstrapCreate,
     ApplicationCreate,
+    ApplicationListItem,
     ApplicationMarkApplied,
     ApplicationMarkEmailSent,
     ApplicationStatus,
@@ -470,7 +471,7 @@ def delete_profile(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.get("/api/v1/applications", response_model=list[Application])
+@app.get("/api/v1/applications", response_model=list[ApplicationListItem])
 def list_applications(
     skip: int = 0,
     limit: int = 50,
@@ -481,7 +482,7 @@ def list_applications(
     sort: str = "created_at_desc",
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[ApplicationListItem]:
     return repo.list_applications(
         skip=skip,
         limit=limit,
@@ -901,13 +902,13 @@ def agent_list_profiles(
     return repo.list_profiles(skip=skip, limit=limit, search=None)
 
 
-@app.get("/api/v1/agent/applications", response_model=list[Application])
+@app.get("/api/v1/agent/applications", response_model=list[ApplicationListItem])
 def agent_list_applications(
     skip: int = 0,
     limit: int = 200,
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[ApplicationListItem]:
     require_agent_scope(agent, "read")
     return repo.list_applications(skip, limit, None)
 

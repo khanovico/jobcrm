@@ -1,5 +1,6 @@
 import {
   Application,
+  ApplicationListItem,
   AuditEvent,
   Company,
   DashboardMetrics,
@@ -67,7 +68,7 @@ export const api = {
     request<Profile>(`/api/v1/profiles/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteProfile: (id: string) => request<void>(`/api/v1/profiles/${id}`, { method: "DELETE" }),
   listApplications: (params?: URLSearchParams) =>
-    request<Application[]>(`/api/v1/applications${params ? `?${params.toString()}` : ""}`),
+    request<ApplicationListItem[]>(`/api/v1/applications${params ? `?${params.toString()}` : ""}`),
   createApplication: (payload: Record<string, unknown>) =>
     request<Application>("/api/v1/applications", { method: "POST", body: JSON.stringify(payload) }),
   bootstrapApplication: (payload: {

@@ -67,6 +67,16 @@ export type Application = {
   updated_at: string;
 };
 
+/** Resolved profile names for per-profile rows with `applied` on list applications API. */
+export type AppliedProfileName = {
+  profile_id: string;
+  profile_name: string;
+};
+
+export type ApplicationListItem = Application & {
+  applied_profiles: AppliedProfileName[];
+};
+
 export type ColdEmailPlan = {
   subjects: string[];
   selected_subject_index: number;
@@ -83,6 +93,8 @@ export type PerProfileApplication = {
   analysis: string;
   tailored_resume_link?: string | null;
   cold_email_plan?: ColdEmailPlan | null;
+  applied: boolean;
+  applied_at?: string | null;
   created_at: string;
   updated_at: string;
 };

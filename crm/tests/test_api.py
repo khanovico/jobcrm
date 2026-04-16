@@ -28,6 +28,40 @@ def test_auth_required_for_companies() -> None:
     assert response.status_code == 401
 
 
+def test_list_applications_includes_applied_profile_names() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json={"name": "Alex Dev"}, headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "draft"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "applied": True,
+        },
+        headers=headers,
+    ).json()
+    assert ppa["applied"] is True
+    assert ppa.get("applied_at")
+
+    listed = client.get("/api/v1/applications", headers=headers).json()
+    assert len(listed) == 1
+    assert listed[0]["applied_profiles"] == [
+        {"profile_id": profile["id"], "profile_name": "Alex Dev"}
+    ]
+
+
 def test_mark_applied_stamps_once() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
