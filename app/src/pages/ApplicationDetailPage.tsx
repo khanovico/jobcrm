@@ -24,9 +24,13 @@ const formatRecipient = (
   recipient: { title?: string; name?: string; email?: string | null } | null | undefined
 ) => {
   if (!recipient) return null;
-  const namePart = [recipient.title, recipient.name].filter(Boolean).join(" ").trim();
-  if (namePart && recipient.email) return `${namePart} <${recipient.email}>`;
-  return namePart || recipient.email || null;
+  const title = recipient.title?.trim() ?? "";
+  const fullName = recipient.name?.trim() ?? "";
+  const email = recipient.email?.trim() ?? "";
+  if (title && fullName && email) return `${title} - ${fullName} (${email})`;
+  if (fullName && email) return `${fullName} (${email})`;
+  if (title && fullName) return `${title} - ${fullName}`;
+  return fullName || email || title || null;
 };
 
 type RecipientDraft = {
@@ -308,48 +312,22 @@ export const ApplicationDetailPage = () => {
                                 <span className="badge badge-outline">{em.kind}</span>
                                 <span className="badge badge-ghost">{em.lifecycle_status}</span>
                               </div>
-                              <span className="text-xs opacity-70">Sent: {em.sent_at ?? "Not sent"}</span>
-                            </div>
-
-                            {ppa.cold_email_plan?.subjects?.length ? (
-                              <div className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
-                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-70">Subjects</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {ppa.cold_email_plan.subjects.map((subject, index) => {
-                                    const isActive = index === ppa.cold_email_plan?.selected_subject_index;
-                                    return (
-                                      <button
-                                        type="button"
-                                        key={`${em.id}-subject-${index}`}
-                                        disabled={subjectUpdateBusyKey != null}
-                                        className={
-                                          isActive
-                                            ? "badge badge-primary h-auto min-h-7 whitespace-normal px-3 py-2 text-left"
-                                            : "badge badge-outline h-auto min-h-7 whitespace-normal px-3 py-2 text-left hover:badge-primary"
-                                        }
-                                        onClick={() => {
-                                          void updateActiveSubject(ppa, index);
-                                        }}
-                                      >
-                                        {subject}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                {getActiveSubject(
-                                  ppa.cold_email_plan.subjects,
-                                  ppa.cold_email_plan.selected_subject_index
-                                ) && (
-                                  <p className="mt-2 text-xs opacity-80">
-                                    <span className="font-medium">Active:</span>{" "}
-                                    {getActiveSubject(
-                                      ppa.cold_email_plan.subjects,
-                                      ppa.cold_email_plan.selected_subject_index
-                                    )}
-                                  </p>
+                              <div className="flex items-center gap-2">
+                                {em.sent && em.sent_at && (
+                                  <span className="text-xs opacity-70">Sent: {em.sent_at}</span>
                                 )}
+                                <button
+                                  type="button"
+                                  className={`btn btn-xs ${em.sent ? "btn-outline" : "btn-primary"}`}
+                                  onClick={async () => {
+                                    await api.markEmailSent(em.id, !em.sent);
+                                    await load();
+                                  }}
+                                >
+                                  {em.sent ? "Unmark email sent" : "Mark email sent"}
+                                </button>
                               </div>
-                            ) : null}
+                            </div>
 
                             {editingRecipientPpaId === ppa.id ? (
                               <div className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
@@ -441,21 +419,54 @@ export const ApplicationDetailPage = () => {
                               </div>
                             )}
 
+                            {getActiveSubject(
+                              ppa.cold_email_plan?.subjects,
+                              ppa.cold_email_plan?.selected_subject_index
+                            ) && (
+                              <p className="mb-3 text-sm">
+                                <span className="font-medium opacity-70">Subject:</span>{" "}
+                                {getActiveSubject(
+                                  ppa.cold_email_plan?.subjects,
+                                  ppa.cold_email_plan?.selected_subject_index
+                                )}
+                              </p>
+                            )}
+
+                            {ppa.cold_email_plan?.subjects?.length ? (
+                              <details className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
+                                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide opacity-70">
+                                  Subjects
+                                </summary>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {ppa.cold_email_plan.subjects.map((subject, index) => {
+                                    const isActive = index === ppa.cold_email_plan?.selected_subject_index;
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={`${em.id}-subject-${index}`}
+                                        disabled={subjectUpdateBusyKey != null}
+                                        className={
+                                          isActive
+                                            ? "badge badge-primary h-auto min-h-7 whitespace-normal px-3 py-2 text-left"
+                                            : "badge badge-outline h-auto min-h-7 whitespace-normal px-3 py-2 text-left hover:badge-primary"
+                                        }
+                                        onClick={() => {
+                                          void updateActiveSubject(ppa, index);
+                                        }}
+                                      >
+                                        {subject}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </details>
+                            ) : null}
+
                             <div
                               className="prose prose-sm mt-1 max-w-none rounded-lg border border-base-300 bg-base-100 p-3"
                               // Email bodies are generated as HTML; sanitize before rendering.
                               dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(em.content) }}
                             />
-                            <button
-                              type="button"
-                              className={`btn btn-sm mt-3 ${em.sent ? "btn-outline" : "btn-primary"}`}
-                              onClick={async () => {
-                                await api.markEmailSent(em.id, !em.sent);
-                                await load();
-                              }}
-                            >
-                              {em.sent ? "Unmark email sent" : "Mark email sent"}
-                            </button>
                           </li>
                         ))}
                         {ppaEmails.length === 0 && (
