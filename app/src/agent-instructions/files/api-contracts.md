@@ -75,6 +75,16 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 
 ---
 
+### `GET /api/v1/agent/applications/{application_id}/per-profile-applications`
+
+**Path**: `application_id` — string UUID.
+
+**Response 200** — JSON array of **PerProfileApplication** for this application, ordered by `order_index` then `created_at`.
+
+**Response 404** — application not found.
+
+---
+
 ### `PUT /api/v1/agent/applications/{application_id}`
 
 **Path**: `application_id` — string UUID.

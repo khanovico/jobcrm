@@ -173,6 +173,67 @@ def test_per_profile_and_email_mark_sent() -> None:
     assert marked.json()["sent_at"] is not None
 
 
+def test_agent_get_per_profile_applications_by_application_id() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-ppa-read"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    company = client.post("/api/v1/companies", json={"name": "PPA Co"}, headers=h).json()
+    profile = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "PPA Profile",
+            "location": "Remote",
+            "email": "ppa@example.com",
+            "phone": "+10000000010",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "Bio",
+            "niche_info_md": "Niche",
+        },
+        headers=h,
+    ).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "preparation_ready"},
+        headers=h,
+    ).json()
+
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 1,
+            "analysis": "Great fit",
+            "fit_score": 91,
+        },
+        headers=h,
+    )
+    assert ppa.status_code == 201
+
+    response = client.get(
+        f"/api/v1/agent/applications/{application['id']}/per-profile-applications",
+        headers=ak,
+    )
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["application_id"] == application["id"]
+    assert rows[0]["profile_id"] == profile["id"]
+
+    missing = client.get(
+        "/api/v1/agent/applications/does-not-exist/per-profile-applications",
+        headers=ak,
+    )
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Application not found"
+
+
 def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

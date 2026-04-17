@@ -1002,6 +1002,21 @@ def agent_get_application(
     return application
 
 
+@app.get(
+    "/api/v1/agent/applications/{application_id}/per-profile-applications",
+    response_model=list[PerProfileApplication],
+)
+def agent_list_per_profile_applications(
+    application_id: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[PerProfileApplication]:
+    require_agent_scope(agent, "read")
+    if not repo.get_application(application_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    return repo.list_per_profile_for_application(application_id)
+
+
 @app.put("/api/v1/agent/applications/{application_id}", response_model=Application)
 def agent_update_application(
     application_id: str,
