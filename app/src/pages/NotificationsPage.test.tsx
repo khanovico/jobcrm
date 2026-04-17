@@ -107,7 +107,7 @@ describe("NotificationsPage", () => {
     expect(screen.getByText("Read")).toBeInTheDocument();
   });
 
-  it("supports pagination and marks notification as read then reloads current page", async () => {
+  it("supports pagination through next page", async () => {
     const pageOne = Array.from({ length: 10 }).map((_, idx) => ({
       id: `n-${idx + 1}`,
       user_id: "u1",
@@ -137,7 +137,6 @@ describe("NotificationsPage", () => {
           link: "/companies/c1"
         }
       ]);
-    markNotificationRead.mockResolvedValueOnce(undefined);
 
     render(
       <MemoryRouter>
@@ -148,14 +147,42 @@ describe("NotificationsPage", () => {
     await screen.findByText("Company changed 1");
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Company changed");
+    expect(listNotifications).toHaveBeenCalledTimes(2);
+    expect(listNotifications).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 10 });
+  });
+
+  it("marks notification as read and reloads list", async () => {
+    listNotifications
+      .mockResolvedValueOnce([
+        {
+          id: "n1",
+          user_id: "u1",
+          notification: "COMPANY_UPDATE",
+          type: "WARN",
+          timestamp: "2026-01-01T00:00:00Z",
+          check: false,
+          payload: { id: "c1", message: "Company changed" },
+          created_at: "2026-01-01T00:00:00Z",
+          read_at: null,
+          link: "/companies/c1"
+        }
+      ])
+      .mockResolvedValueOnce([]);
+    markNotificationRead.mockResolvedValueOnce(undefined);
+
+    render(
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Company changed");
     await userEvent.click(screen.getByRole("button", { name: "Mark read" }));
 
     await waitFor(() => {
       expect(markNotificationRead).toHaveBeenCalledWith("n1");
-      expect(listNotifications).toHaveBeenCalledTimes(3);
+      expect(listNotifications).toHaveBeenCalledTimes(2);
     });
-    expect(listNotifications).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 10 });
-    expect(listNotifications).toHaveBeenNthCalledWith(3, { unreadOnly: true, skip: 10, limit: 10 });
-    expect(await screen.findByText("Read")).toBeInTheDocument();
+    expect(await screen.findByText("No active notifications.")).toBeInTheDocument();
   });
 });

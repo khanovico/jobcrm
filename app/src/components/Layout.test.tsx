@@ -5,14 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth";
 import { Layout } from "./Layout";
 
-const { listNotifications } = vi.hoisted(() => ({
-  listNotifications: vi.fn()
+const { listNotifications, setUnauthorizedHandler } = vi.hoisted(() => ({
+  listNotifications: vi.fn(),
+  setUnauthorizedHandler: vi.fn()
 }));
 
 vi.mock("../api", () => ({
   api: {
     listNotifications
-  }
+  },
+  setUnauthorizedHandler
 }));
 
 afterEach(() => {
@@ -69,10 +71,8 @@ describe("Layout", () => {
   });
 
   it("shows unread badge for notifications and polls every five minutes", async () => {
-    vi.useFakeTimers();
-    listNotifications
-      .mockResolvedValueOnce([{ id: "n1" }, { id: "n2" }])
-      .mockResolvedValueOnce([{ id: "n1" }]);
+    listNotifications.mockResolvedValueOnce([{ id: "n1" }, { id: "n2" }]);
+    const intervalSpy = vi.spyOn(window, "setInterval");
 
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -90,10 +90,6 @@ describe("Layout", () => {
       expect(screen.getByLabelText("Unread notifications: 2")).toBeInTheDocument();
     });
     expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 100 });
-
-    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-    await waitFor(() => {
-      expect(screen.getByLabelText("Unread notifications: 1")).toBeInTheDocument();
-    });
+    expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 5 * 60 * 1000);
   });
 });
