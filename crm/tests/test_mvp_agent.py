@@ -234,6 +234,129 @@ def test_agent_get_per_profile_applications_by_application_id() -> None:
     assert missing.json()["detail"] == "Application not found"
 
 
+def test_agent_create_email_supports_subjects_and_recipient() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-email-full"}, headers=h)
+    assert key_resp.status_code == 201
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    company = client.post("/api/v1/companies", json={"name": "Email Co"}, headers=h).json()
+    profile = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Email Profile",
+            "location": "Remote",
+            "email": "email-profile@example.com",
+            "phone": "+10000000003",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "B",
+            "niche_info_md": "N",
+        },
+        headers=h,
+    ).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "preparation_ready"},
+        headers=h,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 1,
+            "analysis": "Strong fit",
+        },
+        headers=h,
+    ).json()
+
+    created = client.post(
+        "/api/v1/agent/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "content": "Hello from agent",
+            "subjects": ["First subject", "Second subject"],
+            "selected_subject_index": 1,
+            "to": {
+                "title": "Hiring Manager",
+                "name": "Alex",
+                "email": "alex@example.com",
+            },
+            "lifecycle_status": "drafted",
+            "sent": False,
+        },
+        headers=ak,
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["subjects"] == ["First subject", "Second subject"]
+    assert body["selected_subject_index"] == 1
+    assert body["to"]["title"] == "Hiring Manager"
+    assert body["to"]["name"] == "Alex"
+    assert body["to"]["email"] == "alex@example.com"
+
+
+def test_agent_create_email_rejects_selected_subject_index_out_of_range() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-email-invalid"}, headers=h)
+    assert key_resp.status_code == 201
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    company = client.post("/api/v1/companies", json={"name": "Email Invalid Co"}, headers=h).json()
+    profile = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Email Invalid Profile",
+            "location": "Remote",
+            "email": "email-invalid-profile@example.com",
+            "phone": "+10000000004",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "B",
+            "niche_info_md": "N",
+        },
+        headers=h,
+    ).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "preparation_ready"},
+        headers=h,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 1,
+            "analysis": "Strong fit",
+        },
+        headers=h,
+    ).json()
+
+    bad = client.post(
+        "/api/v1/agent/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "content": "Hello from agent",
+            "subjects": ["Only subject"],
+            "selected_subject_index": 5,
+        },
+        headers=ak,
+    )
+    assert bad.status_code == 422
+
+
 def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

@@ -125,6 +125,9 @@ export type Email = {
   per_profile_application_id: string;
   kind: "cold" | "follow_up";
   content: string;
+  subjects: string[];
+  selected_subject_index: number;
+  to?: { title: string; name: string; email?: string | null } | null;
   lifecycle_status: string;
   sent: boolean;
   sent_at?: string | null;
