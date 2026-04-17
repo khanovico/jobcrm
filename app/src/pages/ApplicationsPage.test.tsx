@@ -79,7 +79,7 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("combobox", { name: "Company" })).toBeInTheDocument();
   });
 
-  it("shows mark applied button", async () => {
+  it("shows mark applied button and marks as applied", async () => {
     const fetchMock = vi.mocked(fetch);
     const appliedPayload = {
       id: "a1",
@@ -112,7 +112,67 @@ describe("ApplicationsPage", () => {
     );
     expect(await screen.findByText("Mark Applied")).toBeInTheDocument();
     await userEvent.click(screen.getByText("Mark Applied"));
-    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/applications/a1/mark-applied"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ applied: true })
+      })
+    );
+  });
+
+  it("shows unmark applied button and unmarks when already applied", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const unmarkedPayload = {
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      applied_at: null,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-01"
+    };
+
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/applications/") && url.includes("/mark-applied")) {
+        return Promise.resolve(new Response(JSON.stringify(unmarkedPayload), { status: 200 }));
+      }
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                ...applicationRow,
+                applied: true,
+                applied_at: "2026-01-01"
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Unmark Applied")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Unmark Applied"));
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/applications/a1/mark-applied"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ applied: false })
+      })
+    );
   });
 
   it("renames Active tab to Pending and includes Applied tab", async () => {
@@ -139,7 +199,7 @@ describe("ApplicationsPage", () => {
     expect(screen.queryByRole("button", { name: "Active" })).not.toBeInTheDocument();
   });
 
-  it("hides mark applied button for already applied applications", async () => {
+  it("shows unmark applied button for already applied applications", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -171,7 +231,7 @@ describe("ApplicationsPage", () => {
     );
 
     await screen.findByRole("cell", { name: "Acme" });
-    expect(screen.queryByText("Mark Applied")).not.toBeInTheDocument();
+    expect(screen.getByText("Unmark Applied")).toBeInTheDocument();
   });
 
   it("switches to Applied tab after marking an application as applied", async () => {

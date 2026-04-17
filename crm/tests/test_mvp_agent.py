@@ -167,10 +167,23 @@ def test_per_profile_and_email_mark_sent() -> None:
     assert em.status_code == 201
     email_id = em.json()["id"]
 
-    marked = client.post(f"/api/v1/emails/{email_id}/mark-sent", headers=h)
+    marked = client.post(
+        f"/api/v1/emails/{email_id}/mark-sent",
+        json={"sent": True},
+        headers=h,
+    )
     assert marked.status_code == 200
     assert marked.json()["sent"] is True
     assert marked.json()["sent_at"] is not None
+
+    unmarked = client.post(
+        f"/api/v1/emails/{email_id}/mark-sent",
+        json={"sent": False},
+        headers=h,
+    )
+    assert unmarked.status_code == 200
+    assert unmarked.json()["sent"] is False
+    assert unmarked.json()["sent_at"] is None
 
 
 def test_agent_get_per_profile_applications_by_application_id() -> None:

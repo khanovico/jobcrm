@@ -505,4 +505,142 @@ describe("ApplicationDetailPage", () => {
     });
     expect(screen.getByText("CTO Benjamin Kim <bk@lawgoat.com>")).toBeInTheDocument();
   });
+
+  it("shows unmark actions when application and email are already marked", async () => {
+    getApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: true,
+      applied_at: "2026-01-02T00:00:00Z",
+      email_sent: true,
+      email_sent_at: "2026-01-02T00:00:00Z",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValueOnce({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValueOnce([
+      {
+        id: "ppa1",
+        application_id: "a1",
+        profile_id: "p1",
+        order_index: 1,
+        analysis: "Strong fit",
+        applied: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listProfiles.mockResolvedValueOnce([
+      {
+        id: "p1",
+        name: "Profile One",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listEmailsForPpa.mockResolvedValueOnce([
+      {
+        id: "e1",
+        per_profile_application_id: "ppa1",
+        kind: "follow_up",
+        content: "Sent email",
+        lifecycle_status: "sent",
+        sent: true,
+        sent_at: "2026-01-02T00:00:00Z",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("button", { name: "Unmark applied" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Unmark email sent" })).toHaveLength(2);
+  });
+
+  it("unmarks application applied, application email-sent, and per-profile email-sent", async () => {
+    getApplication.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: true,
+      applied_at: "2026-01-02T00:00:00Z",
+      email_sent: true,
+      email_sent_at: "2026-01-02T00:00:00Z",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValue({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValue([
+      {
+        id: "ppa1",
+        application_id: "a1",
+        profile_id: "p1",
+        order_index: 1,
+        analysis: "Strong fit",
+        applied: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listProfiles.mockResolvedValue([
+      {
+        id: "p1",
+        name: "Profile One",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listEmailsForPpa.mockResolvedValue([
+      {
+        id: "e1",
+        per_profile_application_id: "ppa1",
+        kind: "follow_up",
+        content: "Sent email",
+        lifecycle_status: "sent",
+        sent: true,
+        sent_at: "2026-01-02T00:00:00Z",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    markApplied.mockResolvedValue({});
+    markApplicationEmailSent.mockResolvedValue({});
+    markEmailSent.mockResolvedValue({});
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Unmark applied" }));
+    expect(markApplied).toHaveBeenCalledWith("a1", false);
+
+    const unmarkEmailButtons = screen.getAllByRole("button", { name: "Unmark email sent" });
+    await userEvent.click(unmarkEmailButtons[0]);
+    expect(markApplicationEmailSent).toHaveBeenCalledWith("a1", false);
+
+    await userEvent.click(unmarkEmailButtons[1]);
+    expect(markEmailSent).toHaveBeenCalledWith("e1", false);
+  });
 });
