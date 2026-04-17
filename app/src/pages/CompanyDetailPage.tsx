@@ -2,7 +2,6 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
-import { MarkdownModal } from "../components/MarkdownModal";
 import { api } from "../api";
 import { Application, Company, Industry } from "../types";
 
@@ -21,12 +20,12 @@ export const CompanyDetailPage = () => {
   const [workMode, setWorkMode] = useState("");
   const [workModeDescription, setWorkModeDescription] = useState("");
   const [overview, setOverview] = useState("");
+  const [fullOverview, setFullOverview] = useState("");
   const [activelyHiring, setActivelyHiring] = useState<boolean | "">("");
   const [hqLocations, setHqLocations] = useState("");
   const [selectedIndustryIds, setSelectedIndustryIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [overviewOpen, setOverviewOpen] = useState(false);
 
   const industryNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -55,6 +54,7 @@ export const CompanyDetailPage = () => {
       setWorkMode(co.work_mode ?? "");
       setWorkModeDescription(co.work_mode_description ?? "");
       setOverview(co.overview ?? "");
+      setFullOverview(co.full_overview ?? "");
       setActivelyHiring(co.actively_hiring === null || co.actively_hiring === undefined ? "" : co.actively_hiring);
       setHqLocations((co.hq_locations ?? []).join(", "));
       setSelectedIndustryIds([...(co.industry_ids ?? [])]);
@@ -81,6 +81,7 @@ export const CompanyDetailPage = () => {
         work_mode: workMode.trim() || null,
         work_mode_description: workModeDescription.trim() || null,
         overview: overview.trim() || null,
+        full_overview: fullOverview.trim() || null,
         actively_hiring: activelyHiring === "" ? null : activelyHiring,
         hq_locations: hqLocations
           .split(",")
@@ -128,16 +129,27 @@ export const CompanyDetailPage = () => {
           <div className="card bg-base-100 p-4 shadow">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <h2 className="text-xl font-semibold">{company.name}</h2>
-              {company.overview?.trim() ? (
-                <button type="button" className="link link-primary text-sm font-medium" onClick={() => setOverviewOpen(true)}>
-                  Overview
-                </button>
+              {company.full_overview?.trim() ? (
+                <a
+                  href={company.full_overview}
+                  className="link link-primary text-sm font-medium"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Full Company Detail
+                </a>
               ) : null}
             </div>
             <p className="text-sm opacity-70">
               Updated {new Date(company.updated_at).toLocaleString()} · ID{" "}
               <span className="font-mono text-xs">{company.id}</span>
             </p>
+            {company.overview?.trim() ? (
+              <div className="mt-4">
+                <h3 className="text-sm font-semibold opacity-80">Overview</h3>
+                <p className="whitespace-pre-wrap text-sm">{company.overview}</p>
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
                 <h3 className="text-sm font-semibold opacity-80">Website</h3>
@@ -366,6 +378,15 @@ export const CompanyDetailPage = () => {
                   onChange={(e) => setOverview(e.target.value)}
                 />
               </label>
+              <label className="form-control w-full">
+                <span className="label-text">Full company detail link</span>
+                <input
+                  className="input input-bordered w-full"
+                  value={fullOverview}
+                  onChange={(e) => setFullOverview(e.target.value)}
+                  placeholder="https://drive.google.com/..."
+                />
+              </label>
               <div className="flex flex-wrap gap-2">
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving ? "Saving…" : "Save changes"}
@@ -378,15 +399,6 @@ export const CompanyDetailPage = () => {
           </div>
         </>
       )}
-      {company?.overview?.trim() ? (
-        <MarkdownModal
-          open={overviewOpen}
-          onClose={() => setOverviewOpen(false)}
-          title={`Overview — ${company.name}`}
-          markdown={company.overview ?? ""}
-          size="full"
-        />
-      ) : null}
     </div>
   );
 };

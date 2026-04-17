@@ -283,11 +283,18 @@ def test_company_profile_crud_happy_path() -> None:
 
     update_company = client.put(
         f"/api/v1/companies/{company['id']}",
-        json={"overview": "Hiring fast"},
+        json={
+            "overview": "Hiring fast",
+            "full_overview": "https://drive.google.com/file/d/company-overview",
+        },
         headers=headers,
     )
     assert update_company.status_code == 200
     assert update_company.json()["overview"] == "Hiring fast"
+    assert (
+        update_company.json()["full_overview"]
+        == "https://drive.google.com/file/d/company-overview"
+    )
 
     profile_res = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers)
     assert profile_res.status_code == 201

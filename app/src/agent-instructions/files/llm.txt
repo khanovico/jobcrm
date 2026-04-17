@@ -37,7 +37,7 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 - GET `/api/v1/agent/applications/{id}/per-profile-applications` — fetch all per-profile rows for one application id (ordered by `order_index`, then `created_at`).
 - PUT `/api/v1/agent/applications/{id}` — update application fields/status; use for lifecycle moves (`researching`, `preparation_ready`, `archived`, etc.); include optional `archive_reason` when archiving.
 - GET `/api/v1/agent/companies/unindexed` — fetch enrichment backlog (`indexed=false`), oldest-first FIFO, max 5.
-- PUT `/api/v1/agent/companies/{id}` — update one company profile/enrichment fields (`overview`, `analysis_links`, `indexed`, etc.).
+- PUT `/api/v1/agent/companies/{id}` — update one company profile/enrichment fields (`overview` as summary text, `full_overview` as full-detail doc link, `analysis_links`, `indexed`, etc.).
 - PATCH `/api/v1/agent/companies/bulk` — batch company updates in one request (`updates[]` of `{company_id, payload}`).
 - GET `/api/v1/agent/profiles/ids` — lightweight profile id scan for planning/matching.
 - GET `/api/v1/agent/profiles/{id}` — full profile detail (bio, niche, resume/context) for tailoring.

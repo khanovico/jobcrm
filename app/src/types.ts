@@ -11,6 +11,7 @@ export type Company = {
   work_mode?: string | null;
   work_mode_description?: string | null;
   overview?: string | null;
+  full_overview?: string | null;
   analysis_links?: { topic: string; link: string }[];
   enrichment_source_links?: string[];
   created_at: string;

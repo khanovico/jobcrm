@@ -75,11 +75,17 @@ def test_agent_pending_and_company_update() -> None:
 
     upd = client.put(
         f"/api/v1/agent/companies/{company_id}",
-        json={"overview": "Enriched by JAA"},
+        json={
+            "overview": "Enriched by JAA",
+            "full_overview": "https://drive.google.com/file/d/acme-full-overview",
+        },
         headers={"X-API-Key": raw_key},
     )
     assert upd.status_code == 200
     assert upd.json()["overview"] == "Enriched by JAA"
+    assert (
+        upd.json()["full_overview"] == "https://drive.google.com/file/d/acme-full-overview"
+    )
 
     audit = client.get("/api/v1/audit-events", headers=h)
     assert audit.status_code == 200
@@ -287,6 +293,7 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
     assert bulk.status_code == 200
     assert bulk.json()[0]["indexed"] is True
     assert bulk.json()[0]["overview"] == "Done"
+    assert bulk.json()[0]["full_overview"] is None
 
     prof = client.post(
         "/api/v1/profiles",
