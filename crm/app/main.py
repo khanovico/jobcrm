@@ -819,6 +819,26 @@ def mark_email_sent_route(
     return email
 
 
+@app.delete("/api/v1/emails/{email_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_email_route(
+    email_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Response:
+    deleted = repo.delete_email(email_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="delete",
+        entity_type="email",
+        entity_id=email_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.get(
     "/api/v1/notifications",
     response_model=list[UserNotification],
@@ -981,7 +1001,7 @@ def agent_list_profile_ids(
     repo: BaseRepository = Depends(get_repository),
 ) -> ProfileIdList:
     require_agent_scope(agent, "read")
-    return ProfileIdList(profile_ids=repo.list_profile_ids(skip, limit))
+    return ProfileIdList(profile_ids=repo.list_profile_ids(skip, limit, include_frozen=False))
 
 
 @app.get("/api/v1/agent/profiles/{profile_id}", response_model=Profile)
@@ -992,7 +1012,7 @@ def agent_get_profile(
 ) -> Profile:
     require_agent_scope(agent, "read")
     profile = repo.get_profile(profile_id)
-    if not profile:
+    if not profile or profile.frozen:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
     return profile
 
@@ -1005,7 +1025,7 @@ def agent_list_profiles(
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Profile]:
     require_agent_scope(agent, "read")
-    return repo.list_profiles(skip=skip, limit=limit, search=None)
+    return repo.list_profiles(skip=skip, limit=limit, search=None, include_frozen=False)
 
 
 @app.get("/api/v1/agent/applications", response_model=list[ApplicationListItem])

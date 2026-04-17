@@ -14,7 +14,8 @@ const {
   updatePerProfileApplication,
   markApplied,
   markApplicationEmailSent,
-  markEmailSent
+  markEmailSent,
+  deleteEmail
 } = vi.hoisted(() => ({
   getApplication: vi.fn(),
   getCompany: vi.fn(),
@@ -24,7 +25,8 @@ const {
   updatePerProfileApplication: vi.fn(),
   markApplied: vi.fn(),
   markApplicationEmailSent: vi.fn(),
-  markEmailSent: vi.fn()
+  markEmailSent: vi.fn(),
+  deleteEmail: vi.fn()
 }));
 
 vi.mock("../api", () => ({
@@ -37,7 +39,8 @@ vi.mock("../api", () => ({
     updatePerProfileApplication,
     markApplied,
     markApplicationEmailSent,
-    markEmailSent
+    markEmailSent,
+    deleteEmail
   }
 }));
 
@@ -58,6 +61,7 @@ describe("ApplicationDetailPage", () => {
     markApplied.mockReset();
     markApplicationEmailSent.mockReset();
     markEmailSent.mockReset();
+    deleteEmail.mockReset();
     scrollIntoViewMock.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -711,5 +715,70 @@ describe("ApplicationDetailPage", () => {
     expect(await screen.findByText("Subject:")).toBeInTheDocument();
     expect(screen.queryByText(/Sent: Not sent/i)).not.toBeInTheDocument();
     expect(screen.getByText("Subjects")).toBeInTheDocument();
+  });
+
+  it("deletes email after confirmation", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    getApplication.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValue({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValue([
+      {
+        id: "ppa1",
+        application_id: "a1",
+        profile_id: "p1",
+        order_index: 1,
+        analysis: "Strong fit",
+        applied: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listProfiles.mockResolvedValue([
+      {
+        id: "p1",
+        name: "Profile One",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listEmailsForPpa.mockResolvedValue([
+      {
+        id: "e1",
+        per_profile_application_id: "ppa1",
+        kind: "follow_up",
+        content: "Sent email",
+        lifecycle_status: "drafted",
+        sent: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    deleteEmail.mockResolvedValue({});
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Sent email");
+    await userEvent.click(screen.getByRole("button", { name: "Delete email" }));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(deleteEmail).toHaveBeenCalledWith("e1");
   });
 });

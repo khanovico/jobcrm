@@ -326,6 +326,18 @@ export const ApplicationDetailPage = () => {
                                 >
                                   {em.sent ? "Unmark email sent" : "Mark email sent"}
                                 </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-error btn-outline"
+                                  aria-label="Delete email"
+                                  onClick={async () => {
+                                    if (!window.confirm("Delete this email?")) return;
+                                    await api.deleteEmail(em.id);
+                                    await load();
+                                  }}
+                                >
+                                  Delete
+                                </button>
                               </div>
                             </div>
 

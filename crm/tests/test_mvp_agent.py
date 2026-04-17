@@ -596,3 +596,63 @@ def test_agent_industries_create_update_bulk_and_search() -> None:
     )
     assert duplicate_existing.status_code == 400
     assert duplicate_existing.json()["detail"] == "Industry names already exist: fintech"
+
+
+def test_agent_profile_endpoints_exclude_frozen_profiles() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-freeze-filter"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    active = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Active Profile",
+            "location": "Remote",
+            "email": "active@example.com",
+            "phone": "+10000000011",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "Active",
+            "niche_info_md": "Active niche",
+        },
+        headers=h,
+    ).json()
+    frozen = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "Frozen Profile",
+            "location": "Remote",
+            "email": "frozen@example.com",
+            "phone": "+10000000012",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "Frozen",
+            "niche_info_md": "Frozen niche",
+        },
+        headers=h,
+    ).json()
+    freeze_resp = client.put(
+        f"/api/v1/profiles/{frozen['id']}",
+        json={"frozen": True},
+        headers=h,
+    )
+    assert freeze_resp.status_code == 200
+    assert freeze_resp.json()["frozen"] is True
+
+    ids = client.get("/api/v1/agent/profiles/ids", headers=ak)
+    assert ids.status_code == 200
+    assert active["id"] in ids.json()["profile_ids"]
+    assert frozen["id"] not in ids.json()["profile_ids"]
+
+    all_profiles = client.get("/api/v1/agent/profiles", headers=ak)
+    assert all_profiles.status_code == 200
+    rows = all_profiles.json()
+    assert any(row["id"] == active["id"] for row in rows)
+    assert not any(row["id"] == frozen["id"] for row in rows)
+
+    frozen_lookup = client.get(f"/api/v1/agent/profiles/{frozen['id']}", headers=ak)
+    assert frozen_lookup.status_code == 404
+    assert frozen_lookup.json()["detail"] == "Profile not found"

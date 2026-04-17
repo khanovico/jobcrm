@@ -7,8 +7,16 @@ import { Profile } from "../types";
 export const ProfilesPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<Profile[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = async () => setItems(await api.listProfiles());
+  const load = async () => {
+    try {
+      setError(null);
+      setItems(await api.listProfiles());
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
   useEffect(() => {
     void load();
   }, []);
@@ -35,16 +43,18 @@ export const ProfilesPage = () => {
             </button>
           </div>
         </div>
+        {error && <div className="alert alert-error mb-3 text-sm">{error}</div>}
         <div className="overflow-x-auto rounded-lg border border-base-300">
           <table className="table table-sm">
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Status</th>
                 <th>Location</th>
                 <th>Email</th>
                 <th>Phone</th>
                 <th className="whitespace-nowrap">Updated</th>
-                <th className="w-24 text-right">Actions</th>
+                <th className="w-52 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -54,7 +64,16 @@ export const ProfilesPage = () => {
                   className="cursor-pointer hover:bg-base-200"
                   onClick={() => navigate(`/profiles/${profile.id}`)}
                 >
-                  <td className="font-medium">{profile.name}</td>
+                  <td className="font-medium">
+                    {profile.name}
+                  </td>
+                  <td>
+                    {profile.frozen ? (
+                      <span className="badge badge-warning badge-sm">Frozen</span>
+                    ) : (
+                      <span className="badge badge-success badge-sm">Active</span>
+                    )}
+                  </td>
                   <td className="max-w-[140px] truncate text-xs opacity-80" title={profile.location ?? undefined}>
                     {profile.location ?? "—"}
                   </td>
@@ -64,18 +83,41 @@ export const ProfilesPage = () => {
                     {new Date(profile.updated_at).toLocaleString()}
                   </td>
                   <td className="text-right">
-                    <button
-                      type="button"
-                      className="btn btn-xs btn-error btn-outline"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!window.confirm(`Delete profile “${profile.name}”?`)) return;
-                        await api.deleteProfile(profile.id);
-                        await load();
-                      }}
-                    >
-                      Delete
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        className={`btn btn-xs ${profile.frozen ? "btn-success btn-outline" : "btn-warning btn-outline"}`}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const action = profile.frozen ? "Unfreeze" : "Freeze";
+                          if (!window.confirm(`${action} profile "${profile.name}"?`)) return;
+                          try {
+                            await api.updateProfile(profile.id, { frozen: !profile.frozen });
+                            await load();
+                          } catch (err) {
+                            setError((err as Error).message);
+                          }
+                        }}
+                      >
+                        {profile.frozen ? "Unfreeze" : "Freeze"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-error btn-outline"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`Delete profile "${profile.name}"?`)) return;
+                          try {
+                            await api.deleteProfile(profile.id);
+                            await load();
+                          } catch (err) {
+                            setError((err as Error).message);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

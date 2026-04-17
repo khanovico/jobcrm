@@ -208,6 +208,7 @@ class Company(CompanyBase):
 
 class ProfileBase(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    frozen: bool = False
     location: str | None = None
     email: EmailStr | None = None
     phone: str | None = None
@@ -232,6 +233,7 @@ class ProfileCreate(BaseModel):
 
 class ProfileUpdate(BaseModel):
     name: str | None = None
+    frozen: bool | None = None
     location: str | None = None
     email: EmailStr | None = None
     phone: str | None = None
