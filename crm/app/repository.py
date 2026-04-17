@@ -521,8 +521,18 @@ class InMemoryRepository(BaseRepository):
                 }
             )
         else:
+            next_status = (
+                ApplicationStatus.preparation_ready
+                if application.status == ApplicationStatus.applied
+                else application.status
+            )
             updated = application.model_copy(
-                update={"applied": False, "updated_at": utcnow()}
+                update={
+                    "applied": False,
+                    "applied_at": None,
+                    "status": next_status,
+                    "updated_at": utcnow(),
+                }
             )
         self.applications[application_id] = updated
         return updated

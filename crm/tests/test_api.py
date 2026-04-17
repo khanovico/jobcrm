@@ -211,6 +211,41 @@ def test_mark_applied_stamps_once() -> None:
     assert second.json()["applied_at"] == first_stamp
 
 
+def test_unmark_applied_clears_stamp_and_resets_status() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "preparation_ready"},
+        headers=headers,
+    ).json()
+
+    marked = client.post(
+        f"/api/v1/applications/{application['id']}/mark-applied",
+        json={"applied": True},
+        headers=headers,
+    )
+    assert marked.status_code == 200
+    assert marked.json()["status"] == "applied"
+    assert marked.json()["applied_at"] is not None
+
+    unmarked = client.post(
+        f"/api/v1/applications/{application['id']}/mark-applied",
+        json={"applied": False},
+        headers=headers,
+    )
+    assert unmarked.status_code == 200
+    assert unmarked.json()["applied"] is False
+    assert unmarked.json()["applied_at"] is None
+    assert unmarked.json()["status"] == "preparation_ready"
+
+
 def test_rejects_invalid_status_transition() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
