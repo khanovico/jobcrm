@@ -42,6 +42,7 @@ from app.models import (
     DashboardMetrics,
     Email,
     EmailCreate,
+    EmailMarkSent,
     EmailUpdate,
     GlobalSearchResult,
     Industry,
@@ -757,10 +758,11 @@ def create_email_route(
 @app.post("/api/v1/emails/{email_id}/mark-sent", response_model=Email)
 def mark_email_sent_route(
     email_id: str,
+    payload: EmailMarkSent,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Email:
-    email = repo.mark_email_sent(email_id, True)
+    email = repo.mark_email_sent(email_id, payload.sent)
     if not email:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     _audit(
@@ -770,6 +772,7 @@ def mark_email_sent_route(
         action="mark_sent",
         entity_type="email",
         entity_id=email_id,
+        metadata={"sent": payload.sent},
     )
     return email
 

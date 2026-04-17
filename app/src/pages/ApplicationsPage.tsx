@@ -175,19 +175,22 @@ export const ApplicationsPage = () => {
                       </button>
                       {application.status !== "archived" && (
                         <>
-                          {!application.applied && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-success"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                await api.markApplied(application.id, true);
-                                setListMode("applied");
-                              }}
-                            >
-                              Mark Applied
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className={`btn btn-xs ${application.applied ? "btn-outline" : "btn-success"}`}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const nextApplied = !application.applied;
+                              await api.markApplied(application.id, nextApplied);
+                              if (listMode === "all" || listMode === "archived") {
+                                await load();
+                                return;
+                              }
+                              setListMode(nextApplied ? "applied" : "pending");
+                            }}
+                          >
+                            {application.applied ? "Unmark Applied" : "Mark Applied"}
+                          </button>
                           <button
                             type="button"
                             className="btn btn-xs btn-warning btn-outline"
