@@ -13,7 +13,9 @@
 - `app/deps.py` - JWT user, admin, agent API key + rate limit, repository (Mongo or optional in-memory)
 - `app/config.py` - settings (`USE_MEMORY_REPOSITORY` for local E2E)
 - `app/repository.py` - `InMemoryRepository` + `MongoRepository` (full-collection sync pattern)
+- `app/dev_seed.py` - reusable local dummy-data seeder (company + application + PPAs + emails)
 - `app/rate_limit.py`, `app/lifecycle.py` - agent rate limit and preparation-ready notifications
+- `scripts/seed_rich_dummy_application.py` - one-command local seed script for full application-detail test data
 - `tests/` - pytest (API, transitions, MVP agent flows)
 
 ## Frontend (`app/`)
