@@ -1,9 +1,42 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import DOMPurify from "dompurify";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { api } from "../api";
 import { Application, Company, Email, PerProfileApplication, Profile } from "../types";
+
+const decodeEscapedHtml = (content: string): string => {
+  if (!content.includes("&lt;") && !content.includes("&#")) {
+    return content;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = content;
+  return textarea.value;
+};
+
+const sanitizeEmailHtml = (content: string) =>
+  DOMPurify.sanitize(decodeEscapedHtml(content), {
+    USE_PROFILES: { html: true }
+  });
+
+const formatRecipient = (
+  recipient: { title?: string; name?: string; email?: string | null } | null | undefined
+) => {
+  if (!recipient) return null;
+  const namePart = [recipient.title, recipient.name].filter(Boolean).join(" ").trim();
+  if (namePart && recipient.email) return `${namePart} <${recipient.email}>`;
+  return namePart || recipient.email || null;
+};
+
+const getActiveSubject = (
+  subjects: string[] | undefined,
+  selectedSubjectIndex: number | undefined
+): string | null => {
+  if (!subjects || subjects.length === 0) return null;
+  if (selectedSubjectIndex == null) return null;
+  return subjects[selectedSubjectIndex] ?? null;
+};
 
 export const ApplicationDetailPage = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
@@ -16,6 +49,7 @@ export const ApplicationDetailPage = () => {
   const [emailsByPpa, setEmailsByPpa] = useState<Record<string, Email[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [subjectUpdateBusyKey, setSubjectUpdateBusyKey] = useState<string | null>(null);
 
   const load = async () => {
     if (!applicationId) return;
@@ -33,10 +67,20 @@ export const ApplicationDetailPage = () => {
         map[p.id] = p;
       });
       setProfiles(map);
+      const emailEntries = await Promise.all(
+        list.map(async (p) => {
+          try {
+            const emails = await api.listEmailsForPpa(p.id);
+            return [p.id, emails] as const;
+          } catch {
+            return [p.id, [] as Email[]] as const;
+          }
+        })
+      );
       const em: Record<string, Email[]> = {};
-      for (const p of list) {
-        em[p.id] = await api.listEmailsForPpa(p.id);
-      }
+      emailEntries.forEach(([ppaId, emails]) => {
+        em[ppaId] = emails;
+      });
       setEmailsByPpa(em);
     } catch (e) {
       setError((e as Error).message);
@@ -54,6 +98,35 @@ export const ApplicationDetailPage = () => {
       el.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }, [focusEmailId, emailsByPpa, applicationId]);
+
+  const updateActiveSubject = async (ppa: PerProfileApplication, nextIndex: number) => {
+    const plan = ppa.cold_email_plan;
+    if (!plan) return;
+    if (nextIndex === plan.selected_subject_index) return;
+    const busyKey = `${ppa.id}:${nextIndex}`;
+    setSubjectUpdateBusyKey(busyKey);
+    const nextPlan = { ...plan, selected_subject_index: nextIndex };
+    const prevPpas = ppas;
+    setPpas((prev) =>
+      prev.map((row) =>
+        row.id === ppa.id
+          ? {
+              ...row,
+              cold_email_plan: nextPlan
+            }
+          : row
+      )
+    );
+    try {
+      const updated = await api.updatePerProfileApplication(ppa.id, { cold_email_plan: nextPlan });
+      setPpas((prev) => prev.map((row) => (row.id === ppa.id ? updated : row)));
+    } catch (e) {
+      setPpas(prevPpas);
+      setError((e as Error).message);
+    } finally {
+      setSubjectUpdateBusyKey(null);
+    }
+  };
 
   if (!applicationId) return <div>Missing id</div>;
 
@@ -124,64 +197,126 @@ export const ApplicationDetailPage = () => {
           <div className="card bg-base-100 p-4 shadow">
             <h3 className="mb-2 text-lg font-semibold">Per-profile analysis (ordered)</h3>
             <div className="space-y-4">
-              {ppas.map((ppa) => (
-                <div key={ppa.id} className="rounded-lg border border-base-300 p-3">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="font-medium">
-                      #{ppa.order_index} — {profiles[ppa.profile_id]?.name ?? ppa.profile_id}
-                    </span>
-                    {ppa.fit_score != null && (
-                      <span className="badge badge-ghost">Fit {ppa.fit_score}</span>
+              {ppas.map((ppa) => {
+                const ppaEmails = emailsByPpa[ppa.id] ?? [];
+
+                return (
+                  <div key={ppa.id} className="rounded-lg border border-base-300 p-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="font-medium">
+                        #{ppa.order_index} — {profiles[ppa.profile_id]?.name ?? ppa.profile_id}
+                      </span>
+                      {ppa.fit_score != null && (
+                        <span className="badge badge-ghost">Fit {ppa.fit_score}</span>
+                      )}
+                    </div>
+                    {ppa.tailored_resume_link && (
+                      <a
+                        href={ppa.tailored_resume_link}
+                        className="link link-secondary text-sm"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Tailored resume
+                      </a>
                     )}
+                    <p className="mt-2 whitespace-pre-wrap text-sm">{ppa.analysis || "—"}</p>
+                    <div className="mt-2">
+                      <h4 className="text-sm font-semibold">Emails</h4>
+                      <ul className="space-y-2">
+                        {ppaEmails.map((em) => (
+                          <li
+                            key={em.id}
+                            id={`email-${em.id}`}
+                            className={[
+                              "rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm",
+                              focusEmailId === em.id ? "ring-2 ring-primary ring-offset-2 ring-offset-base-200" : ""
+                            ].join(" ")}
+                          >
+                            <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="badge badge-outline">{em.kind}</span>
+                                <span className="badge badge-ghost">{em.lifecycle_status}</span>
+                              </div>
+                              <span className="text-xs opacity-70">Sent: {em.sent_at ?? "Not sent"}</span>
+                            </div>
+
+                            {ppa.cold_email_plan?.subjects?.length ? (
+                              <div className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-70">Subjects</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {ppa.cold_email_plan.subjects.map((subject, index) => {
+                                    const isActive = index === ppa.cold_email_plan?.selected_subject_index;
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={`${em.id}-subject-${index}`}
+                                        disabled={subjectUpdateBusyKey != null}
+                                        className={
+                                          isActive
+                                            ? "badge badge-primary h-auto min-h-7 whitespace-normal px-3 py-2 text-left"
+                                            : "badge badge-outline h-auto min-h-7 whitespace-normal px-3 py-2 text-left hover:badge-primary"
+                                        }
+                                        onClick={() => {
+                                          void updateActiveSubject(ppa, index);
+                                        }}
+                                      >
+                                        {subject}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                {getActiveSubject(
+                                  ppa.cold_email_plan.subjects,
+                                  ppa.cold_email_plan.selected_subject_index
+                                ) && (
+                                  <p className="mt-2 text-xs opacity-80">
+                                    <span className="font-medium">Active:</span>{" "}
+                                    {getActiveSubject(
+                                      ppa.cold_email_plan.subjects,
+                                      ppa.cold_email_plan.selected_subject_index
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                            ) : null}
+
+                            {formatRecipient(em.to ?? ppa.cold_email_plan?.to) && (
+                              <p className="mb-3 text-sm">
+                                <span className="font-medium opacity-70">To:</span>{" "}
+                                {formatRecipient(em.to ?? ppa.cold_email_plan?.to)}
+                              </p>
+                            )}
+
+                            <div
+                              className="prose prose-sm mt-1 max-w-none rounded-lg border border-base-300 bg-base-100 p-3"
+                              // Email bodies are generated as HTML; sanitize before rendering.
+                              dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(em.content) }}
+                            />
+                            {!em.sent && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-primary mt-3"
+                                onClick={async () => {
+                                  await api.markEmailSent(em.id);
+                                  await load();
+                                }}
+                              >
+                                Mark email sent
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                        {ppaEmails.length === 0 && (
+                          <li className="rounded-lg border border-dashed border-base-300 bg-base-100 p-4 text-sm opacity-70">
+                            No emails yet.
+                          </li>
+                        )}
+                      </ul>
+                    </div>
                   </div>
-                  {ppa.tailored_resume_link && (
-                    <a
-                      href={ppa.tailored_resume_link}
-                      className="link link-secondary text-sm"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Tailored resume
-                    </a>
-                  )}
-                  <p className="mt-2 whitespace-pre-wrap text-sm">{ppa.analysis || "—"}</p>
-                  <div className="mt-2">
-                    <h4 className="text-sm font-semibold">Emails</h4>
-                    <ul className="space-y-2">
-                      {(emailsByPpa[ppa.id] ?? []).map((em) => (
-                        <li
-                          key={em.id}
-                          id={`email-${em.id}`}
-                          className={[
-                            "rounded bg-base-200 p-2 text-sm",
-                            focusEmailId === em.id ? "ring-2 ring-primary ring-offset-2 ring-offset-base-200" : ""
-                          ].join(" ")}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="badge badge-outline">{em.kind}</span>
-                            <span className="text-xs opacity-70">
-                              Sent: {em.sent_at ?? "—"}
-                            </span>
-                          </div>
-                          <p className="mt-1 whitespace-pre-wrap">{em.content}</p>
-                          {!em.sent && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-primary mt-2"
-                              onClick={async () => {
-                                await api.markEmailSent(em.id);
-                                await load();
-                              }}
-                            >
-                              Mark email sent
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {ppas.length === 0 && <p className="text-sm opacity-70">No per-profile rows yet.</p>}
             </div>
           </div>

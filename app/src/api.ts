@@ -150,6 +150,11 @@ export const api = {
       `/api/v1/applications/${applicationId}/per-profile-applications`,
       { method: "POST", body: JSON.stringify(payload) }
     ),
+  updatePerProfileApplication: (ppaId: string, payload: Record<string, unknown>) =>
+    request<PerProfileApplication>(`/api/v1/per-profile-applications/${ppaId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
   listEmailsForPpa: (ppaId: string) =>
     request<Email[]>(`/api/v1/per-profile-applications/${ppaId}/emails`),
   createEmail: (ppaId: string, payload: Record<string, unknown>) =>
