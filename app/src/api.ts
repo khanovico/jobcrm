@@ -18,20 +18,51 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-let token: string | null = null;
+let unauthorizedHandler: (() => void) | null = null;
 
-export const setAuthToken = (value: string | null) => {
-  token = value;
+export const setUnauthorizedHandler = (handler: (() => void) | null) => {
+  unauthorizedHandler = handler;
+};
+
+const readStoredToken = () => {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem("jobcrm-token");
+};
+
+const extractDetailMessage = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const detail = (payload as { detail?: unknown }).detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return "Request failed. Please check your input and try again.";
+  return null;
 };
 
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
+  const token = readStoredToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(`${API_URL}${path}`, { ...init, headers });
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Request failed");
+    const rawBody = (await response.text()).trim();
+    let payload: unknown = null;
+    if (rawBody) {
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (response.status === 401) {
+      unauthorizedHandler?.();
+      throw new Error("Session expired. Please sign in again.");
+    }
+
+    const detail = extractDetailMessage(payload);
+    if (detail) throw new Error(detail);
+    if (rawBody && !payload) throw new Error(rawBody);
+    throw new Error("Request failed");
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

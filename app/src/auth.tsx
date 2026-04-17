@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-import { api, setAuthToken } from "./api";
+import { api, setUnauthorizedHandler } from "./api";
 
 type AuthContextValue = {
   token: string | null;
@@ -13,16 +13,21 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("jobcrm-token"));
-  useEffect(() => {
-    setAuthToken(token);
-  }, [token]);
 
-  const storeToken = (value: string | null) => {
+  const storeToken = useCallback((value: string | null) => {
     setToken(value);
-    setAuthToken(value);
     if (value) localStorage.setItem("jobcrm-token", value);
     else localStorage.removeItem("jobcrm-token");
-  };
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      storeToken(null);
+    });
+    return () => {
+      setUnauthorizedHandler(null);
+    };
+  }, [storeToken]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -40,7 +45,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         storeToken(null);
       }
     }),
-    [token]
+    [token, storeToken]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
