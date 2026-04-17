@@ -13,14 +13,24 @@ const PlusIcon = () => (
   </svg>
 );
 
-export type ApplicationListMode = "active" | "archived" | "all";
+export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
+
+const getStatusBadgeClass = (status: string) => {
+  if (status.endsWith("_ready")) {
+    return "badge border-info/30 bg-info/10 text-info";
+  }
+  if (status === "pending_preparation") {
+    return "badge badge-ghost";
+  }
+  return "badge badge-ghost";
+};
 
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [listMode, setListMode] = useState<ApplicationListMode>("active");
+  const [listMode, setListMode] = useState<ApplicationListMode>("pending");
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ApplicationListItem | null>(null);
@@ -32,8 +42,12 @@ export const ApplicationsPage = () => {
 
   const listParams = useMemo(() => {
     const p = new URLSearchParams();
-    if (listMode === "active") {
+    if (listMode === "pending") {
       p.set("exclude_status", "archived");
+      p.set("applied", "false");
+    } else if (listMode === "applied") {
+      p.set("exclude_status", "archived");
+      p.set("applied", "true");
     } else if (listMode === "archived") {
       p.set("status_filter", "archived");
     }
@@ -84,7 +98,8 @@ export const ApplicationsPage = () => {
             <div className="join join-horizontal border border-base-300">
               {(
                 [
-                  ["active", "Active"],
+                  ["pending", "Pending"],
+                  ["applied", "Applied"],
                   ["archived", "Archived"],
                   ["all", "All"]
                 ] as const
@@ -135,7 +150,9 @@ export const ApplicationsPage = () => {
                 >
                   <td className="font-medium">{companyNameById(application.company_id)}</td>
                   <td>
-                    <span className="badge badge-ghost badge-sm">{application.status}</span>
+                    <span className={`${getStatusBadgeClass(application.status)} badge-sm`}>
+                      {application.status}
+                    </span>
                   </td>
                   <td className="max-w-[220px]" onClick={(e) => e.stopPropagation()}>
                     <ProfileNameChips profiles={application.applied_profiles ?? []} />
@@ -158,17 +175,19 @@ export const ApplicationsPage = () => {
                       </button>
                       {application.status !== "archived" && (
                         <>
-                          <button
-                            type="button"
-                            className="btn btn-xs btn-success"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              await api.markApplied(application.id, true);
-                              await load();
-                            }}
-                          >
-                            Mark Applied
-                          </button>
+                          {!application.applied && (
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-success"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await api.markApplied(application.id, true);
+                                setListMode("applied");
+                              }}
+                            >
+                              Mark Applied
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="btn btn-xs btn-warning btn-outline"
@@ -191,7 +210,7 @@ export const ApplicationsPage = () => {
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
         </div>
         <p className="mt-2 text-xs opacity-60">
-          Click a row to open application detail. Use <strong>Active</strong> to hide archived, <strong>Archived</strong> to review closed pipelines, <strong>All</strong> for everything.
+          Click a row to open application detail. Use <strong>Pending</strong> for in-flight work, <strong>Applied</strong> for already-submitted applications, <strong>Archived</strong> to review closed pipelines, <strong>All</strong> for everything.
         </p>
       </section>
 

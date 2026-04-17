@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,7 @@ describe("ApplicationsPage", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
@@ -112,5 +113,144 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByText("Mark Applied")).toBeInTheDocument();
     await userEvent.click(screen.getByText("Mark Applied"));
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("renames Active tab to Pending and includes Applied tab", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("button", { name: "Pending" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Applied" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Active" })).not.toBeInTheDocument();
+  });
+
+  it("hides mark applied button for already applied applications", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                ...applicationRow,
+                applied: true,
+                status: "applied",
+                applied_at: "2026-01-01"
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("cell", { name: "Acme" });
+    expect(screen.queryByText("Mark Applied")).not.toBeInTheDocument();
+  });
+
+  it("switches to Applied tab after marking an application as applied", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const pendingApp = { ...applicationRow, applied: false, status: "preparation_ready" };
+    const appliedApp = { ...applicationRow, applied: true, status: "applied", applied_at: "2026-01-01" };
+
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/applications/") && url.includes("/mark-applied")) {
+        return Promise.resolve(new Response(JSON.stringify(appliedApp), { status: 200 }));
+      }
+      if (isApplicationsListRequest(url)) {
+        const params = url.split("?")[1] ?? "";
+        if (params.includes("applied=true")) {
+          return Promise.resolve(new Response(JSON.stringify([appliedApp]), { status: 200 }));
+        }
+        if (params.includes("applied=false")) {
+          return Promise.resolve(new Response(JSON.stringify([pendingApp]), { status: 200 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify([pendingApp]), { status: 200 }));
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Mark Applied")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Mark Applied"));
+
+    const listCalls = fetchMock.mock.calls
+      .map(([input]) => (typeof input === "string" ? input : input.toString()))
+      .filter((url) => isApplicationsListRequest(url));
+    expect(listCalls.some((url) => url.includes("applied=true"))).toBe(true);
+  });
+
+  it("uses highlighted badge style for *_ready statuses", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                ...applicationRow,
+                status: "preparation_ready"
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    const companyCell = await screen.findByRole("cell", { name: "Acme" });
+    const row = companyCell.closest("tr");
+    expect(row).not.toBeNull();
+    const statusText = within(row as HTMLElement).getByText("preparation_ready");
+    const statusBadge = statusText.closest("span");
+    expect(statusBadge).not.toBeNull();
+    expect(statusBadge?.className).toContain("text-info");
+    expect(statusBadge?.className).toContain("bg-info/10");
   });
 });
