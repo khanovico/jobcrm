@@ -218,54 +218,73 @@ export const ApplicationDetailPage = () => {
       {!application && !error && <span className="loading loading-spinner" />}
       {application && (
         <>
-          <div className="card bg-base-100 p-4 shadow">
-            <h2 className="text-xl font-semibold">Application</h2>
-            <p className="text-sm opacity-80">Company: {company?.name ?? application.company_id}</p>
-            <p className="text-sm">Status: {application.status}</p>
+          <div className="card border border-base-300 bg-base-100 p-4 shadow">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-semibold leading-tight">
+                  <Link
+                    to={`/companies/${application.company_id}`}
+                    className="link link-hover text-primary decoration-2 underline-offset-4"
+                  >
+                    {company?.name ?? application.company_id}
+                  </Link>
+                </h2>
+                {application.job_post?.job_link && (
+                  <a
+                    href={application.job_post.job_link}
+                    className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Go to post
+                  </a>
+                )}
+              </div>
+              <span className="badge badge-outline badge-sm capitalize">{application.status.replaceAll("_", " ")}</span>
+            </div>
+
+            <div className="mt-2.5 grid gap-1.5 text-xs md:grid-cols-12">
+              <p className="rounded-md bg-base-200/60 px-2.5 py-1.5 md:col-span-3">
+                <span className="font-medium opacity-80">Applied:</span> {application.applied_at ?? "—"}
+              </p>
+              <p className="rounded-md bg-base-200/60 px-2.5 py-1.5 md:col-span-3">
+                <span className="font-medium opacity-80">Email sent:</span> {application.email_sent_at ?? "—"}
+              </p>
+              {application.status !== "archived" && (
+                <div className="flex flex-wrap gap-1.5 md:col-span-6 md:justify-end">
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${application.applied ? "btn-outline" : "btn-success"}`}
+                    onClick={async () => {
+                      await api.markApplied(application.id, !application.applied);
+                      await load();
+                    }}
+                  >
+                    {application.applied ? "Unmark applied" : "Mark applied"}
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${application.email_sent ? "btn-outline" : "btn-primary"}`}
+                    onClick={async () => {
+                      await api.markApplicationEmailSent(application.id, !application.email_sent);
+                      await load();
+                    }}
+                  >
+                    {application.email_sent ? "Unmark email sent" : "Mark email sent"}
+                  </button>
+                  <button type="button" className="btn btn-warning btn-outline btn-sm" onClick={() => setArchiveOpen(true)}>
+                    Archive
+                  </button>
+                </div>
+              )}
+            </div>
+
             {application.status === "archived" && application.archive_reason && (
-              <p className="text-sm text-warning">
+              <p className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
                 <span className="font-medium">Why archived:</span> {application.archive_reason}
               </p>
             )}
-            <p className="text-sm">Applied: {application.applied_at ?? "—"}</p>
-            <p className="text-sm">Email sent (tracker): {application.email_sent_at ?? "—"}</p>
-            {application.job_post?.job_link && (
-              <a
-                href={application.job_post.job_link}
-                className="link link-primary text-sm"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Job link
-              </a>
-            )}
-            {application.status !== "archived" && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className={`btn btn-sm ${application.applied ? "btn-outline" : "btn-success"}`}
-                  onClick={async () => {
-                    await api.markApplied(application.id, !application.applied);
-                    await load();
-                  }}
-                >
-                  {application.applied ? "Unmark applied" : "Mark applied"}
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${application.email_sent ? "btn-outline" : "btn-primary"}`}
-                  onClick={async () => {
-                    await api.markApplicationEmailSent(application.id, !application.email_sent);
-                    await load();
-                  }}
-                >
-                  {application.email_sent ? "Unmark email sent" : "Mark email sent"}
-                </button>
-                <button type="button" className="btn btn-warning btn-outline btn-sm" onClick={() => setArchiveOpen(true)}>
-                  Archive
-                </button>
-              </div>
-            )}
+
           </div>
 
           <div className="card bg-base-100 p-4 shadow">

@@ -311,6 +311,43 @@ describe("ApplicationDetailPage", () => {
     expect(container.querySelector("script")).toBeNull();
   });
 
+  it("links company name to company detail and shows go-to-job-post link", async () => {
+    getApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      email_sent: false,
+      job_post: {
+        job_link: "https://example.com/jobs/123"
+      },
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValueOnce({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValueOnce([]);
+    listProfiles.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const companyLink = await screen.findByRole("link", { name: "Acme" });
+    expect(companyLink).toHaveAttribute("href", "/companies/c1");
+
+    const jobPostLink = screen.getByRole("link", { name: "Go to post" });
+    expect(jobPostLink).toHaveAttribute("href", "https://example.com/jobs/123");
+  });
+
   it("updates active subject when user clicks subject badge", async () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
