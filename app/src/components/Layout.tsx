@@ -1,5 +1,7 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
 
+import { api } from "../api";
 import { useAuth } from "../auth";
 
 const links = [
@@ -15,11 +17,35 @@ const links = [
 
 export const Layout = () => {
   const { logout } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const toggleTheme = () => {
     const current = document.documentElement.getAttribute("data-theme");
     document.documentElement.setAttribute("data-theme", current === "dark" ? "light" : "dark");
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadUnreadCount = async () => {
+      try {
+        const unread = await api.listNotifications({ unreadOnly: true, skip: 0, limit: 100 });
+        if (!cancelled) setUnreadCount(unread.length);
+      } catch {
+        if (!cancelled) setUnreadCount(0);
+      }
+    };
+
+    void loadUnreadCount();
+    const timer = window.setInterval(() => {
+      void loadUnreadCount();
+    }, 5 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   return (
     <div className="drawer lg:drawer-open">
@@ -74,7 +100,16 @@ export const Layout = () => {
                     <span className="text-lg leading-none" aria-hidden>
                       {link.emoji}
                     </span>
-                    <span>{link.label}</span>
+                    <span className="flex items-center gap-2">
+                      <span>{link.label}</span>
+                      {link.to === "/notifications" && unreadCount > 0 && (
+                        <span
+                          className="inline-flex h-2.5 w-2.5 rounded-full bg-red-500"
+                          aria-label={`Unread notifications: ${unreadCount}`}
+                          title={`${unreadCount} unread notifications`}
+                        />
+                      )}
+                    </span>
                   </NavLink>
                 </li>
               ))}

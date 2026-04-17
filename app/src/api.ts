@@ -167,10 +167,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ sent })
     }),
-  listNotifications: (unreadOnly = false) =>
-    request<UserNotification[]>(
-      `/api/v1/notifications?unread_only=${unreadOnly ? "true" : "false"}`
-    ),
+  listNotifications: (options?: { unreadOnly?: boolean; skip?: number; limit?: number }) => {
+    const params = new URLSearchParams();
+    params.set("unread_only", options?.unreadOnly ? "true" : "false");
+    if (options?.skip !== undefined) params.set("skip", String(options.skip));
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    return request<UserNotification[]>(`/api/v1/notifications?${params.toString()}`);
+  },
   markNotificationRead: (id: string) =>
     request<void>(`/api/v1/notifications/${id}/read`, { method: "POST" }),
   listAuditEvents: (params?: URLSearchParams) =>
