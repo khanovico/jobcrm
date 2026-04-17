@@ -49,6 +49,7 @@ export type EducationEntry = {
 export type Profile = {
   id: string;
   name: string;
+  frozen?: boolean;
   location?: string | null;
   email?: string | null;
   phone?: string | null;

@@ -183,6 +183,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ sent })
     }),
+  deleteEmail: (emailId: string) =>
+    request<void>(`/api/v1/emails/${emailId}`, { method: "DELETE" }),
   listNotifications: (options?: { unreadOnly?: boolean; skip?: number; limit?: number }) => {
     const params = new URLSearchParams();
     params.set("unread_only", options?.unreadOnly ? "true" : "false");

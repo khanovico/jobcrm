@@ -96,10 +96,18 @@ class BaseRepository:
     def delete_company(self, company_id: str) -> bool:
         raise NotImplementedError
 
-    def list_profiles(self, skip: int, limit: int, search: str | None) -> list[Profile]:
+    def list_profiles(
+        self, skip: int, limit: int, search: str | None, include_frozen: bool = True
+    ) -> list[Profile]:
         raise NotImplementedError
 
-    def list_profile_ids(self, skip: int, limit: int) -> list[str]:
+    def list_profile_ids(self, skip: int, limit: int, include_frozen: bool = True) -> list[str]:
+        raise NotImplementedError
+
+    def list_unfrozen_profile_ids(self, skip: int, limit: int) -> list[str]:
+        raise NotImplementedError
+
+    def list_unfrozen_profiles(self, skip: int, limit: int) -> list[Profile]:
         raise NotImplementedError
 
     def create_profile(self, payload: ProfileCreate) -> Profile:
@@ -240,6 +248,12 @@ class BaseRepository:
     def mark_email_sent(self, email_id: str, sent: bool) -> Email | None:
         raise NotImplementedError
 
+    def delete_email(self, email_id: str) -> bool:
+        raise NotImplementedError
+
+    def delete_email(self, email_id: str) -> bool:
+        raise NotImplementedError
+
 
 def _as_dict(model) -> dict:
     return model.model_dump(exclude_none=True)
@@ -363,16 +377,22 @@ class InMemoryRepository(BaseRepository):
     def delete_company(self, company_id: str) -> bool:
         return self.companies.pop(company_id, None) is not None
 
-    def list_profiles(self, skip: int, limit: int, search: str | None) -> list[Profile]:
+    def list_profiles(
+        self, skip: int, limit: int, search: str | None, include_frozen: bool = True
+    ) -> list[Profile]:
         values = list(self.profiles.values())
+        if not include_frozen:
+            values = [p for p in values if not p.frozen]
         if search:
             needle = search.lower()
             values = [p for p in values if needle in p.name.lower()]
         values.sort(key=lambda p: p.name.lower())
         return values[skip : skip + limit]
 
-    def list_profile_ids(self, skip: int, limit: int) -> list[str]:
+    def list_profile_ids(self, skip: int, limit: int, include_frozen: bool = True) -> list[str]:
         values = sorted(self.profiles.values(), key=lambda p: p.created_at)
+        if not include_frozen:
+            values = [p for p in values if not p.frozen]
         return [p.id for p in values[skip : skip + limit]]
 
     def create_profile(self, payload: ProfileCreate) -> Profile:
@@ -796,6 +816,12 @@ class InMemoryRepository(BaseRepository):
         self.emails[email_id] = merged
         return merged
 
+    def delete_email(self, email_id: str) -> bool:
+        return self.emails.pop(email_id, None) is not None
+
+    def delete_email(self, email_id: str) -> bool:
+        return self.emails.pop(email_id, None) is not None
+
 
 class MongoRepository(InMemoryRepository):
     def __init__(self) -> None:
@@ -1027,3 +1053,13 @@ class MongoRepository(InMemoryRepository):
         email = super().mark_email_sent(email_id, sent)
         self._sync()
         return email
+
+    def delete_email(self, email_id: str) -> bool:
+        deleted = super().delete_email(email_id)
+        self._sync()
+        return deleted
+
+    def delete_email(self, email_id: str) -> bool:
+        deleted = super().delete_email(email_id)
+        self._sync()
+        return deleted
