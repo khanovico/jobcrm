@@ -46,6 +46,9 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 - PUT `/api/v1/agent/per-profile-applications/{id}` — update PPA analysis outputs (`fit_score`, `analysis`, `tailored_resume_link`, `cold_email_plan`).
 - POST `/api/v1/agent/emails` — create tracked outbound drafts/follow-ups tied to a PPA.
 - POST `/api/v1/agent/notifications` — create user-facing notification events (`user_id`, `notification`, `type`, optional `timestamp`, optional `check`, `payload` with `id` + `message`). See api-contracts.md.
-- GET `/api/v1/agent/industries` — read industry taxonomy to standardize company tagging/context.
+- GET `/api/v1/agent/industries` — read industry taxonomy; supports pagination/search for large catalogs.
+- POST `/api/v1/agent/industries` — create one industry taxonomy entry.
+- POST `/api/v1/agent/industries/bulk` — create 1-50 industries in one request.
+- PUT `/api/v1/agent/industries/{id}` — update an industry taxonomy entry.
 
 Agent writes are scoped to Company, Application, PerProfileApplication, Email, Notifications (see server policies).

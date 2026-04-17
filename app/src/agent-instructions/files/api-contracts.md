@@ -293,7 +293,66 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 
 ### `GET /api/v1/agent/industries`
 
+**Query (optional)**
+
+| Param    | Type   | Default | Max |
+| -------- | ------ | ------- | --- |
+| `skip`   | int    | 0       | —   |
+| `limit`  | int    | 200     | 500 |
+| `search` | string | —       | —   |
+
 **Response 200** — JSON array of **Industry**.
+
+---
+
+### `POST /api/v1/agent/industries`
+
+**Request body** — **IndustryCreate**
+
+```json
+{
+  "name": "FinTech",
+  "description": "Finance and technology"
+}
+```
+
+**Response 201** — **Industry**
+
+---
+
+### `POST /api/v1/agent/industries/bulk`
+
+**Request body**
+
+```json
+{
+  "industries": [
+    { "name": "FinTech", "description": "Finance and technology" },
+    { "name": "HealthTech", "description": "Healthcare technology" }
+  ]
+}
+```
+
+`industries` supports 1–50 entries.
+
+**Response 201** — JSON array of **Industry** in request order.
+
+---
+
+### `PUT /api/v1/agent/industries/{industry_id}`
+
+**Request body** — partial **IndustryUpdate**
+
+```json
+{
+  "name": "FinTech",
+  "description": "Updated industry summary"
+}
+```
+
+**Response 200** — **Industry**
+
+**Response 404** — industry not found.
 
 ---
 

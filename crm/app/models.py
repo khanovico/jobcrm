@@ -531,6 +531,10 @@ class AgentCompaniesBulkUpdateRequest(BaseModel):
     updates: list[AgentCompanyUpdateItem] = Field(min_length=1, max_length=50)
 
 
+class AgentIndustriesBulkCreateRequest(BaseModel):
+    industries: list[IndustryCreate] = Field(min_length=1, max_length=50)
+
+
 class AgentNotificationCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
