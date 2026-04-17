@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { api } from "../api";
 import { DashboardMetrics, GlobalSearchResult } from "../types";
@@ -74,7 +75,11 @@ export const DashboardPage = () => {
               <h4 className="font-medium">Companies</h4>
               <ul className="text-sm">
                 {searchResult.companies.map((c) => (
-                  <li key={c.id}>{c.name}</li>
+                  <li key={c.id}>
+                    <Link to={`/companies/${c.id}`} className="link link-primary">
+                      {c.name}
+                    </Link>
+                  </li>
                 ))}
                 {searchResult.companies.length === 0 && <li className="opacity-60">None</li>}
               </ul>
@@ -83,7 +88,11 @@ export const DashboardPage = () => {
               <h4 className="font-medium">Profiles</h4>
               <ul className="text-sm">
                 {searchResult.profiles.map((p) => (
-                  <li key={p.id}>{p.name}</li>
+                  <li key={p.id}>
+                    <Link to={`/profiles/${p.id}`} className="link link-primary">
+                      {p.name}
+                    </Link>
+                  </li>
                 ))}
                 {searchResult.profiles.length === 0 && <li className="opacity-60">None</li>}
               </ul>
@@ -93,7 +102,9 @@ export const DashboardPage = () => {
               <ul className="text-sm">
                 {searchResult.applications.map((a) => (
                   <li key={a.id}>
-                    {a.status} — {a.id.slice(0, 8)}…
+                    <Link to={`/applications/${a.id}`} className="link link-primary">
+                      {a.status} — {a.id.slice(0, 8)}…
+                    </Link>
                   </li>
                 ))}
                 {searchResult.applications.length === 0 && <li className="opacity-60">None</li>}
