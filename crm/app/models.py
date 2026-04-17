@@ -147,6 +147,10 @@ class IndustryCreate(IndustryBase):
     pass
 
 
+class IndustryBulkCreateRequest(BaseModel):
+    industries: list[IndustryCreate] = Field(min_length=1, max_length=50)
+
+
 class IndustryUpdate(BaseModel):
     name: str | None = None
     description: str | None = None

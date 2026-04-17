@@ -47,6 +47,7 @@ from app.models import (
     EmailUpdate,
     GlobalSearchResult,
     Industry,
+    IndustryBulkCreateRequest,
     IndustryCreate,
     IndustryUpdate,
     NotificationListQuery,
@@ -97,6 +98,24 @@ def _audit(
         entity_id=entity_id,
         metadata=metadata or {},
     )
+
+
+def _validate_bulk_industry_names(repo: BaseRepository, names: list[str]) -> None:
+    normalized = [name.strip().lower() for name in names]
+    duplicate_names = sorted({n for n in normalized if normalized.count(n) > 1})
+    if duplicate_names:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Duplicate industry names in request: {', '.join(duplicate_names)}",
+        )
+
+    existing_names = {i.name.strip().lower() for i in repo.list_industries(0, 10_000, None)}
+    existing_conflicts = sorted({n for n in normalized if n in existing_names})
+    if existing_conflicts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Industry names already exist: {', '.join(existing_conflicts)}",
+        )
 
 
 @app.get("/health")
@@ -219,6 +238,28 @@ def create_industry(
         entity_id=industry.id,
     )
     return industry
+
+
+@app.post("/api/v1/industries/bulk", response_model=list[Industry], status_code=status.HTTP_201_CREATED)
+def bulk_create_industries(
+    body: IndustryBulkCreateRequest,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Industry]:
+    _validate_bulk_industry_names(repo, [item.name for item in body.industries])
+    created: list[Industry] = []
+    for item in body.industries:
+        industry = repo.create_industry(item)
+        _audit(
+            repo,
+            actor_type=ActorType.user,
+            actor_id=user.id,
+            action="bulk_create",
+            entity_type="industry",
+            entity_id=industry.id,
+        )
+        created.append(industry)
+    return created
 
 
 @app.put("/api/v1/industries/{industry_id}", response_model=Industry)
@@ -1200,20 +1241,7 @@ def agent_bulk_create_industries(
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Industry]:
     require_agent_scope(agent, "write")
-    existing_names = {i.name.strip().lower() for i in repo.list_industries(0, 10_000, None)}
-    requested_names = [item.name.strip().lower() for item in body.industries]
-    duplicate_names = sorted({n for n in requested_names if requested_names.count(n) > 1})
-    if duplicate_names:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Duplicate industry names in request: {', '.join(duplicate_names)}",
-        )
-    existing_conflicts = sorted({n for n in requested_names if n in existing_names})
-    if existing_conflicts:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Industry names already exist: {', '.join(existing_conflicts)}",
-        )
+    _validate_bulk_industry_names(repo, [item.name for item in body.industries])
 
     created: list[Industry] = []
     for item in body.industries:

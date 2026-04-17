@@ -327,3 +327,33 @@ def test_cors_preflight_register() -> None:
     )
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_bulk_create_industries_and_duplicate_validation() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    created = client.post(
+        "/api/v1/industries/bulk",
+        json={
+            "industries": [
+                {"name": "FinTech", "description": "Finance and technology"},
+                {"name": "HealthTech", "description": "Healthcare"},
+            ]
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201
+    assert len(created.json()) == 2
+    assert {row["name"] for row in created.json()} == {"FinTech", "HealthTech"}
+
+    duplicate = client.post(
+        "/api/v1/industries/bulk",
+        json={"industries": [{"name": "Retail"}, {"name": "retail"}]},
+        headers=headers,
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Duplicate industry names in request: retail"
