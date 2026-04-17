@@ -160,14 +160,14 @@ export const ApplicationsPage = () => {
                         <>
                           <button
                             type="button"
-                            className="btn btn-xs btn-success"
+                            className={`btn btn-xs ${application.applied ? "btn-outline" : "btn-success"}`}
                             onClick={async (e) => {
                               e.stopPropagation();
-                              await api.markApplied(application.id, true);
+                              await api.markApplied(application.id, !application.applied);
                               await load();
                             }}
                           >
-                            Mark Applied
+                            {application.applied ? "Unmark Applied" : "Mark Applied"}
                           </button>
                           <button
                             type="button"

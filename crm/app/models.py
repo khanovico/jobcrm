@@ -281,6 +281,10 @@ class ApplicationMarkEmailSent(BaseModel):
     sent: bool
 
 
+class EmailMarkSent(BaseModel):
+    sent: bool
+
+
 class DashboardMetrics(BaseModel):
     pending_preparation: int
     preparation_ready: int

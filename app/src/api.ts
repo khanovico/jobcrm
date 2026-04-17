@@ -126,8 +126,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
-  markEmailSent: (emailId: string) =>
-    request<Email>(`/api/v1/emails/${emailId}/mark-sent`, { method: "POST" }),
+  markEmailSent: (emailId: string, sent: boolean) =>
+    request<Email>(`/api/v1/emails/${emailId}/mark-sent`, {
+      method: "POST",
+      body: JSON.stringify({ sent })
+    }),
   listNotifications: (unreadOnly = false) =>
     request<UserNotification[]>(
       `/api/v1/notifications?unread_only=${unreadOnly ? "true" : "false"}`

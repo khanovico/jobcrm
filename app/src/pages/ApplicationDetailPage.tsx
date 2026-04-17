@@ -96,23 +96,23 @@ export const ApplicationDetailPage = () => {
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className="btn btn-success btn-sm"
+                  className={`btn btn-sm ${application.applied ? "btn-outline" : "btn-success"}`}
                   onClick={async () => {
-                    await api.markApplied(application.id, true);
+                    await api.markApplied(application.id, !application.applied);
                     await load();
                   }}
                 >
-                  Mark applied
+                  {application.applied ? "Unmark applied" : "Mark applied"}
                 </button>
                 <button
                   type="button"
-                  className="btn btn-outline btn-sm"
+                  className={`btn btn-sm ${application.email_sent ? "btn-outline" : "btn-primary"}`}
                   onClick={async () => {
-                    await api.markApplicationEmailSent(application.id, true);
+                    await api.markApplicationEmailSent(application.id, !application.email_sent);
                     await load();
                   }}
                 >
-                  Mark email sent
+                  {application.email_sent ? "Unmark email sent" : "Mark email sent"}
                 </button>
                 <button type="button" className="btn btn-warning btn-outline btn-sm" onClick={() => setArchiveOpen(true)}>
                   Archive
@@ -164,18 +164,16 @@ export const ApplicationDetailPage = () => {
                             </span>
                           </div>
                           <p className="mt-1 whitespace-pre-wrap">{em.content}</p>
-                          {!em.sent && (
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-primary mt-2"
-                              onClick={async () => {
-                                await api.markEmailSent(em.id);
-                                await load();
-                              }}
-                            >
-                              Mark email sent
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className={`btn btn-xs mt-2 ${em.sent ? "btn-outline" : "btn-primary"}`}
+                            onClick={async () => {
+                              await api.markEmailSent(em.id, !em.sent);
+                              await load();
+                            }}
+                          >
+                            {em.sent ? "Unmark email sent" : "Mark email sent"}
+                          </button>
                         </li>
                       ))}
                     </ul>
