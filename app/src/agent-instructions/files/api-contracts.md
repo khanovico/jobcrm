@@ -253,10 +253,15 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
   "per_profile_application_id": "uuid",
   "kind": "cold",
   "content": "email body",
+  "subjects": ["Subject A", "Subject B"],
+  "selected_subject_index": 0,
+  "to": { "title": "Hiring Manager", "name": "Jane", "email": "j@co.com" },
   "lifecycle_status": "drafted",
   "sent": false
 }
 ```
+
+`selected_subject_index` must be in range for `subjects` (or `0` when `subjects` is empty).
 
 **Response 201** — **Email**.
 

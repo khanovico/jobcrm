@@ -367,9 +367,20 @@ class EmailBase(BaseModel):
     per_profile_application_id: str
     kind: EmailKind
     content: str
+    subjects: list[str] = Field(default_factory=list)
+    selected_subject_index: int = Field(default=0, ge=0)
+    to: ColdEmailRecipient | None = None
     lifecycle_status: EmailLifecycleStatus = EmailLifecycleStatus.drafted
     sent: bool = False
     sent_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _validate_selected_subject_index(self) -> "EmailBase":
+        if not self.subjects and self.selected_subject_index != 0:
+            raise ValueError("selected_subject_index must be 0 when subjects is empty")
+        if self.subjects and self.selected_subject_index >= len(self.subjects):
+            raise ValueError("selected_subject_index out of range for subjects")
+        return self
 
 
 class EmailCreate(EmailBase):
@@ -378,6 +389,9 @@ class EmailCreate(EmailBase):
 
 class EmailUpdate(BaseModel):
     content: str | None = None
+    subjects: list[str] | None = None
+    selected_subject_index: int | None = Field(default=None, ge=0)
+    to: ColdEmailRecipient | None = None
     lifecycle_status: EmailLifecycleStatus | None = None
     sent: bool | None = None
     sent_at: datetime | None = None

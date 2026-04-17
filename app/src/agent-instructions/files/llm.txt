@@ -44,7 +44,7 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 - GET `/api/v1/agent/profiles` — paginated profile listing when bulk context is needed.
 - POST `/api/v1/agent/per-profile-applications` — create a PPA record for a chosen profile under an application.
 - PUT `/api/v1/agent/per-profile-applications/{id}` — update PPA analysis outputs (`fit_score`, `analysis`, `tailored_resume_link`, `cold_email_plan`).
-- POST `/api/v1/agent/emails` — create tracked outbound drafts/follow-ups tied to a PPA.
+- POST `/api/v1/agent/emails` — create tracked outbound drafts/follow-ups tied to a PPA, including `subjects`, `selected_subject_index`, and recipient `to` details.
 - POST `/api/v1/agent/notifications` — create user-facing notification events (`user_id`, `notification`, `type`, optional `timestamp`, optional `check`, `payload` with `id` + `message`). See api-contracts.md.
 - GET `/api/v1/agent/industries` — read industry taxonomy to standardize company tagging/context.
 
