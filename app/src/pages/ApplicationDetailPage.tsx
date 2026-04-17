@@ -273,9 +273,6 @@ export const ApplicationDetailPage = () => {
             <div className="space-y-4">
               {ppas.map((ppa) => {
                 const ppaEmails = emailsByPpa[ppa.id] ?? [];
-                const hasTailoredResumeLink = Boolean(ppa.tailored_resume_link);
-                const tailoredResumeLink =
-                  ppa.tailored_resume_link ?? "https://example.com/tailored-resume.pdf";
 
                 return (
                   <div key={ppa.id} className="rounded-lg border border-base-300 p-3">
@@ -287,14 +284,16 @@ export const ApplicationDetailPage = () => {
                         <span className="badge badge-ghost">Fit {ppa.fit_score}</span>
                       )}
                     </div>
-                    <a
-                      href={tailoredResumeLink}
-                      className="link link-secondary text-sm"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {hasTailoredResumeLink ? "Tailored resume" : "Tailored resume (dummy)"}
-                    </a>
+                    {ppa.tailored_resume_link && (
+                      <a
+                        href={ppa.tailored_resume_link}
+                        className="link link-secondary text-sm"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Tailored resume
+                      </a>
+                    )}
                     <p className="mt-2 whitespace-pre-wrap text-sm">{ppa.analysis || "—"}</p>
                     <div className="mt-2">
                       <h4 className="text-sm font-semibold">Emails</h4>
