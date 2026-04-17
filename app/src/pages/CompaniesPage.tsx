@@ -6,6 +6,11 @@ import { Modal } from "../components/Modal";
 import { api } from "../api";
 import { Company } from "../types";
 
+const PAGE_SIZE = 10;
+
+const indexedBadgeClass = (indexed: boolean | undefined) =>
+  indexed ? "badge-success" : "badge-warning";
+
 export const CompaniesPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<Company[]>([]);
@@ -15,11 +20,37 @@ export const CompaniesPage = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [applicationOpen, setApplicationOpen] = useState(false);
   const [applyCompanyId, setApplyCompanyId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const load = async () => setItems(await api.listCompanies());
+  const load = async (targetPage = page) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.listCompanies(
+        new URLSearchParams({
+          skip: String((targetPage - 1) * PAGE_SIZE),
+          limit: String(PAGE_SIZE)
+        })
+      );
+      setItems(response);
+      setHasNextPage(response.length === PAGE_SIZE);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
-    void load();
-  }, []);
+    void load(page);
+  }, [page]);
+
+  useEffect(() => {
+    if (items.length === 0 && page > 1) {
+      setPage((current) => Math.max(1, current - 1));
+    }
+  }, [items.length, page]);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -65,6 +96,7 @@ export const CompaniesPage = () => {
             <thead>
               <tr>
                 <th>Name</th>
+                <th className="whitespace-nowrap">Indexing</th>
                 <th>Website</th>
                 <th className="whitespace-nowrap">Updated</th>
                 <th className="min-w-[140px] text-right">Actions</th>
@@ -78,6 +110,11 @@ export const CompaniesPage = () => {
                   onClick={() => navigate(`/companies/${company.id}`)}
                 >
                   <td className="font-medium">{company.name}</td>
+                  <td>
+                    <span className={`badge badge-sm ${indexedBadgeClass(company.indexed)}`}>
+                      {company.indexed ? "Indexed" : "Pending"}
+                    </span>
+                  </td>
                   <td className="max-w-[200px] truncate text-xs opacity-80" title={company.website ?? undefined}>
                     {company.website ?? "—"}
                   </td>
@@ -117,6 +154,27 @@ export const CompaniesPage = () => {
             </tbody>
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No companies yet.</p>}
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs opacity-70">Page {page}</p>
+          <div className="join">
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1 || loading}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => current + 1)}
+              disabled={!hasNextPage || loading}
+            >
+              Next
+            </button>
+          </div>
         </div>
         <p className="mt-2 text-xs opacity-60">Click a row to view and edit full company details.</p>
       </section>

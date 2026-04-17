@@ -96,7 +96,8 @@ export const api = {
   listIndustries: () => request<Industry[]>("/api/v1/industries"),
   createIndustry: (payload: { name: string; description?: string }) =>
     request<Industry>("/api/v1/industries", { method: "POST", body: JSON.stringify(payload) }),
-  listCompanies: () => request<Company[]>("/api/v1/companies"),
+  listCompanies: (params?: URLSearchParams) =>
+    request<Company[]>(`/api/v1/companies${params ? `?${params.toString()}` : ""}`),
   createCompany: (payload: Partial<Company> & { name: string }) =>
     request<Company>("/api/v1/companies", { method: "POST", body: JSON.stringify(payload) }),
   getCompany: (id: string) => request<Company>(`/api/v1/companies/${id}`),

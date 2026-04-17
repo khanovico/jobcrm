@@ -18,13 +18,14 @@ describe("CompaniesPage", () => {
     const companyRow = {
       id: "c1",
       name: "Acme Corp",
+      indexed: true,
       website: "https://acme.example",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-02T00:00:00Z"
     };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.endsWith("/companies")) {
+      if (url.includes("/api/v1/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -40,6 +41,8 @@ describe("CompaniesPage", () => {
     );
 
     expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    expect(screen.getByText("Indexed")).toBeInTheDocument();
+    expect(screen.getByText("Page 1")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("row", { name: /Acme Corp/i }));
     expect(await screen.findByTestId("company-detail")).toBeInTheDocument();
   });
