@@ -299,9 +299,9 @@ describe("ApplicationDetailPage", () => {
     expect(screen.getAllByText("Quick intro").length).toBeGreaterThan(0);
     expect(screen.getAllByText("LLM reliability for legal workflows").length).toBeGreaterThan(0);
     expect(screen.getAllByText("15-minute chat?").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Active:").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Subject:").length).toBeGreaterThan(0);
     expect(screen.getAllByText("To:").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Hiring Manager Benjamin <benjamin@lawgoat.com>").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Hiring Manager - Benjamin (benjamin@lawgoat.com)").length).toBeGreaterThan(0);
     const emphasis = screen.getByText("team");
     expect(emphasis.tagName).toBe("STRONG");
     expect(container.querySelector("script")).toBeNull();
@@ -503,7 +503,7 @@ describe("ApplicationDetailPage", () => {
         }
       });
     });
-    expect(screen.getByText("CTO Benjamin Kim <bk@lawgoat.com>")).toBeInTheDocument();
+    expect(screen.getByText("CTO - Benjamin Kim (bk@lawgoat.com)")).toBeInTheDocument();
   });
 
   it("shows unmark actions when application and email are already marked", async () => {
@@ -568,6 +568,7 @@ describe("ApplicationDetailPage", () => {
 
     expect(await screen.findByRole("button", { name: "Unmark applied" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Unmark email sent" })).toHaveLength(2);
+    expect(screen.getByText("Sent: 2026-01-02T00:00:00Z")).toBeInTheDocument();
   });
 
   it("unmarks application applied, application email-sent, and per-profile email-sent", async () => {
@@ -642,5 +643,73 @@ describe("ApplicationDetailPage", () => {
 
     await userEvent.click(unmarkEmailButtons[1]);
     expect(markEmailSent).toHaveBeenCalledWith("e1", false);
+  });
+
+  it("hides default not-sent text and keeps subjects collapsible", async () => {
+    getApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValueOnce({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValueOnce([
+      {
+        id: "ppa1",
+        application_id: "a1",
+        profile_id: "p1",
+        order_index: 1,
+        analysis: "Strong fit",
+        cold_email_plan: {
+          subjects: ["Subject A", "Subject B"],
+          selected_subject_index: 0,
+          to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
+          status: "ready"
+        },
+        applied: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listProfiles.mockResolvedValueOnce([
+      {
+        id: "p1",
+        name: "Profile One",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listEmailsForPpa.mockResolvedValueOnce([
+      {
+        id: "e1",
+        per_profile_application_id: "ppa1",
+        kind: "cold",
+        content: "<p>Body</p>",
+        lifecycle_status: "drafted",
+        sent: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Subject:")).toBeInTheDocument();
+    expect(screen.queryByText(/Sent: Not sent/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Subjects")).toBeInTheDocument();
   });
 });
