@@ -170,6 +170,7 @@ class CompanyBase(BaseModel):
     work_mode: WorkMode | None = None
     work_mode_description: str | None = None
     overview: str | None = None
+    full_overview: str | None = None
     analysis_links: list[AnalysisLink] = Field(default_factory=list)
     enrichment_source_links: list[str] = Field(default_factory=list)
 
@@ -190,6 +191,7 @@ class CompanyUpdate(BaseModel):
     work_mode: WorkMode | None = None
     work_mode_description: str | None = None
     overview: str | None = None
+    full_overview: str | None = None
     analysis_links: list[AnalysisLink] | None = None
     enrichment_source_links: list[str] | None = None
 

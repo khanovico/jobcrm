@@ -150,7 +150,8 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
   "actively_hiring": true,
   "work_mode": "remote_us",
   "work_mode_description": "string",
-  "overview": "string",
+  "overview": "short summary string",
+  "full_overview": "https://drive.google.com/...",
   "analysis_links": [{ "topic": "t", "link": "url" }],
   "enrichment_source_links": ["url"]
 }
