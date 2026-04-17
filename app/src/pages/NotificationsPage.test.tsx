@@ -27,7 +27,7 @@ describe("NotificationsPage", () => {
     markNotificationRead.mockReset();
   });
 
-  it("renders notification rows with labels, severity, message and links", async () => {
+  it("renders active notifications by default with compact tooltip message", async () => {
     listNotifications.mockResolvedValueOnce([
       {
         id: "n1",
@@ -40,18 +40,6 @@ describe("NotificationsPage", () => {
         created_at: "2026-01-01T00:00:00Z",
         read_at: null,
         link: "/applications/a1"
-      },
-      {
-        id: "n2",
-        user_id: "u1",
-        notification: "SYSTEM_ERROR",
-        type: "FAILED",
-        timestamp: "2026-01-02T00:00:00Z",
-        check: false,
-        payload: { id: null, message: "Agent failed" },
-        created_at: "2026-01-02T00:00:00Z",
-        read_at: "2026-01-02T01:00:00Z",
-        link: null
       }
     ]);
 
@@ -62,33 +50,79 @@ describe("NotificationsPage", () => {
     );
 
     expect(await screen.findByText("Application")).toBeInTheDocument();
-    expect(screen.getByText("System")).toBeInTheDocument();
     expect(screen.getByText("SUCCESS")).toBeInTheDocument();
-    expect(screen.getByText("FAILED")).toBeInTheDocument();
     expect(screen.getByText("Application is ready")).toBeInTheDocument();
-    expect(screen.getByText("Agent failed")).toBeInTheDocument();
     expect(screen.getByText("Check")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View" })).toHaveAttribute("href", "/applications/a1");
-    expect(screen.getByText("Read")).toBeInTheDocument();
-    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Show only active notifications" })).toBeChecked();
+    expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 10 });
+    expect(screen.getByLabelText("Notification message: Application is ready")).toHaveAttribute(
+      "title",
+      "Application is ready"
+    );
   });
 
-  it("marks notification as read and reloads list", async () => {
+  it("shows read notifications when active-only toggle is disabled", async () => {
     listNotifications
       .mockResolvedValueOnce([
         {
           id: "n1",
           user_id: "u1",
-          notification: "COMPANY_UPDATE",
-          type: "WARN",
+          notification: "APPLICATION_UPDATE",
+          type: "SUCCESS",
           timestamp: "2026-01-01T00:00:00Z",
           check: false,
-          payload: { id: "c1", message: "Company changed" },
+          payload: { id: "a1", message: "Unread notification" },
           created_at: "2026-01-01T00:00:00Z",
           read_at: null,
-          link: "/companies/c1"
+          link: "/applications/a1"
         }
       ])
+      .mockResolvedValueOnce([
+        {
+          id: "n2",
+          user_id: "u1",
+          notification: "SYSTEM_ERROR",
+          type: "FAILED",
+          timestamp: "2026-01-02T00:00:00Z",
+          check: false,
+          payload: { id: null, message: "Read notification" },
+          created_at: "2026-01-02T00:00:00Z",
+          read_at: "2026-01-02T01:00:00Z",
+          link: null
+        }
+      ]);
+
+    render(
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Unread notification");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Show only active notifications" }));
+
+    expect(await screen.findByText("Read notification")).toBeInTheDocument();
+    expect(listNotifications).toHaveBeenLastCalledWith({ unreadOnly: false, skip: 0, limit: 10 });
+    expect(screen.getByText("Read")).toBeInTheDocument();
+  });
+
+  it("supports pagination and marks notification as read then reloads current page", async () => {
+    const pageOne = Array.from({ length: 10 }).map((_, idx) => ({
+      id: `n-${idx + 1}`,
+      user_id: "u1",
+      notification: "COMPANY_UPDATE" as const,
+      type: "WARN" as const,
+      timestamp: `2026-01-01T00:00:0${idx}Z`,
+      check: false,
+      payload: { id: `c-${idx + 1}`, message: `Company changed ${idx + 1}` },
+      created_at: `2026-01-01T00:00:0${idx}Z`,
+      read_at: null,
+      link: `/companies/c-${idx + 1}`
+    }));
+
+    listNotifications
+      .mockResolvedValueOnce(pageOne)
       .mockResolvedValueOnce([
         {
           id: "n1",
@@ -111,13 +145,17 @@ describe("NotificationsPage", () => {
       </MemoryRouter>
     );
 
+    await screen.findByText("Company changed 1");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Company changed");
-    await userEvent.click(screen.getAllByRole("button", { name: "Mark read" })[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Mark read" }));
 
     await waitFor(() => {
       expect(markNotificationRead).toHaveBeenCalledWith("n1");
-      expect(listNotifications).toHaveBeenCalledTimes(2);
+      expect(listNotifications).toHaveBeenCalledTimes(3);
     });
+    expect(listNotifications).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 10 });
+    expect(listNotifications).toHaveBeenNthCalledWith(3, { unreadOnly: true, skip: 10, limit: 10 });
     expect(await screen.findByText("Read")).toBeInTheDocument();
   });
 });
