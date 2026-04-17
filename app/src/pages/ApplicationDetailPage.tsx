@@ -29,6 +29,12 @@ const formatRecipient = (
   return namePart || recipient.email || null;
 };
 
+type RecipientDraft = {
+  title: string;
+  name: string;
+  email: string;
+};
+
 const getActiveSubject = (
   subjects: string[] | undefined,
   selectedSubjectIndex: number | undefined
@@ -50,6 +56,9 @@ export const ApplicationDetailPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [subjectUpdateBusyKey, setSubjectUpdateBusyKey] = useState<string | null>(null);
+  const [editingRecipientPpaId, setEditingRecipientPpaId] = useState<string | null>(null);
+  const [recipientDraftByPpa, setRecipientDraftByPpa] = useState<Record<string, RecipientDraft>>({});
+  const [recipientUpdateBusyPpaId, setRecipientUpdateBusyPpaId] = useState<string | null>(null);
 
   const load = async () => {
     if (!applicationId) return;
@@ -125,6 +134,67 @@ export const ApplicationDetailPage = () => {
       setError((e as Error).message);
     } finally {
       setSubjectUpdateBusyKey(null);
+    }
+  };
+
+  const getRecipientForEmail = (ppa: PerProfileApplication, em: Email) => em.to ?? ppa.cold_email_plan?.to ?? null;
+
+  const startEditRecipient = (ppa: PerProfileApplication, em: Email) => {
+    const current = getRecipientForEmail(ppa, em);
+    setEditingRecipientPpaId(ppa.id);
+    setRecipientDraftByPpa((prev) => ({
+      ...prev,
+      [ppa.id]: {
+        title: current?.title ?? "",
+        name: current?.name ?? "",
+        email: current?.email ?? ""
+      }
+    }));
+  };
+
+  const cancelEditRecipient = () => {
+    setEditingRecipientPpaId(null);
+  };
+
+  const saveRecipient = async (ppa: PerProfileApplication) => {
+    const draft = recipientDraftByPpa[ppa.id];
+    if (!draft) return;
+    const basePlan = ppa.cold_email_plan ?? {
+      subjects: [],
+      selected_subject_index: 0,
+      status: "none"
+    };
+    const normalizedTo = {
+      title: draft.title.trim(),
+      name: draft.name.trim(),
+      email: draft.email.trim() || null
+    };
+    const nextPlan = {
+      ...basePlan,
+      to: normalizedTo
+    };
+
+    setRecipientUpdateBusyPpaId(ppa.id);
+    const prevPpas = ppas;
+    setPpas((prev) =>
+      prev.map((row) =>
+        row.id === ppa.id
+          ? {
+              ...row,
+              cold_email_plan: nextPlan
+            }
+          : row
+      )
+    );
+    try {
+      const updated = await api.updatePerProfileApplication(ppa.id, { cold_email_plan: nextPlan });
+      setPpas((prev) => prev.map((row) => (row.id === ppa.id ? updated : row)));
+      setEditingRecipientPpaId(null);
+    } catch (e) {
+      setPpas(prevPpas);
+      setError((e as Error).message);
+    } finally {
+      setRecipientUpdateBusyPpaId(null);
     }
   };
 
@@ -281,11 +351,94 @@ export const ApplicationDetailPage = () => {
                               </div>
                             ) : null}
 
-                            {formatRecipient(em.to ?? ppa.cold_email_plan?.to) && (
-                              <p className="mb-3 text-sm">
-                                <span className="font-medium opacity-70">To:</span>{" "}
-                                {formatRecipient(em.to ?? ppa.cold_email_plan?.to)}
-                              </p>
+                            {editingRecipientPpaId === ppa.id ? (
+                              <div className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-70">To</p>
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                  <input
+                                    type="text"
+                                    className="input input-sm input-bordered w-full"
+                                    placeholder="Title"
+                                    aria-label="Recipient title"
+                                    value={recipientDraftByPpa[ppa.id]?.title ?? ""}
+                                    onChange={(e) =>
+                                      setRecipientDraftByPpa((prev) => ({
+                                        ...prev,
+                                        [ppa.id]: {
+                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "" }),
+                                          title: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    type="text"
+                                    className="input input-sm input-bordered w-full"
+                                    placeholder="Name"
+                                    aria-label="Recipient name"
+                                    value={recipientDraftByPpa[ppa.id]?.name ?? ""}
+                                    onChange={(e) =>
+                                      setRecipientDraftByPpa((prev) => ({
+                                        ...prev,
+                                        [ppa.id]: {
+                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "" }),
+                                          name: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    type="email"
+                                    className="input input-sm input-bordered w-full"
+                                    placeholder="Email"
+                                    aria-label="Recipient email"
+                                    value={recipientDraftByPpa[ppa.id]?.email ?? ""}
+                                    onChange={(e) =>
+                                      setRecipientDraftByPpa((prev) => ({
+                                        ...prev,
+                                        [ppa.id]: {
+                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "" }),
+                                          email: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                </div>
+                                <div className="mt-2 flex gap-2">
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs btn-primary"
+                                    disabled={recipientUpdateBusyPpaId === ppa.id}
+                                    onClick={() => {
+                                      void saveRecipient(ppa);
+                                    }}
+                                  >
+                                    Save recipient
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs btn-ghost"
+                                    disabled={recipientUpdateBusyPpaId === ppa.id}
+                                    onClick={cancelEditRecipient}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm">
+                                  <span className="font-medium opacity-70">To:</span>{" "}
+                                  {formatRecipient(getRecipientForEmail(ppa, em)) ?? "—"}
+                                </p>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-ghost"
+                                  onClick={() => startEditRecipient(ppa, em)}
+                                >
+                                  Edit recipient
+                                </button>
+                              </div>
                             )}
 
                             <div

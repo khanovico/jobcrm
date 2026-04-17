@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationDetailPage } from "./ApplicationDetailPage";
 
@@ -63,6 +63,10 @@ describe("ApplicationDetailPage", () => {
       configurable: true,
       value: scrollIntoViewMock
     });
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it("highlights and scrolls to email from emailId query param", async () => {
@@ -397,5 +401,108 @@ describe("ApplicationDetailPage", () => {
       });
     });
     expect(screen.getAllByText("Subject C")).toHaveLength(2);
+  });
+
+  it("allows editing recipient and syncs changes", async () => {
+    getApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValueOnce({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValueOnce([
+      {
+        id: "ppa1",
+        application_id: "a1",
+        profile_id: "p1",
+        order_index: 1,
+        analysis: "Strong fit",
+        cold_email_plan: {
+          subjects: ["Subject A", "Subject B"],
+          selected_subject_index: 0,
+          to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
+          status: "ready"
+        },
+        applied: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listProfiles.mockResolvedValueOnce([
+      {
+        id: "p1",
+        name: "Profile One",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listEmailsForPpa.mockResolvedValueOnce([
+      {
+        id: "e1",
+        per_profile_application_id: "ppa1",
+        kind: "cold",
+        content: "<p>Body</p>",
+        lifecycle_status: "drafted",
+        sent: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    updatePerProfileApplication.mockResolvedValue({
+      id: "ppa1",
+      application_id: "a1",
+      profile_id: "p1",
+      order_index: 1,
+      analysis: "Strong fit",
+      cold_email_plan: {
+        subjects: ["Subject A", "Subject B"],
+        selected_subject_index: 0,
+        to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com" },
+        status: "ready"
+      },
+      applied: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findAllByRole("button", { name: "Edit recipient" });
+    await user.click(screen.getAllByRole("button", { name: "Edit recipient" })[0]);
+    await user.clear(screen.getByLabelText("Recipient title"));
+    await user.type(screen.getByLabelText("Recipient title"), "CTO");
+    await user.clear(screen.getByLabelText("Recipient name"));
+    await user.type(screen.getByLabelText("Recipient name"), "Benjamin Kim");
+    await user.clear(screen.getByLabelText("Recipient email"));
+    await user.type(screen.getByLabelText("Recipient email"), "bk@lawgoat.com");
+    await user.click(screen.getByRole("button", { name: "Save recipient" }));
+
+    await waitFor(() => {
+      expect(updatePerProfileApplication).toHaveBeenCalledWith("ppa1", {
+        cold_email_plan: {
+          subjects: ["Subject A", "Subject B"],
+          selected_subject_index: 0,
+          to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com" },
+          status: "ready"
+        }
+      });
+    });
+    expect(screen.getByText("CTO Benjamin Kim <bk@lawgoat.com>")).toBeInTheDocument();
   });
 });
