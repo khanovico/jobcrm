@@ -26,6 +26,20 @@ export type Industry = {
   updated_at: string;
 };
 
+export type IndustryCreatePayload = {
+  name: string;
+  description?: string;
+};
+
+export type IndustryUpdatePayload = {
+  name?: string;
+  description?: string;
+};
+
+export type IndustryBulkCreatePayload = {
+  industries: IndustryCreatePayload[];
+};
+
 export type EducationEntry = {
   university_name: string;
   from_year?: number | null;

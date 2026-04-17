@@ -7,7 +7,10 @@ import {
   DashboardMetrics,
   Email,
   GlobalSearchResult,
+  IndustryBulkCreatePayload,
+  IndustryCreatePayload,
   Industry,
+  IndustryUpdatePayload,
   PerProfileApplication,
   Profile,
   ProfileCreatePayload,
@@ -93,9 +96,21 @@ export const api = {
   getDashboardMetrics: () => request<DashboardMetrics>("/api/v1/metrics/dashboard"),
   globalSearch: (q: string, limit = 20) =>
     request<GlobalSearchResult>(`/api/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`),
-  listIndustries: () => request<Industry[]>("/api/v1/industries"),
-  createIndustry: (payload: { name: string; description?: string }) =>
+  listIndustries: (params?: URLSearchParams) =>
+    request<Industry[]>(`/api/v1/industries${params ? `?${params.toString()}` : ""}`),
+  createIndustry: (payload: IndustryCreatePayload) =>
     request<Industry>("/api/v1/industries", { method: "POST", body: JSON.stringify(payload) }),
+  bulkCreateIndustries: (payload: IndustryBulkCreatePayload) =>
+    request<Industry[]>("/api/v1/industries/bulk", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    }),
+  updateIndustry: (id: string, payload: IndustryUpdatePayload) =>
+    request<Industry>(`/api/v1/industries/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    }),
+  deleteIndustry: (id: string) => request<void>(`/api/v1/industries/${id}`, { method: "DELETE" }),
   listCompanies: (params?: URLSearchParams) =>
     request<Company[]>(`/api/v1/companies${params ? `?${params.toString()}` : ""}`),
   createCompany: (payload: Partial<Company> & { name: string }) =>

@@ -535,3 +535,64 @@ def test_application_link_hidden_when_application_has_no_owner() -> None:
     assert len(rows) >= 1
     target = next(x for x in rows if x["payload"]["message"] == "Should not expose link")
     assert target["link"] is None
+
+
+def test_agent_industries_create_update_bulk_and_search() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-industries"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    created = client.post(
+        "/api/v1/agent/industries",
+        json={"name": "FinTech", "description": "Finance and technology"},
+        headers=ak,
+    )
+    assert created.status_code == 201
+    industry_id = created.json()["id"]
+
+    updated = client.put(
+        f"/api/v1/agent/industries/{industry_id}",
+        json={"description": "Updated desc"},
+        headers=ak,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["description"] == "Updated desc"
+
+    bulk = client.post(
+        "/api/v1/agent/industries/bulk",
+        json={
+            "industries": [
+                {"name": "HealthTech", "description": "Healthcare"},
+                {"name": "EdTech", "description": "Education"},
+            ]
+        },
+        headers=ak,
+    )
+    assert bulk.status_code == 201
+    assert {row["name"] for row in bulk.json()} == {"HealthTech", "EdTech"}
+
+    listed = client.get("/api/v1/agent/industries?search=tech&limit=2&skip=0", headers=ak)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 2
+    assert all("tech" in row["name"].lower() for row in listed.json())
+
+    duplicate_in_bulk = client.post(
+        "/api/v1/agent/industries/bulk",
+        json={"industries": [{"name": "Retail"}, {"name": "retail"}]},
+        headers=ak,
+    )
+    assert duplicate_in_bulk.status_code == 400
+    assert duplicate_in_bulk.json()["detail"] == "Duplicate industry names in request: retail"
+
+    duplicate_existing = client.post(
+        "/api/v1/agent/industries/bulk",
+        json={"industries": [{"name": "fintech"}]},
+        headers=ak,
+    )
+    assert duplicate_existing.status_code == 400
+    assert duplicate_existing.json()["detail"] == "Industry names already exist: fintech"
