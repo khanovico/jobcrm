@@ -240,7 +240,7 @@ export const ApplicationDetailPage = () => {
                   </a>
                 )}
               </div>
-              <span className="badge badge-outline badge-sm capitalize">{application.status.replaceAll("_", " ")}</span>
+              <span className="badge badge-outline badge-sm capitalize">{application.status.replace(/_/g, " ")}</span>
             </div>
 
             <div className="mt-2.5 grid gap-1.5 text-xs md:grid-cols-12">
