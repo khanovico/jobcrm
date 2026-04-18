@@ -551,6 +551,9 @@ export const ApplicationDetailPage = () => {
             onClose={() => setClearToPendingOpen(false)}
             applicationId={application.id}
             companyLabel={company?.name ?? application.company_id}
+            targetStatus={
+              company?.research_status === "indexed" ? "ppa_pending" : "company_research_pending"
+            }
             onCleared={load}
           />
         </>

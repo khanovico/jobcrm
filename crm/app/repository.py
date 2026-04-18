@@ -196,11 +196,11 @@ class BaseRepository:
         raise NotImplementedError
 
     def clear_application_to_company_research_pending(self, application_id: str) -> Application | None:
-        """Remove all PPAs and their emails; reset application to company_research_pending (bypasses transition rules)."""
+        """Remove all PPAs and their emails; reset application to initial workflow status for the company (bypasses transition rules)."""
         raise NotImplementedError
 
     def clear_company_research_detail(self, company_id: str) -> Company | None:
-        """Clear enrichment text/links and set research_status to pending."""
+        """Set research_status to pending without clearing stored enrichment fields."""
         raise NotImplementedError
 
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:
@@ -717,6 +717,7 @@ class InMemoryRepository(BaseRepository):
         application = self.get_application(application_id)
         if not application:
             return None
+        next_status = self._initial_application_status_for_company(application.company_id)
         ppa_ids = {
             p.id
             for p in self.per_profile_applications.values()
@@ -730,7 +731,7 @@ class InMemoryRepository(BaseRepository):
             self.per_profile_applications.pop(pid, None)
         merged = application.model_copy(
             update={
-                "status": ApplicationStatus.company_research_pending,
+                "status": next_status,
                 "applied": False,
                 "applied_at": None,
                 "email_sent": False,
@@ -749,10 +750,6 @@ class InMemoryRepository(BaseRepository):
         merged = company.model_copy(
             update={
                 "research_status": CompanyResearchStatus.pending,
-                "overview": None,
-                "full_overview": None,
-                "analysis_links": [],
-                "enrichment_source_links": [],
                 "updated_at": utcnow(),
             }
         )

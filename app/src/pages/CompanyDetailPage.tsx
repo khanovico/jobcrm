@@ -151,7 +151,7 @@ export const CompanyDetailPage = () => {
                   onClick={async () => {
                     if (
                       !window.confirm(
-                        "Clear overview, full detail links, and enrichment fields, and set research status to Pending?"
+                        "Set research status to Pending? Stored overview, links, and enrichment fields are kept."
                       )
                     ) {
                       return;

@@ -692,7 +692,7 @@ def clear_application_to_company_research_pending_route(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
-    """Remove all per-profile rows and their emails; set status to company_research_pending."""
+    """Remove all per-profile rows and their emails; set status to initial workflow for the company (ppa_pending if indexed, else company_research_pending)."""
     application = repo.clear_application_to_company_research_pending(application_id)
     if not application:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")

@@ -229,6 +229,73 @@ def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> 
     assert not any(e.per_profile_application_id == ppa["id"] for e in repo.emails.values())
 
 
+def test_clear_company_research_detail_sets_pending_without_clearing_enrichment() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post(
+        "/api/v1/companies",
+        json={
+            "name": "Keep Fields Co",
+            "research_status": "indexed",
+            "overview": "Overview text",
+            "full_overview": "https://example.com/detail",
+            "enrichment_source_links": ["https://src.example"],
+        },
+        headers=headers,
+    ).json()
+    assert company["overview"] == "Overview text"
+
+    r = client.post(f"/api/v1/companies/{company['id']}/clear-research-detail", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["research_status"] == "pending"
+    assert body["overview"] == "Overview text"
+    assert body["full_overview"] == "https://example.com/detail"
+    assert body["enrichment_source_links"] == ["https://src.example"]
+
+
+def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post(
+        "/api/v1/companies",
+        json={"name": "Indexed Co", "research_status": "indexed"},
+        headers=headers,
+    ).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "x",
+        },
+        headers=headers,
+    ).json()
+
+    r = client.post(
+        f"/api/v1/applications/{application['id']}/clear-to-company-research-pending",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "ppa_pending"
+    assert repo.get_per_profile_application(ppa["id"]) is None
+
+
 def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
