@@ -24,6 +24,7 @@ from app.models import (
     CompanyCreate,
     CompanyResearchStatus,
     CompanyUpdate,
+    ColdEmailPlan,
     Email,
     EmailCreate,
     EmailUpdate,
@@ -57,6 +58,24 @@ from app.models import (
 RELATED_COMPANY_DELETED_ARCHIVE_REASON = "Related company is deleted"
 # When company research is cleared and the user chooses to archive related applications.
 RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON = "Related company research cleared"
+
+
+def _recipient_email_from_cold_email_plan(plan: ColdEmailPlan | dict | None) -> str | None:
+    """Resolve recipient email from a model or raw dict (Mongo / legacy / model_construct)."""
+    if plan is None:
+        return None
+    if isinstance(plan, dict):
+        try:
+            plan = ColdEmailPlan.model_validate(plan)
+        except Exception:
+            to = plan.get("to")
+            if isinstance(to, dict):
+                em = to.get("email")
+                return str(em).strip() if em else None
+            return None
+    if plan.to and plan.to.email:
+        return str(plan.to.email).strip() or None
+    return None
 
 
 class BaseRepository:
@@ -639,10 +658,8 @@ class InMemoryRepository(BaseRepository):
         def ppa_has_email_signal(ppa: PerProfileApplication) -> bool:
             if ppa.id in ppa_ids_with_email_row:
                 return True
-            plan = ppa.cold_email_plan
-            if plan and plan.to and plan.to.email:
-                return bool(str(plan.to.email).strip())
-            return False
+            em = _recipient_email_from_cold_email_plan(ppa.cold_email_plan)
+            return bool(em)
 
         def ppa_qualifies(ppa: PerProfileApplication) -> bool:
             return ppa_has_tailored_resume(ppa) or ppa_has_email_signal(ppa)

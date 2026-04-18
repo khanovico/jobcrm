@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.deps import get_repository
 from app.main import app
+from app.models import PerProfileApplication
 from app.repository import (
     InMemoryRepository,
     RELATED_COMPANY_DELETED_ARCHIVE_REASON,
@@ -73,6 +74,68 @@ def test_list_applications_exclude_archived() -> None:
     ).json()
     assert len(only_arch) == 1
     assert only_arch[0]["archive_reason"] == "done"
+
+
+def test_list_applications_tolerates_ppa_cold_email_plan_stored_as_dict() -> None:
+    """Mongo / model_construct can leave nested cold_email_plan as a dict; list must not 500."""
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    company = client.post("/api/v1/companies", json={"name": "Dict Plan Co"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    ppa_resp = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "cold_email_plan": {
+                "subjects": ["Hi"],
+                "selected_subject_index": 0,
+                "to": {"title": "Eng", "name": "Pat", "email": "pat@corp.com"},
+                "status": "none",
+            },
+        },
+        headers=headers,
+    )
+    assert ppa_resp.status_code == 201
+    ppa_id = ppa_resp.json()["id"]
+    raw = repo.get_per_profile_application(ppa_id)
+    assert raw is not None
+    repo.per_profile_applications[ppa_id] = PerProfileApplication.model_construct(
+        id=raw.id,
+        application_id=raw.application_id,
+        profile_id=raw.profile_id,
+        order_index=raw.order_index,
+        fit_score=raw.fit_score,
+        analysis=raw.analysis,
+        tailored_resume_link=raw.tailored_resume_link,
+        cold_email_plan={
+            "subjects": ["Hi"],
+            "selected_subject_index": 0,
+            "to": {"title": "Eng", "name": "Pat", "email": "pat@corp.com"},
+            "status": "none",
+        },
+        applied=raw.applied,
+        applied_at=raw.applied_at,
+        created_at=raw.created_at,
+        updated_at=raw.updated_at,
+    )
+    r = client.get(
+        "/api/v1/applications",
+        params={"exclude_status": "archived", "applied": "false"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    rows = r.json()
+    assert len(rows) == 1
+    assert rows[0]["applied_profiles"][0]["profile_name"] == profile["name"]
 
 
 def test_create_application_defaults_to_pending_preparation() -> None:
