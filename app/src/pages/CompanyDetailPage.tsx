@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { ClearCompanyResearchModal } from "../components/ClearCompanyResearchModal";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
@@ -49,6 +50,7 @@ export const CompanyDetailPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [clearResearchOpen, setClearResearchOpen] = useState(false);
 
   const industryNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -161,24 +163,9 @@ export const CompanyDetailPage = () => {
                 <button
                   type="button"
                   className="btn btn-outline btn-warning btn-sm"
-                  onClick={async () => {
-                    if (
-                      !window.confirm(
-                        "Set research status to Pending? Overview and enrichment stay saved (Edit company); the indexed summary above will hide until research is indexed again."
-                      )
-                    ) {
-                      return;
-                    }
+                  onClick={() => {
                     setError(null);
-                    try {
-                      const updated = await api.clearCompanyResearchDetail(companyId);
-                      setCompany(updated);
-                      setOverview(updated.overview ?? "");
-                      setFullOverview(updated.full_overview ?? "");
-                      await load();
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
+                    setClearResearchOpen(true);
                   }}
                 >
                   Clear
@@ -464,6 +451,20 @@ export const CompanyDetailPage = () => {
             onClose={() => setDeleteOpen(false)}
             company={company ? { id: company.id, name: company.name } : null}
             onDeleted={() => navigate("/companies")}
+          />
+
+          <ClearCompanyResearchModal
+            open={clearResearchOpen}
+            onClose={() => setClearResearchOpen(false)}
+            company={company ? { id: company.id, name: company.name } : null}
+            onCleared={async () => {
+              setError(null);
+              try {
+                await load();
+              } catch (e) {
+                setError((e as Error).message);
+              }
+            }}
           />
         </>
       )}

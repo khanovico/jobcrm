@@ -166,9 +166,13 @@ export const api = {
     request<Application>(`/api/v1/applications/${id}/clear-to-company-research-pending`, {
       method: "POST"
     }),
-  clearCompanyResearchDetail: (companyId: string) =>
+  clearCompanyResearchDetail: (
+    companyId: string,
+    payload?: { related_applications: "none" | "archive" | "reset" }
+  ) =>
     request<Company>(`/api/v1/companies/${companyId}/clear-research-detail`, {
-      method: "POST"
+      method: "POST",
+      body: JSON.stringify(payload ?? { related_applications: "none" })
     }),
   getWorkerState: () => request<WorkerStateResponse>("/api/v1/settings/workers"),
   patchWorkerSettings: (payload: WorkerSettingsUpdatePayload) =>

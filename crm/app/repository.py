@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Literal
 from datetime import datetime
 from uuid import uuid4
 
@@ -54,6 +55,8 @@ from app.models import (
 
 # Archived for every application tied to a company when that company is deleted (user UI + API).
 RELATED_COMPANY_DELETED_ARCHIVE_REASON = "Related company is deleted"
+# When company research is cleared and the user chooses to archive related applications.
+RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON = "Related company research cleared"
 
 
 class BaseRepository:
@@ -206,8 +209,16 @@ class BaseRepository:
         """Remove all PPAs and their emails; reset application to initial workflow status for the company (bypasses transition rules)."""
         raise NotImplementedError
 
-    def clear_company_research_detail(self, company_id: str) -> Company | None:
-        """Set research_status to pending without clearing stored enrichment fields."""
+    def clear_company_research_detail(
+        self,
+        company_id: str,
+        *,
+        related_applications: Literal["none", "archive", "reset"] = "none",
+    ) -> Company | None:
+        """Set research_status to pending without clearing stored enrichment fields.
+
+        related_applications: `none` (unchanged), `archive` (archive all tied apps), `reset` (clear non-archived apps).
+        """
         raise NotImplementedError
 
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:
@@ -483,7 +494,7 @@ class InMemoryRepository(BaseRepository):
     def count_applications_for_company(self, company_id: str) -> int:
         return sum(1 for a in self.applications.values() if a.company_id == company_id)
 
-    def _archive_applications_for_deleted_company(self, company_id: str) -> int:
+    def _archive_all_company_applications(self, company_id: str, archive_reason: str) -> int:
         n = 0
         for app_id, application in list(self.applications.items()):
             if application.company_id != company_id:
@@ -498,14 +509,14 @@ class InMemoryRepository(BaseRepository):
                 merged = application.model_copy(
                     update={
                         "status": ApplicationStatus.archived,
-                        "archive_reason": RELATED_COMPANY_DELETED_ARCHIVE_REASON,
+                        "archive_reason": archive_reason,
                         "updated_at": utcnow(),
                     }
                 )
             else:
                 merged = application.model_copy(
                     update={
-                        "archive_reason": RELATED_COMPANY_DELETED_ARCHIVE_REASON,
+                        "archive_reason": archive_reason,
                         "updated_at": utcnow(),
                     }
                 )
@@ -516,7 +527,9 @@ class InMemoryRepository(BaseRepository):
     def delete_company(self, company_id: str) -> tuple[bool, int]:
         if not self.get_company(company_id):
             return (False, 0)
-        archived = self._archive_applications_for_deleted_company(company_id)
+        archived = self._archive_all_company_applications(
+            company_id, RELATED_COMPANY_DELETED_ARCHIVE_REASON
+        )
         self.companies.pop(company_id, None)
         return (True, archived)
 
@@ -787,10 +800,26 @@ class InMemoryRepository(BaseRepository):
         self.applications[application_id] = merged
         return merged
 
-    def clear_company_research_detail(self, company_id: str) -> Company | None:
+    def clear_company_research_detail(
+        self,
+        company_id: str,
+        *,
+        related_applications: Literal["none", "archive", "reset"] = "none",
+    ) -> Company | None:
         company = self.get_company(company_id)
         if not company:
             return None
+        if related_applications == "archive":
+            self._archive_all_company_applications(
+                company_id, RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
+            )
+        elif related_applications == "reset":
+            for app_id, app in list(self.applications.items()):
+                if app.company_id != company_id:
+                    continue
+                if app.status == ApplicationStatus.archived:
+                    continue
+                self.clear_application_to_company_research_pending(app_id)
         merged = company.model_copy(
             update={
                 "research_status": CompanyResearchStatus.pending,
@@ -1174,9 +1203,17 @@ class MongoRepository(InMemoryRepository):
             self._sync()
         return (ok, n)
 
-    def clear_company_research_detail(self, company_id: str) -> Company | None:
-        company = super().clear_company_research_detail(company_id)
-        self._sync()
+    def clear_company_research_detail(
+        self,
+        company_id: str,
+        *,
+        related_applications: Literal["none", "archive", "reset"] = "none",
+    ) -> Company | None:
+        company = super().clear_company_research_detail(
+            company_id, related_applications=related_applications
+        )
+        if company:
+            self._sync()
         return company
 
     def create_profile(self, payload: ProfileCreate) -> Profile:

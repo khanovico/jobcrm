@@ -258,6 +258,12 @@ class DeleteCompanyResponse(BaseModel):
     applications_archived: int
 
 
+class ClearCompanyResearchDetailRequest(BaseModel):
+    """How to handle applications tied to the company when clearing research status."""
+
+    related_applications: Literal["none", "archive", "reset"] = "none"
+
+
 class Company(CompanyBase):
     id: str
     created_at: datetime

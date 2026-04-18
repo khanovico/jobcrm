@@ -54,6 +54,8 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
     onClose();
   };
 
+  const countReady = count !== null || countError !== null;
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!company) return;
@@ -107,7 +109,11 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
           <button type="button" className="btn btn-ghost" onClick={close} disabled={submitting}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-error" disabled={submitting || !company}>
+          <button
+            type="submit"
+            className="btn btn-error"
+            disabled={submitting || !company || !countReady}
+          >
             {submitting ? "Deleting…" : "Delete company"}
           </button>
         </div>

@@ -12,6 +12,10 @@ const { getCompany, listApplications, listIndustries, getCompanyApplicationCount
   getCompanyApplicationCount: vi.fn()
 }));
 
+vi.mock("../components/ClearCompanyResearchModal", () => ({
+  ClearCompanyResearchModal: () => null
+}));
+
 vi.mock("../api", () => ({
   api: {
     getCompany,

@@ -2,7 +2,11 @@ from fastapi.testclient import TestClient
 
 from app.deps import get_repository
 from app.main import app
-from app.repository import InMemoryRepository, RELATED_COMPANY_DELETED_ARCHIVE_REASON
+from app.repository import (
+    InMemoryRepository,
+    RELATED_COMPANY_DELETED_ARCHIVE_REASON,
+    RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON,
+)
 
 
 def _register_and_login(client: TestClient) -> str:
@@ -256,6 +260,73 @@ def test_clear_company_research_detail_sets_pending_without_clearing_enrichment(
     assert body["overview"] == "Overview text"
     assert body["full_overview"] == "https://example.com/detail"
     assert body["enrichment_source_links"] == ["https://src.example"]
+
+
+def test_clear_company_research_detail_archives_related_applications() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Arch Co", "research_status": "indexed"}, headers=headers).json()
+    client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    )
+
+    r = client.post(
+        f"/api/v1/companies/{company['id']}/clear-research-detail",
+        json={"related_applications": "archive"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["research_status"] == "pending"
+    listed = client.get("/api/v1/applications", headers=headers, params={"status_filter": "archived"}).json()
+    assert len(listed) == 1
+    assert listed[0]["archive_reason"] == RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
+
+
+def test_clear_company_research_detail_reset_related_applications() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Reset Co", "research_status": "indexed"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "x",
+        },
+        headers=headers,
+    )
+
+    r = client.post(
+        f"/api/v1/companies/{company['id']}/clear-research-detail",
+        json={"related_applications": "reset"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["research_status"] == "pending"
+    got = client.get(f"/api/v1/applications/{application['id']}", headers=headers).json()
+    assert got["status"] == "ppa_pending"
+    ppas = client.get(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        headers=headers,
+    ).json()
+    assert ppas == []
 
 
 def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:

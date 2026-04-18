@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 
@@ -39,6 +39,7 @@ from app.models import (
     AuditListQuery,
     Company,
     CompanyApplicationCountResponse,
+    ClearCompanyResearchDetailRequest,
     CompanyCreate,
     CompanyUpdate,
     DeleteCompanyResponse,
@@ -449,8 +450,12 @@ def clear_company_research_detail_route(
     company_id: str,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
+    body: ClearCompanyResearchDetailRequest | None = Body(None),
 ) -> Company:
-    company = repo.clear_company_research_detail(company_id)
+    req = body or ClearCompanyResearchDetailRequest()
+    company = repo.clear_company_research_detail(
+        company_id, related_applications=req.related_applications
+    )
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
     _audit(
@@ -460,7 +465,7 @@ def clear_company_research_detail_route(
         action="clear_company_research_detail",
         entity_type="company",
         entity_id=company_id,
-        metadata={},
+        metadata={"related_applications": req.related_applications},
     )
     return company
 
