@@ -18,7 +18,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `bash -lc 'cd "${path.join(repoRoot, "crm")}" && source .venv/bin/activate && USE_MEMORY_REPOSITORY=true uvicorn app.main:app --host 127.0.0.1 --port 8000'`,
+      command: `bash -lc 'cd "${path.join(repoRoot, "crm")}" && USE_MEMORY_REPOSITORY=true python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000'`,
       url: "http://127.0.0.1:8000/health",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000
