@@ -391,6 +391,40 @@ def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
     assert repo.get_per_profile_application(ppa["id"]) is None
 
 
+def test_update_company_to_indexed_promotes_company_research_pending_to_ppa_pending() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Index Co"}, headers=headers).json()
+    assert company["research_status"] == "pending"
+    app_crp = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    app_ready = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+
+    r = client.put(
+        f"/api/v1/companies/{company['id']}",
+        json={"research_status": "indexed"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["research_status"] == "indexed"
+
+    got_crp = client.get(f"/api/v1/applications/{app_crp['id']}", headers=headers).json()
+    assert got_crp["status"] == "ppa_pending"
+    got_ready = client.get(f"/api/v1/applications/{app_ready['id']}", headers=headers).json()
+    assert got_ready["status"] == "application_ready"
+
+
 def test_company_application_count_matches_tied_applications() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

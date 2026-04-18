@@ -481,6 +481,21 @@ class InMemoryRepository(BaseRepository):
     def get_company(self, company_id: str) -> Company | None:
         return self.companies.get(company_id)
 
+    def _promote_company_research_pending_to_ppa_for_company(self, company_id: str) -> None:
+        """When company becomes indexed, move tied applications from company_research_pending → ppa_pending."""
+        for app_id, application in list(self.applications.items()):
+            if application.company_id != company_id:
+                continue
+            if application.status != ApplicationStatus.company_research_pending:
+                continue
+            if not validate_application_transition(
+                application.status, ApplicationStatus.ppa_pending
+            ):
+                continue
+            self.applications[app_id] = application.model_copy(
+                update={"status": ApplicationStatus.ppa_pending, "updated_at": utcnow()}
+            )
+
     def update_company(self, company_id: str, payload: CompanyUpdate) -> Company | None:
         company = self.get_company(company_id)
         if not company:
@@ -489,6 +504,11 @@ class InMemoryRepository(BaseRepository):
             update={**payload.model_dump(exclude_none=True), "updated_at": utcnow()}
         )
         self.companies[company_id] = merged
+        if (
+            merged.research_status == CompanyResearchStatus.indexed
+            and company.research_status != CompanyResearchStatus.indexed
+        ):
+            self._promote_company_research_pending_to_ppa_for_company(company_id)
         return merged
 
     def count_applications_for_company(self, company_id: str) -> int:
