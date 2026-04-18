@@ -809,18 +809,8 @@ class InMemoryRepository(BaseRepository):
         company = self.get_company(company_id)
         if not company:
             return None
-        if related_applications == "archive":
-            self._archive_all_company_applications(
-                company_id, RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
-            )
-        elif related_applications == "reset":
-            for app_id, app in list(self.applications.items()):
-                if app.company_id != company_id:
-                    continue
-                if app.status == ApplicationStatus.archived:
-                    continue
-                self.clear_application_to_company_research_pending(app_id)
-        # Full clear: wipe enrichment except company name and website (identifiers unchanged).
+        # Apply company wipe first so related-application reset sees research_status pending
+        # (otherwise clear_application_to_company_research_pending would still see indexed → ppa_pending).
         merged = company.model_copy(
             update={
                 "research_status": CompanyResearchStatus.pending,
@@ -839,6 +829,17 @@ class InMemoryRepository(BaseRepository):
             }
         )
         self.companies[company_id] = merged
+        if related_applications == "archive":
+            self._archive_all_company_applications(
+                company_id, RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
+            )
+        elif related_applications == "reset":
+            for app_id, app in list(self.applications.items()):
+                if app.company_id != company_id:
+                    continue
+                if app.status == ApplicationStatus.archived:
+                    continue
+                self.clear_application_to_company_research_pending(app_id)
         return merged
 
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:

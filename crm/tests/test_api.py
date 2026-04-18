@@ -345,7 +345,7 @@ def test_clear_company_research_detail_reset_related_applications() -> None:
     assert r.status_code == 200
     assert r.json()["research_status"] == "pending"
     got = client.get(f"/api/v1/applications/{application['id']}", headers=headers).json()
-    assert got["status"] == "ppa_pending"
+    assert got["status"] == "company_research_pending"
     ppas = client.get(
         f"/api/v1/applications/{application['id']}/per-profile-applications",
         headers=headers,
