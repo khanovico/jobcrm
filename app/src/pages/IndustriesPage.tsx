@@ -179,8 +179,8 @@ export const IndustriesPage = () => {
       {error && <div className="alert alert-error text-sm">{error}</div>}
       {success && <div className="alert alert-success text-sm">{success}</div>}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-        <section className="card bg-base-100 p-4 shadow">
+      <div className="grid items-start gap-6 xl:grid-cols-[1fr_360px]">
+        <section className="card bg-base-100 p-4 shadow" data-testid="industries-list-card">
           <form
             className="mb-4 flex flex-wrap items-end gap-2 border-b border-base-300 pb-4"
             onSubmit={(e) => {
@@ -219,7 +219,10 @@ export const IndustriesPage = () => {
           ) : items.length === 0 ? (
             <div className="py-8 text-center text-sm opacity-70">No industries found.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div
+              className="max-h-[calc(100dvh-16rem)] min-h-0 overflow-y-auto overflow-x-auto"
+              data-testid="industries-table-scroll"
+            >
               <table className="table table-zebra">
                 <thead>
                   <tr>
@@ -298,7 +301,10 @@ export const IndustriesPage = () => {
           )}
         </section>
 
-        <aside className="card bg-base-100 p-4 shadow">
+        <aside
+          className="card sticky top-4 bg-base-100 p-4 shadow xl:self-start"
+          data-testid="industries-create-panel"
+        >
           <div className="tabs tabs-boxed mb-4 w-full">
             <button
               type="button"
