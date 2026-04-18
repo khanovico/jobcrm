@@ -4,7 +4,11 @@ import DOMPurify from "dompurify";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { api } from "../api";
-import { Application, Company, Email, PerProfileApplication, Profile } from "../types";
+import {
+  formatApplicationStatusLabel,
+  getSelectableApplicationStatuses
+} from "../applicationStatus";
+import type { Application, ApplicationStatus, Company, Email, PerProfileApplication, Profile } from "../types";
 
 const decodeEscapedHtml = (content: string): string => {
   if (!content.includes("&lt;") && !content.includes("&#")) {
@@ -63,6 +67,7 @@ export const ApplicationDetailPage = () => {
   const [editingRecipientPpaId, setEditingRecipientPpaId] = useState<string | null>(null);
   const [recipientDraftByPpa, setRecipientDraftByPpa] = useState<Record<string, RecipientDraft>>({});
   const [recipientUpdateBusyPpaId, setRecipientUpdateBusyPpaId] = useState<string | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
 
   const load = async () => {
     if (!applicationId) return;
@@ -202,6 +207,20 @@ export const ApplicationDetailPage = () => {
     }
   };
 
+  const changeApplicationStatus = async (next: ApplicationStatus) => {
+    if (!application || next === application.status) return;
+    setStatusBusy(true);
+    setError(null);
+    try {
+      const updated = await api.updateApplication(application.id, { status: next });
+      setApplication(updated);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setStatusBusy(false);
+    }
+  };
+
   if (!applicationId) return <div>Missing id</div>;
 
   return (
@@ -240,7 +259,22 @@ export const ApplicationDetailPage = () => {
                   </a>
                 )}
               </div>
-              <span className="badge badge-outline badge-sm capitalize">{application.status.replace(/_/g, " ")}</span>
+              <label className="form-control w-fit min-w-[11rem] max-w-[14rem]">
+                <span className="label sr-only py-0">Status</span>
+                <select
+                  className="select select-bordered select-sm w-full"
+                  aria-label="Application status"
+                  value={application.status}
+                  disabled={statusBusy || application.status === "archived"}
+                  onChange={(e) => void changeApplicationStatus(e.target.value as ApplicationStatus)}
+                >
+                  {getSelectableApplicationStatuses(application.status).map((s) => (
+                    <option key={s} value={s}>
+                      {formatApplicationStatusLabel(s)}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <div className="mt-2.5 grid gap-1.5 text-xs md:grid-cols-12">

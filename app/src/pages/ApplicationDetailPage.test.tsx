@@ -12,6 +12,7 @@ const {
   listProfiles,
   listEmailsForPpa,
   updatePerProfileApplication,
+  updateApplication,
   markApplied,
   markApplicationEmailSent,
   markEmailSent,
@@ -23,6 +24,7 @@ const {
   listProfiles: vi.fn(),
   listEmailsForPpa: vi.fn(),
   updatePerProfileApplication: vi.fn(),
+  updateApplication: vi.fn(),
   markApplied: vi.fn(),
   markApplicationEmailSent: vi.fn(),
   markEmailSent: vi.fn(),
@@ -37,6 +39,7 @@ vi.mock("../api", () => ({
     listProfiles,
     listEmailsForPpa,
     updatePerProfileApplication,
+    updateApplication,
     markApplied,
     markApplicationEmailSent,
     markEmailSent,
@@ -58,6 +61,7 @@ describe("ApplicationDetailPage", () => {
     listProfiles.mockReset();
     listEmailsForPpa.mockReset();
     updatePerProfileApplication.mockReset();
+    updateApplication.mockReset();
     markApplied.mockReset();
     markApplicationEmailSent.mockReset();
     markEmailSent.mockReset();
@@ -817,5 +821,47 @@ describe("ApplicationDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Delete email" }));
     expect(confirmSpy).toHaveBeenCalled();
     expect(deleteEmail).toHaveBeenCalledWith("e1");
+  });
+
+  it("updates application status when the status dropdown changes", async () => {
+    getApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValueOnce({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValueOnce([]);
+    listProfiles.mockResolvedValueOnce([]);
+    updateApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "applied",
+      applied: true,
+      applied_at: "2026-01-03T00:00:00Z",
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-03T00:00:00Z"
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const statusSelect = await screen.findByRole("combobox", { name: "Application status" });
+    await userEvent.selectOptions(statusSelect, "applied");
+    expect(updateApplication).toHaveBeenCalledWith("a1", { status: "applied" });
   });
 });
