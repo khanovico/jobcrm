@@ -163,18 +163,54 @@ def test_list_applications_includes_applied_profile_names() -> None:
             "application_id": application["id"],
             "profile_id": profile["id"],
             "order_index": 0,
-            "applied": True,
+            "tailored_resume_link": "https://example.com/resume.pdf",
         },
         headers=headers,
     ).json()
-    assert ppa["applied"] is True
-    assert ppa.get("applied_at")
+    assert ppa["tailored_resume_link"]
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
-    assert listed[0]["applied_profiles"] == [
-        {"profile_id": profile["id"], "profile_name": "Alex Dev"}
-    ]
+    assert listed[0]["applied_profiles"] == [{"profile_name": "Alex Dev"}]
+
+
+def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "draft"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "ok",
+        },
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/per-profile-applications/{ppa['id']}/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "content": "Hello",
+        },
+        headers=headers,
+    )
+
+    listed = client.get("/api/v1/applications", headers=headers).json()
+    assert len(listed) == 1
+    assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
 def test_mark_applied_stamps_once() -> None:

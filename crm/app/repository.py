@@ -417,18 +417,51 @@ class InMemoryRepository(BaseRepository):
     def delete_profile(self, profile_id: str) -> bool:
         return self.profiles.pop(profile_id, None) is not None
 
-    def _applied_profile_names_for_application(self, application_id: str) -> list[AppliedProfileName]:
-        rows = [
-            p
-            for p in self.per_profile_applications.values()
-            if p.application_id == application_id and p.applied
-        ]
-        rows = sorted(rows, key=lambda p: (p.order_index, p.created_at))
-        out: list[AppliedProfileName] = []
-        for ppa in rows:
-            prof = self.get_profile(ppa.profile_id)
-            name = prof.name if prof else ppa.profile_id
-            out.append(AppliedProfileName(profile_id=ppa.profile_id, profile_name=name))
+    def _batch_applied_profile_names_for_applications(
+        self, application_ids: list[str]
+    ) -> dict[str, list[AppliedProfileName]]:
+        """PPAs that have a tailored resume link or email (records or recipient on cold email plan)."""
+        if not application_ids:
+            return {}
+
+        app_set = set(application_ids)
+        ppas_by_app: dict[str, list[PerProfileApplication]] = {aid: [] for aid in application_ids}
+        for ppa in self.per_profile_applications.values():
+            if ppa.application_id in app_set:
+                ppas_by_app[ppa.application_id].append(ppa)
+
+        ppa_ids_with_email_row = {
+            e.per_profile_application_id for e in self.emails.values()
+        }
+
+        def ppa_has_tailored_resume(ppa: PerProfileApplication) -> bool:
+            link = ppa.tailored_resume_link
+            return bool(link and str(link).strip())
+
+        def ppa_has_email_signal(ppa: PerProfileApplication) -> bool:
+            if ppa.id in ppa_ids_with_email_row:
+                return True
+            plan = ppa.cold_email_plan
+            if plan and plan.to and plan.to.email:
+                return bool(str(plan.to.email).strip())
+            return False
+
+        def ppa_qualifies(ppa: PerProfileApplication) -> bool:
+            return ppa_has_tailored_resume(ppa) or ppa_has_email_signal(ppa)
+
+        out: dict[str, list[AppliedProfileName]] = {}
+        for aid in application_ids:
+            rows = sorted(ppas_by_app[aid], key=lambda p: (p.order_index, p.created_at))
+            seen: set[str] = set()
+            names: list[AppliedProfileName] = []
+            for ppa in rows:
+                if not ppa_qualifies(ppa) or ppa.profile_id in seen:
+                    continue
+                seen.add(ppa.profile_id)
+                prof = self.get_profile(ppa.profile_id)
+                display = prof.name if prof else "Unknown profile"
+                names.append(AppliedProfileName(profile_name=display))
+            out[aid] = names
         return out
 
     def list_applications(
@@ -455,10 +488,11 @@ class InMemoryRepository(BaseRepository):
             values = [a for a in values if a.email_sent is email_sent]
         values = _sort_applications(values, sort)
         sliced = values[skip : skip + limit]
+        batch = self._batch_applied_profile_names_for_applications([a.id for a in sliced])
         return [
             ApplicationListItem(
                 **a.model_dump(),
-                applied_profiles=self._applied_profile_names_for_application(a.id),
+                applied_profiles=batch.get(a.id, []),
             )
             for a in sliced
         ]
@@ -1053,11 +1087,6 @@ class MongoRepository(InMemoryRepository):
         email = super().mark_email_sent(email_id, sent)
         self._sync()
         return email
-
-    def delete_email(self, email_id: str) -> bool:
-        deleted = super().delete_email(email_id)
-        self._sync()
-        return deleted
 
     def delete_email(self, email_id: str) -> bool:
         deleted = super().delete_email(email_id)

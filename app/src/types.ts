@@ -104,9 +104,8 @@ export type Application = {
   updated_at: string;
 };
 
-/** Resolved profile names for per-profile rows with `applied` on list applications API. */
+/** Resolved profile names for PPAs that have tailored resume or email on list applications API. */
 export type AppliedProfileName = {
-  profile_id: string;
   profile_name: string;
 };
 

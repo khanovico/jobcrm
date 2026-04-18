@@ -24,7 +24,7 @@ describe("ApplicationsPage", () => {
     applied: false,
     created_at: "2026-01-01",
     updated_at: "2026-01-01",
-    applied_profiles: [] as { profile_id: string; profile_name: string }[]
+    applied_profiles: [] as { profile_name: string }[]
   };
 
   it("navigates to application detail when a table row is clicked", async () => {

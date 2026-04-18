@@ -363,9 +363,8 @@ class PerProfileApplication(PerProfileApplicationBase):
 
 
 class AppliedProfileName(BaseModel):
-    """Profile display for application list (per-profile applied)."""
+    """Profile display for application list: PPAs with tailored resume or email attached."""
 
-    profile_id: str
     profile_name: str
 
 

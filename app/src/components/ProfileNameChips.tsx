@@ -19,8 +19,12 @@ export const ProfileNameChips = ({
   }
   return (
     <div className={`flex flex-wrap gap-1 ${className}`}>
-      {profiles.map((p) => (
-        <span key={p.profile_id} className="badge badge-outline badge-sm max-w-[140px] truncate" title={p.profile_name}>
+      {profiles.map((p, index) => (
+        <span
+          key={`${p.profile_name}-${index}`}
+          className="badge badge-outline badge-sm max-w-[140px] truncate"
+          title={p.profile_name}
+        >
           {p.profile_name}
         </span>
       ))}

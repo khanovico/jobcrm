@@ -7,10 +7,7 @@ describe("ProfileNameChips", () => {
   it("renders profile names as badges", () => {
     render(
       <ProfileNameChips
-        profiles={[
-          { profile_id: "p1", profile_name: "Alex" },
-          { profile_id: "p2", profile_name: "Jordan" }
-        ]}
+        profiles={[{ profile_name: "Alex" }, { profile_name: "Jordan" }]}
       />
     );
     expect(screen.getByText("Alex")).toBeInTheDocument();
