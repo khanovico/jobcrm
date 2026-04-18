@@ -6,8 +6,8 @@ const API_ORIGIN = "http://127.0.0.1:8000";
 const E2E_EMAIL = "e2e.company.clear@example.com";
 const E2E_PASSWORD = "secret1234";
 
-test.describe("Company clear (full enrichment wipe)", () => {
-  test("clears every enrichment field via UI and API", async ({ page, request }) => {
+test.describe("Company clear (enrichment wipe, keeps name + website)", () => {
+  test("clears research fields except name and website via UI and API", async ({ page, request }) => {
     test.setTimeout(120_000);
 
     let loginRes = await request.post(`${API_ORIGIN}/api/v1/auth/login`, {
@@ -84,7 +84,7 @@ test.describe("Company clear (full enrichment wipe)", () => {
 
     await page.getByRole("button", { name: "Clear company" }).click();
 
-    await expect(page.getByLabel("Website")).toHaveValue("", { timeout: 15_000 });
+    await expect(page.getByLabel("Website")).toHaveValue("https://company.example", { timeout: 15_000 });
     await expect(page.getByLabel("LinkedIn")).toHaveValue("");
     await expect(page.getByLabel("Employee count (text)")).toHaveValue("");
     await expect(page.getByLabel("Overview")).toHaveValue("");
@@ -108,7 +108,7 @@ test.describe("Company clear (full enrichment wipe)", () => {
     const c = (await after.json()) as Record<string, unknown>;
     expect(c.name).toBe("E2E Clear Target");
     expect(c.research_status).toBe("pending");
-    expect(c.website).toBeNull();
+    expect(c.website).toBe("https://company.example");
     expect(c.linkedin).toBeNull();
     expect(c.employee_count_text).toBeNull();
     expect(c.actively_hiring).toBeNull();

@@ -86,8 +86,8 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
             <p className="text-sm leading-relaxed opacity-90">
               This will set research status to <strong>Pending</strong> for{" "}
               <span className="font-medium">{company.name}</span> and{" "}
-              <strong>remove all stored company details</strong> (website, LinkedIn, industries, locations, overview,
-              links, and other enrichment). The company <strong>name</strong> is kept.
+              <strong>remove stored research details</strong> (LinkedIn, industries, locations, overview, links, and
+              other enrichment). The company <strong>name</strong> and <strong>website</strong> are kept.
             </p>
             {loadError && (
               <p className="text-sm text-warning">

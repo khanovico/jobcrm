@@ -233,7 +233,7 @@ def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> 
     assert not any(e.per_profile_application_id == ppa["id"] for e in repo.emails.values())
 
 
-def test_clear_company_research_detail_clears_all_enrichment_fields() -> None:
+def test_clear_company_research_detail_clears_enrichment_keeps_name_and_website() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -272,7 +272,7 @@ def test_clear_company_research_detail_clears_all_enrichment_fields() -> None:
     body = r.json()
     assert body["name"] == "Full Clear Co"
     assert body["research_status"] == "pending"
-    assert body["website"] is None
+    assert body["website"] == "https://w.example"
     assert body["linkedin"] is None
     assert body["industry_ids"] == []
     assert body["hq_locations"] == []

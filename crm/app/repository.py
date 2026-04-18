@@ -215,7 +215,7 @@ class BaseRepository:
         *,
         related_applications: Literal["none", "archive", "reset"] = "none",
     ) -> Company | None:
-        """Set research_status to pending and wipe all enrichment fields (name unchanged).
+        """Set research_status to pending and wipe enrichment except name and website.
 
         related_applications: `none` (unchanged), `archive` (archive all tied apps), `reset` (clear non-archived apps).
         """
@@ -820,11 +820,10 @@ class InMemoryRepository(BaseRepository):
                 if app.status == ApplicationStatus.archived:
                     continue
                 self.clear_application_to_company_research_pending(app_id)
-        # Full clear: wipe all enrichment (name and ids unchanged).
+        # Full clear: wipe enrichment except company name and website (identifiers unchanged).
         merged = company.model_copy(
             update={
                 "research_status": CompanyResearchStatus.pending,
-                "website": None,
                 "linkedin": None,
                 "industry_ids": [],
                 "hq_locations": [],
