@@ -28,3 +28,18 @@ def test_transition_allows_invalid_from_pipeline() -> None:
 
 def test_transition_allows_archive_from_invalid() -> None:
     assert validate_application_transition(ApplicationStatus.invalid, ApplicationStatus.archived)
+
+
+def test_transition_allows_ppa_analyzing_and_application_drafting_steps() -> None:
+    assert validate_application_transition(
+        ApplicationStatus.ppa_pending, ApplicationStatus.ppa_analyzing
+    )
+    assert validate_application_transition(
+        ApplicationStatus.ppa_analyzing, ApplicationStatus.application_pending
+    )
+    assert validate_application_transition(
+        ApplicationStatus.application_pending, ApplicationStatus.application_drafting
+    )
+    assert validate_application_transition(
+        ApplicationStatus.application_drafting, ApplicationStatus.application_ready
+    )

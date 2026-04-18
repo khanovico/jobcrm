@@ -79,7 +79,9 @@ export type ApplicationStatus =
   | "company_research_pending"
   | "company_researching"
   | "ppa_pending"
+  | "ppa_analyzing"
   | "application_pending"
+  | "application_drafting"
   | "application_ready"
   | "invalid"
   | "archived";

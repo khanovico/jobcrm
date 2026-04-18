@@ -15,7 +15,9 @@ class ApplicationStatus(str, Enum):
     company_research_pending = "company_research_pending"
     company_researching = "company_researching"
     ppa_pending = "ppa_pending"
+    ppa_analyzing = "ppa_analyzing"
     application_pending = "application_pending"
+    application_drafting = "application_drafting"
     application_ready = "application_ready"
     invalid = "invalid"
     archived = "archived"
@@ -35,12 +37,27 @@ ALLOWED_APPLICATION_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]]
         ApplicationStatus.archived,
     },
     ApplicationStatus.ppa_pending: {
+        ApplicationStatus.ppa_analyzing,
+        ApplicationStatus.application_pending,
+        ApplicationStatus.application_ready,
+        ApplicationStatus.invalid,
+        ApplicationStatus.archived,
+    },
+    ApplicationStatus.ppa_analyzing: {
+        ApplicationStatus.ppa_pending,
         ApplicationStatus.application_pending,
         ApplicationStatus.application_ready,
         ApplicationStatus.invalid,
         ApplicationStatus.archived,
     },
     ApplicationStatus.application_pending: {
+        ApplicationStatus.application_drafting,
+        ApplicationStatus.application_ready,
+        ApplicationStatus.invalid,
+        ApplicationStatus.archived,
+    },
+    ApplicationStatus.application_drafting: {
+        ApplicationStatus.application_pending,
         ApplicationStatus.application_ready,
         ApplicationStatus.invalid,
         ApplicationStatus.archived,
@@ -66,7 +83,9 @@ def migrate_legacy_application_status(raw: str) -> tuple[ApplicationStatus, bool
         "company_research_pending": ApplicationStatus.company_research_pending,
         "company_researching": ApplicationStatus.company_researching,
         "ppa_pending": ApplicationStatus.ppa_pending,
+        "ppa_analyzing": ApplicationStatus.ppa_analyzing,
         "application_pending": ApplicationStatus.application_pending,
+        "application_drafting": ApplicationStatus.application_drafting,
         "application_ready": ApplicationStatus.application_ready,
         "invalid": ApplicationStatus.invalid,
         "archived": ApplicationStatus.archived,

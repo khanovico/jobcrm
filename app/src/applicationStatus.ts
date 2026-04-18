@@ -4,7 +4,9 @@ const LABELS: Record<ApplicationStatus, string> = {
   company_research_pending: "Company research pending",
   company_researching: "Company researching",
   ppa_pending: "PPA pending",
+  ppa_analyzing: "PPA analyzing",
   application_pending: "Application pending",
+  application_drafting: "Application drafting",
   application_ready: "Application ready",
   invalid: "Invalid",
   archived: "Archived"
@@ -23,8 +25,12 @@ export function applicationStatusBadgeClass(status: ApplicationStatus): string {
       return "badge badge-info";
     case "ppa_pending":
       return "badge badge-secondary";
+    case "ppa_analyzing":
+      return "badge badge-secondary badge-outline";
     case "application_pending":
       return "badge badge-accent";
+    case "application_drafting":
+      return "badge badge-accent badge-outline";
     case "application_ready":
       return "badge badge-success";
     case "invalid":
