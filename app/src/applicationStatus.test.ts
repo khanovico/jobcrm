@@ -1,17 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { getSelectableApplicationStatuses } from "./applicationStatus";
+import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "./applicationStatus";
 
-describe("getSelectableApplicationStatuses", () => {
-  it("includes current and allowed transitions for preparation_ready", () => {
-    expect(getSelectableApplicationStatuses("preparation_ready")).toEqual([
-      "preparation_ready",
-      "applied",
-      "archived"
-    ]);
+describe("formatApplicationStatusLabel", () => {
+  it("uses human-readable labels", () => {
+    expect(formatApplicationStatusLabel("application_ready")).toBe("Application ready");
+    expect(formatApplicationStatusLabel("company_research_pending")).toBe("Company research pending");
   });
+});
 
-  it("only offers archived when already archived", () => {
-    expect(getSelectableApplicationStatuses("archived")).toEqual(["archived"]);
+describe("applicationStatusBadgeClass", () => {
+  it("returns a non-empty class string for known statuses", () => {
+    expect(applicationStatusBadgeClass("ppa_pending")).toContain("badge");
   });
 });

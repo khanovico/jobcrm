@@ -12,37 +12,62 @@ def utcnow() -> datetime:
 
 
 class ApplicationStatus(str, Enum):
-    draft = "draft"
-    pending_preparation = "pending_preparation"
-    researching = "researching"
-    analysis_ready = "analysis_ready"
-    preparation_ready = "preparation_ready"
-    applied = "applied"
+    company_research_pending = "company_research_pending"
+    company_researching = "company_researching"
+    ppa_pending = "ppa_pending"
+    application_pending = "application_pending"
+    application_ready = "application_ready"
     archived = "archived"
 
 
 ALLOWED_APPLICATION_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
-    ApplicationStatus.draft: {ApplicationStatus.pending_preparation, ApplicationStatus.archived},
-    ApplicationStatus.pending_preparation: {
-        ApplicationStatus.researching,
-        ApplicationStatus.analysis_ready,
-        ApplicationStatus.preparation_ready,
+    ApplicationStatus.company_research_pending: {
+        ApplicationStatus.company_researching,
+        ApplicationStatus.ppa_pending,
         ApplicationStatus.archived,
     },
-    ApplicationStatus.researching: {
-        ApplicationStatus.analysis_ready,
-        ApplicationStatus.preparation_ready,
+    ApplicationStatus.company_researching: {
+        ApplicationStatus.ppa_pending,
+        ApplicationStatus.company_research_pending,
         ApplicationStatus.archived,
     },
-    ApplicationStatus.analysis_ready: {
-        ApplicationStatus.preparation_ready,
-        ApplicationStatus.applied,
+    ApplicationStatus.ppa_pending: {
+        ApplicationStatus.application_pending,
+        ApplicationStatus.application_ready,
         ApplicationStatus.archived,
     },
-    ApplicationStatus.preparation_ready: {ApplicationStatus.applied, ApplicationStatus.archived},
-    ApplicationStatus.applied: {ApplicationStatus.archived},
+    ApplicationStatus.application_pending: {
+        ApplicationStatus.application_ready,
+        ApplicationStatus.archived,
+    },
+    ApplicationStatus.application_ready: {ApplicationStatus.archived},
     ApplicationStatus.archived: set(),
 }
+
+
+def migrate_legacy_application_status(raw: str) -> tuple[ApplicationStatus, bool | None]:
+    """Map stored status strings to the current enum. Returns (status, applied_override or None)."""
+    legacy = {
+        "draft": ApplicationStatus.company_research_pending,
+        "pending_preparation": ApplicationStatus.company_research_pending,
+        "researching": ApplicationStatus.company_researching,
+        "analysis_ready": ApplicationStatus.ppa_pending,
+        "preparation_ready": ApplicationStatus.application_ready,
+        "applied": ApplicationStatus.application_ready,
+        "company_research_pending": ApplicationStatus.company_research_pending,
+        "company_researching": ApplicationStatus.company_researching,
+        "ppa_pending": ApplicationStatus.ppa_pending,
+        "application_pending": ApplicationStatus.application_pending,
+        "application_ready": ApplicationStatus.application_ready,
+        "archived": ApplicationStatus.archived,
+    }
+    if raw in legacy:
+        applied_hint = True if raw == "applied" else None
+        return legacy[raw], applied_hint
+    try:
+        return ApplicationStatus(raw), None
+    except ValueError:
+        return ApplicationStatus.company_research_pending, None
 
 
 def validate_application_transition(
@@ -162,9 +187,15 @@ class Industry(IndustryBase):
     updated_at: datetime
 
 
+class CompanyResearchStatus(str, Enum):
+    pending = "pending"
+    indexing = "indexing"
+    indexed = "indexed"
+
+
 class CompanyBase(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    indexed: bool = False
+    research_status: CompanyResearchStatus = CompanyResearchStatus.pending
     website: str | None = None
     linkedin: str | None = None
     industry_ids: list[str] = Field(default_factory=list)
@@ -180,12 +211,20 @@ class CompanyBase(BaseModel):
 
 
 class CompanyCreate(CompanyBase):
-    pass
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_indexed_create(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "indexed" in data and "research_status" not in data:
+            data["research_status"] = (
+                CompanyResearchStatus.indexed.value if data.get("indexed") else CompanyResearchStatus.pending.value
+            )
+            data.pop("indexed", None)
+        return data
 
 
 class CompanyUpdate(BaseModel):
     name: str | None = None
-    indexed: bool | None = None
+    research_status: CompanyResearchStatus | None = None
     website: str | None = None
     linkedin: str | None = None
     industry_ids: list[str] | None = None
@@ -199,11 +238,33 @@ class CompanyUpdate(BaseModel):
     analysis_links: list[AnalysisLink] | None = None
     enrichment_source_links: list[str] | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_indexed_update(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("indexed") is not None and data.get("research_status") is None:
+            data["research_status"] = (
+                CompanyResearchStatus.indexed.value if data.get("indexed") else CompanyResearchStatus.pending.value
+            )
+        if isinstance(data, dict) and "indexed" in data:
+            data.pop("indexed", None)
+        return data
+
 
 class Company(CompanyBase):
     id: str
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_indexed_field(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "research_status" not in data and "indexed" in data:
+            data["research_status"] = (
+                CompanyResearchStatus.indexed.value if data.get("indexed") else CompanyResearchStatus.pending.value
+            )
+        return data
 
 
 class ProfileBase(BaseModel):
@@ -257,7 +318,7 @@ class JobPost(BaseModel):
 class ApplicationBase(BaseModel):
     company_id: str
     job_post: JobPost | None = None
-    status: ApplicationStatus = ApplicationStatus.pending_preparation
+    status: ApplicationStatus = ApplicationStatus.company_research_pending
     notes: str | None = None
 
 
@@ -294,10 +355,60 @@ class EmailMarkSent(BaseModel):
 
 
 class DashboardMetrics(BaseModel):
-    pending_preparation: int
-    preparation_ready: int
+    company_research_pipeline: int
+    application_ready: int
     actions_need_review: int
     unread_notifications: int
+
+
+class WorkerType(str, Enum):
+    company_researcher = "company_researcher"
+    ppa_analyser = "ppa_analyser"
+    application_drafter = "application_drafter"
+
+
+class WorkerSettings(BaseModel):
+    max_company_researcher: int = Field(default=1, ge=0, le=100)
+    max_ppa_analyser: int = Field(default=1, ge=0, le=100)
+    max_application_drafter: int = Field(default=1, ge=0, le=100)
+
+
+class WorkerSettingsUpdate(BaseModel):
+    max_company_researcher: int | None = Field(default=None, ge=0, le=100)
+    max_ppa_analyser: int | None = Field(default=None, ge=0, le=100)
+    max_application_drafter: int | None = Field(default=None, ge=0, le=100)
+
+
+class WorkerLease(BaseModel):
+    id: str
+    worker_type: WorkerType
+    agent_key_id: str
+    created_at: datetime
+
+
+class WorkerAssignResponse(BaseModel):
+    lease_id: str
+
+
+class WorkerCountResponse(BaseModel):
+    """Active leases and configured max for one worker type (agent read)."""
+
+    active: int
+    max: int
+
+
+class WorkerReleaseRequest(BaseModel):
+    lease_id: str
+
+
+class WorkerReleaseAllRequest(BaseModel):
+    worker_type: WorkerType
+
+
+class WorkerStateResponse(BaseModel):
+    settings: WorkerSettings
+    active: dict[str, int]
+    max: dict[str, int]
 
 
 class Application(BaseModel):
@@ -314,6 +425,19 @@ class Application(BaseModel):
     created_by_user_id: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_status(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("status")
+        if isinstance(raw, str):
+            new_status, applied_hint = migrate_legacy_application_status(raw)
+            data["status"] = new_status.value
+            if applied_hint is True:
+                data["applied"] = True
+        return data
 
 
 class ColdEmailRecipient(BaseModel):
@@ -462,7 +586,7 @@ class UserNotification(BaseModel):
         kind = str(data.get("kind", ""))
         notif = (
             NotificationKind.APPLICATION_UPDATE.value
-            if kind == "preparation_ready"
+            if kind in ("preparation_ready", "application_ready")
             else NotificationKind.SYSTEM_ERROR.value
         )
         title = data.get("title") or ""

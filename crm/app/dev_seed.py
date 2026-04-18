@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from app.models import (
     ApplicationCreate,
     ApplicationStatus,
+    CompanyResearchStatus,
     ColdEmailPlan,
     ColdEmailPlanStatus,
     ColdEmailRecipient,
@@ -46,7 +47,7 @@ def seed_rich_dummy_application(
     company = repo.create_company(
         CompanyCreate(
             name=company_name,
-            indexed=True,
+            research_status=CompanyResearchStatus.indexed,
             website="https://nebula-systems.example.com",
             linkedin="https://www.linkedin.com/company/nebula-systems",
             hq_locations=["San Francisco, CA", "Remote (US)"],
@@ -79,7 +80,7 @@ def seed_rich_dummy_application(
     application = repo.create_application(
         ApplicationCreate(
             company_id=company.id,
-            status=ApplicationStatus.preparation_ready,
+            status=ApplicationStatus.application_ready,
             notes=(
                 "Strong fit for full-stack/productivity role. "
                 "Prepared multi-profile outreach with tailored collateral."

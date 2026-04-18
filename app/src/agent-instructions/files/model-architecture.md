@@ -8,7 +8,7 @@ This is a conceptual map of the CRM. Authoritative field types and validation li
 |--------|---------|
 | **User** | Human login; JWT auth. **Admin** can mint agent API keys. |
 | **AgentApiKey** | Hashed key with scopes (`read`, `write`, sometimes `admin`). Sent as `X-API-Key`. |
-| **Company** | Employer. `indexed: bool` — agent sets `true` after enrichment; use `GET .../companies/unindexed` for FIFO backlog. |
+| **Company** | Employer. **`research_status`**: `pending` → `indexing` → `indexed`. Agent backlog: `GET .../companies/unindexed` returns `research_status=pending`, FIFO. Legacy `indexed` in JSON is mapped to `research_status`. |
 | **Industry** | Taxonomy; many-to-many with companies via `industry_ids[]`. |
 | **Profile** | Candidate/person (resume, bio, niche, contact). |
 | **Application** | One job pursuit: links **one Company**, has **status** workflow, optional **job_post**, `archive_reason` when **archived**. |
@@ -36,21 +36,25 @@ Allowed transitions are enforced server-side (invalid updates return **400**).
 
 Typical progression:
 
-`draft` → `pending_preparation` → `researching` → `analysis_ready` → `preparation_ready` → `applied` → `archived`
+`company_research_pending` → `company_researching` → `ppa_pending` → `application_pending` → `application_ready` → `archived`
 
-- New user-created applications default to **`pending_preparation`**.
-- **`archived`** is terminal (no further status moves). Optional **`archive_reason`** explains removal (human UI: “Why remove”; JAA: `archive_reason` on `PUT` when `status` is `archived`).
-- **`applied`** may also be set via dedicated “mark applied” endpoints that stamp `applied_at`.
+- New applications default from **`company_research_pending`**, unless the company is already **`indexed`**, in which case creation starts at **`ppa_pending`**.
+- **`application_ready`** means the human can apply; **Mark applied** (separate flag) stamps **`applied_at`** without a distinct `applied` status value.
+- **`archived`** is terminal. Optional **`archive_reason`** on `PUT` when archiving.
 
 Other fields on Application:
 
 - `applied`, `applied_at` — overall application tracking.
 - `email_sent`, `email_sent_at` — tracker for outreach (filters available on list APIs).
 
-## Company indexing (agent)
+## Company research (agent)
 
-- **`indexed: false`** — candidate for `GET /api/v1/agent/companies/unindexed` (max **5**, oldest `created_at` first).
-- Agent updates company (including **`indexed: true`**) via `PUT /api/v1/agent/companies/{id}` or bulk `PATCH /api/v1/agent/companies/bulk`.
+- **`research_status: pending`** — candidate for `GET /api/v1/agent/companies/unindexed` (max **5**, oldest `created_at` first).
+- Agent moves companies through **`indexing`** → **`indexed`** via `PUT /api/v1/agent/companies/{id}` or bulk `PATCH /api/v1/agent/companies/bulk` (legacy **`indexed`** boolean in JSON is still accepted and mapped).
+
+## Workers (concurrency)
+
+- Per pipeline stage: **company researcher**, **PPA analyser**, **application drafter**. Agent **`POST /api/v1/agent/workers/assign/{worker_kind}`** / **`release/{worker_kind}`** (kebab-case paths; release body includes `lease_id`); **`GET /api/v1/agent/workers/count/{worker_kind}`** for active/max; humans configure max slots and **`release-all`** via **`/api/v1/settings/workers`** (JWT).
 
 ## Per-profile fields (PPA)
 

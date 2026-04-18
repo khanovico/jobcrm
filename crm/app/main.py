@@ -65,6 +65,14 @@ from app.models import (
     UserLogin,
     UserNotification,
     UserPublic,
+    WorkerAssignResponse,
+    WorkerCountResponse,
+    WorkerReleaseAllRequest,
+    WorkerReleaseRequest,
+    WorkerSettings,
+    WorkerSettingsUpdate,
+    WorkerStateResponse,
+    WorkerType,
 )
 from app.repository import BaseRepository
 
@@ -180,19 +188,24 @@ def dashboard_metrics(
         status=None,
         exclude_status=ApplicationStatus.archived,
     )
-    pending = sum(1 for a in apps if a.status == ApplicationStatus.pending_preparation)
-    ready = sum(1 for a in apps if a.status == ApplicationStatus.preparation_ready)
+    pipeline = sum(
+        1
+        for a in apps
+        if a.status
+        in (ApplicationStatus.company_research_pending, ApplicationStatus.company_researching)
+    )
+    ready = sum(1 for a in apps if a.status == ApplicationStatus.application_ready)
     actions = sum(
         1
         for a in apps
-        if a.status == ApplicationStatus.preparation_ready and not a.applied
+        if a.status == ApplicationStatus.application_ready and not a.applied
     )
     notes = repo.list_notifications(
         user.id, NotificationListQuery(skip=0, limit=200, unread_only=True)
     )
     return DashboardMetrics(
-        pending_preparation=pending,
-        preparation_ready=ready,
+        company_research_pipeline=pipeline,
+        application_ready=ready,
         actions_need_review=actions,
         unread_notifications=len(notes),
     )
@@ -409,6 +422,30 @@ def delete_company(
         entity_id=company_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post(
+    "/api/v1/companies/{company_id}/clear-research-detail",
+    response_model=Company,
+)
+def clear_company_research_detail_route(
+    company_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Company:
+    company = repo.clear_company_research_detail(company_id)
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="clear_company_research_detail",
+        entity_type="company",
+        entity_id=company_id,
+        metadata={},
+    )
+    return company
 
 
 @app.get("/api/v1/profiles", response_model=list[Profile])
@@ -647,23 +684,23 @@ def mark_application_email_sent_route(
 
 
 @app.post(
-    "/api/v1/applications/{application_id}/clear-to-pending-preparation",
+    "/api/v1/applications/{application_id}/clear-to-company-research-pending",
     response_model=Application,
 )
-def clear_application_to_pending_preparation_route(
+def clear_application_to_company_research_pending_route(
     application_id: str,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
-    """Remove all per-profile rows and their emails; set status to pending_preparation."""
-    application = repo.clear_application_to_pending_preparation(application_id)
+    """Remove all per-profile rows and their emails; set status to company_research_pending."""
+    application = repo.clear_application_to_company_research_pending(application_id)
     if not application:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
     _audit(
         repo,
         actor_type=ActorType.user,
         actor_id=user.id,
-        action="clear_to_pending_preparation",
+        action="clear_to_company_research_pending",
         entity_type="application",
         entity_id=application_id,
         metadata={},
@@ -921,7 +958,47 @@ def list_audit(
     return repo.list_audit_events(q)
 
 
+@app.get("/api/v1/settings/workers", response_model=WorkerStateResponse)
+def get_worker_settings_route(
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> WorkerStateResponse:
+    return repo.get_worker_state()
+
+
+@app.patch("/api/v1/settings/workers", response_model=WorkerSettings)
+def patch_worker_settings_route(
+    payload: WorkerSettingsUpdate,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> WorkerSettings:
+    return repo.update_worker_settings(payload)
+
+
+@app.post("/api/v1/settings/workers/release-all")
+def release_all_workers_route(
+    payload: WorkerReleaseAllRequest,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> dict[str, int]:
+    released = repo.release_all_workers(payload.worker_type)
+    return {"released": released}
+
+
 # --- Agent routes ---
+
+_AGENT_WORKER_PATH: dict[str, WorkerType] = {
+    "company-researcher": WorkerType.company_researcher,
+    "ppa-analyser": WorkerType.ppa_analyser,
+    "application-drafter": WorkerType.application_drafter,
+}
+
+
+def _agent_worker_type_from_path(segment: str) -> WorkerType:
+    wt = _AGENT_WORKER_PATH.get(segment)
+    if wt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown worker type")
+    return wt
 
 
 @app.get("/api/v1/agent/health", response_model=AgentHealthResponse)
@@ -937,14 +1014,98 @@ def agent_health(
     return AgentHealthResponse(database="ok")
 
 
-@app.get("/api/v1/agent/applications/pending", response_model=list[Application])
-def agent_list_pending(
-    limit: int = Query(default=5, ge=1, le=5),
+@app.get(
+    "/api/v1/agent/applications/company-research-pending",
+    response_model=list[Application],
+)
+def agent_list_company_research_pending(
+    limit: int = Query(default=5, ge=1, le=50),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Application]:
     require_agent_scope(agent, "read")
-    return repo.list_pending_applications(limit)
+    return repo.list_applications_by_status(ApplicationStatus.company_research_pending, limit)
+
+
+@app.get("/api/v1/agent/applications/ppa-pending", response_model=list[Application])
+def agent_list_ppa_pending(
+    limit: int = Query(default=5, ge=1, le=50),
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Application]:
+    require_agent_scope(agent, "read")
+    return repo.list_applications_by_status(ApplicationStatus.ppa_pending, limit)
+
+
+@app.get(
+    "/api/v1/agent/applications/application-pending",
+    response_model=list[Application],
+)
+def agent_list_application_pending(
+    limit: int = Query(default=5, ge=1, le=50),
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[Application]:
+    require_agent_scope(agent, "read")
+    return repo.list_applications_by_status(ApplicationStatus.application_pending, limit)
+
+
+@app.post(
+    "/api/v1/agent/workers/assign/{worker_kind}",
+    response_model=WorkerAssignResponse,
+)
+def agent_assign_worker_by_kind(
+    worker_kind: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> WorkerAssignResponse:
+    require_agent_scope(agent, "write")
+    worker_type = _agent_worker_type_from_path(worker_kind)
+    try:
+        lease_id = repo.assign_worker(worker_type, agent.key_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return WorkerAssignResponse(lease_id=lease_id)
+
+
+@app.post("/api/v1/agent/workers/release/{worker_kind}")
+def agent_release_worker_by_kind(
+    worker_kind: str,
+    payload: WorkerReleaseRequest,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> dict[str, bool]:
+    require_agent_scope(agent, "write")
+    worker_type = _agent_worker_type_from_path(worker_kind)
+    lease = repo.get_worker_lease(payload.lease_id)
+    if lease is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lease not found")
+    if lease.agent_key_id != agent.key_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lease not found")
+    if lease.worker_type != worker_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Lease does not match worker type in path",
+        )
+    if not repo.release_worker(payload.lease_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lease not found")
+    return {"released": True}
+
+
+@app.get(
+    "/api/v1/agent/workers/count/{worker_kind}",
+    response_model=WorkerCountResponse,
+)
+def agent_worker_count(
+    worker_kind: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> WorkerCountResponse:
+    require_agent_scope(agent, "read")
+    worker_type = _agent_worker_type_from_path(worker_kind)
+    state = repo.get_worker_state()
+    key = worker_type.value
+    return WorkerCountResponse(active=state.active.get(key, 0), max=state.max.get(key, 0))
 
 
 @app.get("/api/v1/agent/companies", response_model=list[Company])

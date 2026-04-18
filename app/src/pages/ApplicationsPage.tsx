@@ -5,7 +5,8 @@ import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
-import { ApplicationListItem, Company } from "../types";
+import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "../applicationStatus";
+import { ApplicationListItem, Company, WorkerStateResponse } from "../types";
 
 const PlusIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -14,16 +15,6 @@ const PlusIcon = () => (
 );
 
 export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
-
-const getStatusBadgeClass = (status: string) => {
-  if (status.endsWith("_ready")) {
-    return "badge border-info/30 bg-info/10 text-info";
-  }
-  if (status === "pending_preparation") {
-    return "badge badge-ghost";
-  }
-  return "badge badge-ghost";
-};
 
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
@@ -37,6 +28,7 @@ export const ApplicationsPage = () => {
 
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
+  const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
 
   const companyNameById = (id: string) => companies.find((c) => c.id === id)?.name ?? id;
 
@@ -57,12 +49,14 @@ export const ApplicationsPage = () => {
   const load = async () => {
     setError(null);
     try {
-      const [applicationItems, companyItems] = await Promise.all([
+      const [applicationItems, companyItems, workers] = await Promise.all([
         api.listApplications(listParams),
-        api.listCompanies()
+        api.listCompanies(),
+        api.getWorkerState().catch(() => null)
       ]);
       setItems(applicationItems);
       setCompanies(companyItems);
+      setWorkerState(workers);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -93,7 +87,23 @@ export const ApplicationsPage = () => {
     <div className="space-y-4">
       <section className="card bg-base-100 p-4 shadow">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-xl font-semibold">Applications</h2>
+          <div>
+            <h2 className="text-xl font-semibold">Applications</h2>
+            {workerState?.max ? (
+              <p className="mt-1 text-xs opacity-70">
+                <span className="mr-3">
+                  {(workerState.max.ppa_analyser ?? 0) > 0
+                    ? `${workerState.active.ppa_analyser ?? 0}/${workerState.max.ppa_analyser} PPA analysers running`
+                    : "No current active PPA analyser worker"}
+                </span>
+                <span>
+                  {(workerState.max.application_drafter ?? 0) > 0
+                    ? `${workerState.active.application_drafter ?? 0}/${workerState.max.application_drafter} Application drafters running`
+                    : "No current active application drafter worker"}
+                </span>
+              </p>
+            ) : null}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="join join-horizontal border border-base-300">
               {(
@@ -150,8 +160,8 @@ export const ApplicationsPage = () => {
                 >
                   <td className="font-medium">{companyNameById(application.company_id)}</td>
                   <td>
-                    <span className={`${getStatusBadgeClass(application.status)} badge-sm`}>
-                      {application.status}
+                    <span className={`${applicationStatusBadgeClass(application.status)} badge-sm`}>
+                      {formatApplicationStatusLabel(application.status)}
                     </span>
                   </td>
                   <td className="max-w-[220px]" onClick={(e) => e.stopPropagation()}>
@@ -178,6 +188,12 @@ export const ApplicationsPage = () => {
                           <button
                             type="button"
                             className={`btn btn-xs ${application.applied ? "btn-outline" : "btn-success"}`}
+                            disabled={!application.applied && application.status !== "application_ready"}
+                            title={
+                              !application.applied && application.status !== "application_ready"
+                                ? "Mark applied only when status is Application ready"
+                                : undefined
+                            }
                             onClick={async (e) => {
                               e.stopPropagation();
                               const nextApplied = !application.applied;

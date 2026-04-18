@@ -13,7 +13,7 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 
 | Resource | Path | Purpose |
 |----------|------|---------|
-| Model architecture | GET {JOBCRM_APP_URL}/model-architecture.md | Entities, relationships, workflows, `indexed`, archive behavior |
+| Model architecture | GET {JOBCRM_APP_URL}/model-architecture.md | Entities, relationships, workflows, `research_status`, archive behavior |
 | API contracts | GET {JOBCRM_APP_URL}/api-contracts.md | JAA routes: query params, JSON request/response shapes |
 | MCP hints | GET {JOBCRM_APP_URL}/mcp-guidance.md | Polling and enrichment flow |
 
@@ -31,14 +31,22 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 **Quick JAA route list** (lookup level; full contracts in `api-contracts.md`)
 
 - GET `/api/v1/agent/health` — liveness + lightweight DB connectivity check (`status`, `api`, `database`).
-- GET `/api/v1/agent/applications/pending` — pull next preparation queue (`pending_preparation` only), FIFO oldest first, max 5.
+- GET `/api/v1/agent/applications/company-research-pending` — applications in `company_research_pending`, FIFO oldest first, max 50 (default 5).
+- GET `/api/v1/agent/applications/ppa-pending` — applications in `ppa_pending`, FIFO oldest first.
+- GET `/api/v1/agent/applications/application-pending` — applications in `application_pending`, FIFO oldest first.
 - GET `/api/v1/agent/applications` — list/search applications with filters (`status_filter`, `exclude_status`, `email_sent`, `company_id`, `applied`, pagination/sort).
 - GET `/api/v1/agent/applications/{id}` — fetch one application by id (same shape as user `GET /api/v1/applications/{id}`); use when you already have the id and do not need to list.
 - GET `/api/v1/agent/applications/{id}/per-profile-applications` — fetch all per-profile rows for one application id (ordered by `order_index`, then `created_at`).
-- PUT `/api/v1/agent/applications/{id}` — update application fields/status; use for lifecycle moves (`researching`, `preparation_ready`, `archived`, etc.); include optional `archive_reason` when archiving.
-- GET `/api/v1/agent/companies/unindexed` — fetch enrichment backlog (`indexed=false`), oldest-first FIFO, max 5.
-- PUT `/api/v1/agent/companies/{id}` — update one company profile/enrichment fields (`overview` as summary text, `full_overview` as full-detail doc link, `analysis_links`, `indexed`, etc.).
+- PUT `/api/v1/agent/applications/{id}` — update application fields/status; use for lifecycle moves (`company_researching`, `ppa_pending`, `application_ready`, `archived`, etc.); include optional `archive_reason` when archiving.
+- GET `/api/v1/agent/companies/unindexed` — companies with `research_status=pending` (research backlog), oldest-first FIFO, max 5.
+- PUT `/api/v1/agent/companies/{id}` — update one company profile/enrichment fields (`overview`, `full_overview`, `analysis_links`, `research_status`, or legacy `indexed` mapped to `research_status`, etc.).
 - PATCH `/api/v1/agent/companies/bulk` — batch company updates in one request (`updates[]` of `{company_id, payload}`).
+- POST `/api/v1/agent/workers/assign/{worker_kind}` — no body; `{worker_kind}` is `company-researcher` | `ppa-analyser` | `application-drafter`; returns `{ "lease_id" }` if a slot is free (**404** unknown kind, **409** if max concurrent workers reached).
+- POST `/api/v1/agent/workers/release/{worker_kind}` — body `{ "lease_id": "<id from assign>" }`; path kind must match the lease (**400** if lease is for a different worker kind).
+- GET `/api/v1/agent/workers/count/{worker_kind}` — `{ "active": <n>, "max": <n> }` for that stage (read scope).
+
+**Human (JWT) settings** (same app, not agent key): `GET/PATCH /api/v1/settings/workers` for max worker limits; `POST /api/v1/settings/workers/release-all` with `{ "worker_type": "..." }` to clear all leases of that type.
+
 - GET `/api/v1/agent/profiles/ids` — lightweight profile id scan for planning/matching.
 - GET `/api/v1/agent/profiles/{id}` — full profile detail (bio, niche, resume/context) for tailoring.
 - GET `/api/v1/agent/profiles` — paginated profile listing when bulk context is needed.

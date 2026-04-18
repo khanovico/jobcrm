@@ -1,7 +1,9 @@
+export type CompanyResearchStatus = "pending" | "indexing" | "indexed";
+
 export type Company = {
   id: string;
   name: string;
-  indexed?: boolean;
+  research_status: CompanyResearchStatus;
   website?: string | null;
   linkedin?: string | null;
   industry_ids?: string[];
@@ -74,12 +76,11 @@ export type ProfileCreatePayload = {
 };
 
 export type ApplicationStatus =
-  | "draft"
-  | "pending_preparation"
-  | "researching"
-  | "analysis_ready"
-  | "preparation_ready"
-  | "applied"
+  | "company_research_pending"
+  | "company_researching"
+  | "ppa_pending"
+  | "application_pending"
+  | "application_ready"
   | "archived";
 
 export type JobPost = {
@@ -172,11 +173,31 @@ export type AgentApiKeyCreated = {
 };
 
 export type DashboardMetrics = {
-  pending_preparation: number;
-  preparation_ready: number;
+  company_research_pipeline: number;
+  application_ready: number;
   actions_need_review: number;
   unread_notifications: number;
 };
+
+export type WorkerSettings = {
+  max_company_researcher: number;
+  max_ppa_analyser: number;
+  max_application_drafter: number;
+};
+
+export type WorkerStateResponse = {
+  settings: WorkerSettings;
+  active: Record<string, number>;
+  max: Record<string, number>;
+};
+
+export type WorkerSettingsUpdatePayload = {
+  max_company_researcher?: number;
+  max_ppa_analyser?: number;
+  max_application_drafter?: number;
+};
+
+export type WorkerType = "company_researcher" | "ppa_analyser" | "application_drafter";
 
 export type AuditEvent = {
   id: string;

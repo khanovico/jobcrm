@@ -4,12 +4,21 @@ import { useNavigate } from "react-router-dom";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { Modal } from "../components/Modal";
 import { api } from "../api";
-import { Company } from "../types";
+import { Company, CompanyResearchStatus, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 10;
 
-const indexedBadgeClass = (indexed: boolean | undefined) =>
-  indexed ? "badge-success" : "badge-warning";
+const researchLabel = (s: CompanyResearchStatus | undefined) => {
+  if (s === "indexed") return "Indexed";
+  if (s === "indexing") return "Indexing";
+  return "Pending";
+};
+
+const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
+  if (s === "indexed") return "badge-success";
+  if (s === "indexing") return "badge-info";
+  return "badge-warning";
+};
 
 export const CompaniesPage = () => {
   const navigate = useNavigate();
@@ -23,19 +32,24 @@ export const CompaniesPage = () => {
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
 
   const load = async (targetPage = page) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.listCompanies(
-        new URLSearchParams({
-          skip: String((targetPage - 1) * PAGE_SIZE),
-          limit: String(PAGE_SIZE)
-        })
-      );
+      const [response, workers] = await Promise.all([
+        api.listCompanies(
+          new URLSearchParams({
+            skip: String((targetPage - 1) * PAGE_SIZE),
+            limit: String(PAGE_SIZE)
+          })
+        ),
+        api.getWorkerState().catch(() => null)
+      ]);
       setItems(response);
       setHasNextPage(response.length === PAGE_SIZE);
+      setWorkerState(workers);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -70,7 +84,16 @@ export const CompaniesPage = () => {
     <div className="space-y-4">
       <section className="card bg-base-100 p-4 shadow">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-xl font-semibold">Companies</h2>
+          <div>
+            <h2 className="text-xl font-semibold">Companies</h2>
+            {workerState?.max ? (
+              <p className="mt-1 text-xs opacity-70">
+                {(workerState.max.company_researcher ?? 0) > 0
+                  ? `${workerState.active.company_researcher ?? 0}/${workerState.max.company_researcher} Researchers are running`
+                  : "No current active worker"}
+              </p>
+            ) : null}
+          </div>
           <div className="flex items-center gap-2">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
               Refresh
@@ -96,7 +119,7 @@ export const CompaniesPage = () => {
             <thead>
               <tr>
                 <th>Name</th>
-                <th className="whitespace-nowrap">Indexing</th>
+                <th className="whitespace-nowrap">Research</th>
                 <th>Website</th>
                 <th className="whitespace-nowrap">Updated</th>
                 <th className="min-w-[140px] text-right">Actions</th>
@@ -111,8 +134,8 @@ export const CompaniesPage = () => {
                 >
                   <td className="font-medium">{company.name}</td>
                   <td>
-                    <span className={`badge badge-sm ${indexedBadgeClass(company.indexed)}`}>
-                      {company.indexed ? "Indexed" : "Pending"}
+                    <span className={`badge badge-sm ${researchBadgeClass(company.research_status)}`}>
+                      {researchLabel(company.research_status)}
                     </span>
                   </td>
                   <td className="max-w-[200px] truncate text-xs opacity-80" title={company.website ?? undefined}>

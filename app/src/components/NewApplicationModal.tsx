@@ -3,17 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Modal } from "./Modal";
 import { api } from "../api";
-import { ApplicationListItem, ApplicationStatus, Company } from "../types";
-
-const statuses: ApplicationStatus[] = [
-  "draft",
-  "pending_preparation",
-  "researching",
-  "analysis_ready",
-  "preparation_ready",
-  "applied",
-  "archived"
-];
+import { ApplicationListItem, Company } from "../types";
 
 type Props = {
   open: boolean;
@@ -34,13 +24,11 @@ export const NewApplicationModal = ({
   onSuccess
 }: Props) => {
   const [companyId, setCompanyId] = useState("");
-  const [status, setStatus] = useState<ApplicationStatus>("pending_preparation");
   const [jobLink, setJobLink] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const resetForm = () => {
-    setStatus("pending_preparation");
     setJobLink("");
     setJobDescription("");
     setCompanyId(companies[0]?.id ?? "");
@@ -50,7 +38,6 @@ export const NewApplicationModal = ({
     if (!open) return;
     if (editing) {
       setCompanyId(editing.company_id);
-      setStatus(editing.status);
       setJobLink(editing.job_post?.job_link ?? "");
       setJobDescription(editing.job_post?.job_description ?? "");
       return;
@@ -98,13 +85,11 @@ export const NewApplicationModal = ({
       if (editing) {
         await api.updateApplication(editing.id, {
           company_id: companyId,
-          status,
           job_post: jobPost ?? null
         });
       } else {
         await api.createApplication({
           company_id: companyId,
-          status,
           job_post: jobPost
         });
       }
@@ -144,20 +129,11 @@ export const NewApplicationModal = ({
             </select>
           </label>
         )}
-        <label className="form-control w-full">
-          <span className="label-text">Status</span>
-          <select
-            className="select select-bordered w-full"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as ApplicationStatus)}
-          >
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!editing && (
+          <p className="text-xs opacity-70">
+            Initial status is set from the company&apos;s research state (indexed companies start in PPA pending).
+          </p>
+        )}
         <label className="form-control w-full">
           <span className="label-text">Job link (optional)</span>
           <input

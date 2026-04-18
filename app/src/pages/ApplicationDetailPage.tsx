@@ -6,10 +6,10 @@ import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { ClearApplicationToPendingModal } from "../components/ClearApplicationToPendingModal";
 import { api } from "../api";
 import {
-  formatApplicationStatusLabel,
-  getSelectableApplicationStatuses
+  applicationStatusBadgeClass,
+  formatApplicationStatusLabel
 } from "../applicationStatus";
-import type { Application, ApplicationStatus, Company, Email, PerProfileApplication, Profile } from "../types";
+import type { Application, Company, Email, PerProfileApplication, Profile } from "../types";
 
 const decodeEscapedHtml = (content: string): string => {
   if (!content.includes("&lt;") && !content.includes("&#")) {
@@ -69,8 +69,6 @@ export const ApplicationDetailPage = () => {
   const [editingRecipientPpaId, setEditingRecipientPpaId] = useState<string | null>(null);
   const [recipientDraftByPpa, setRecipientDraftByPpa] = useState<Record<string, RecipientDraft>>({});
   const [recipientUpdateBusyPpaId, setRecipientUpdateBusyPpaId] = useState<string | null>(null);
-  const [statusBusy, setStatusBusy] = useState(false);
-
   const load = async () => {
     if (!applicationId) return;
     setError(null);
@@ -209,20 +207,6 @@ export const ApplicationDetailPage = () => {
     }
   };
 
-  const changeApplicationStatus = async (next: ApplicationStatus) => {
-    if (!application || next === application.status) return;
-    setStatusBusy(true);
-    setError(null);
-    try {
-      const updated = await api.updateApplication(application.id, { status: next });
-      setApplication(updated);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setStatusBusy(false);
-    }
-  };
-
   if (!applicationId) return <div>Missing id</div>;
 
   return (
@@ -262,23 +246,11 @@ export const ApplicationDetailPage = () => {
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <label className="form-control w-fit min-w-[11rem] max-w-[14rem]">
-                  <span className="label sr-only py-0">Status</span>
-                  <select
-                    className="select select-bordered select-sm w-full"
-                    aria-label="Application status"
-                    value={application.status}
-                    disabled={statusBusy || application.status === "archived"}
-                    onChange={(e) => void changeApplicationStatus(e.target.value as ApplicationStatus)}
-                  >
-                    {getSelectableApplicationStatuses(application.status).map((s) => (
-                      <option key={s} value={s}>
-                        {formatApplicationStatusLabel(s)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {application.status !== "pending_preparation" && (
+                <span className={`inline-flex items-center gap-1.5 text-sm ${applicationStatusBadgeClass(application.status)}`}>
+                  <span className="sr-only">Application status:</span>
+                  {formatApplicationStatusLabel(application.status)}
+                </span>
+                {application.status !== "company_research_pending" && (
                   <button
                     type="button"
                     className="btn btn-outline btn-warning btn-sm"
@@ -302,6 +274,12 @@ export const ApplicationDetailPage = () => {
                   <button
                     type="button"
                     className={`btn btn-sm ${application.applied ? "btn-outline" : "btn-success"}`}
+                    disabled={!application.applied && application.status !== "application_ready"}
+                    title={
+                      !application.applied && application.status !== "application_ready"
+                        ? "Mark applied is only available when status is Application ready."
+                        : undefined
+                    }
                     onClick={async () => {
                       await api.markApplied(application.id, !application.applied);
                       await load();
