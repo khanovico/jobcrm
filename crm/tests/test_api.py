@@ -42,12 +42,12 @@ def test_list_applications_exclude_archived() -> None:
     company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
     active = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "pending_preparation"},
+        json={"company_id": company["id"], "status": "company_research_pending"},
         headers=headers,
     ).json()
     archived = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "draft"},
+        json={"company_id": company["id"], "status": "company_research_pending"},
         headers=headers,
     ).json()
     client.put(
@@ -84,7 +84,7 @@ def test_create_application_defaults_to_pending_preparation() -> None:
         headers=headers,
     )
     assert application.status_code == 201
-    assert application.json()["status"] == "pending_preparation"
+    assert application.json()["status"] == "company_research_pending"
 
 
 def test_auth_me_returns_user() -> None:
@@ -154,7 +154,7 @@ def test_list_applications_includes_applied_profile_names() -> None:
     profile = client.post("/api/v1/profiles", json=prof_payload, headers=headers).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "draft"},
+        json={"company_id": company["id"], "status": "company_research_pending"},
         headers=headers,
     ).json()
     ppa = client.post(
@@ -185,7 +185,7 @@ def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> 
     profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=headers,
     ).json()
     ppa = client.post(
@@ -209,12 +209,12 @@ def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> 
     )
 
     r = client.post(
-        f"/api/v1/applications/{application['id']}/clear-to-pending-preparation",
+        f"/api/v1/applications/{application['id']}/clear-to-company-research-pending",
         headers=headers,
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] == "pending_preparation"
+    assert body["status"] == "company_research_pending"
     assert body["applied"] is False
     assert body["applied_at"] is None
     assert body["email_sent"] is False
@@ -240,7 +240,7 @@ def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume()
     profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "draft"},
+        json={"company_id": company["id"], "status": "company_research_pending"},
         headers=headers,
     ).json()
     ppa = client.post(
@@ -280,7 +280,7 @@ def test_mark_applied_stamps_once() -> None:
 
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=headers,
     ).json()
 
@@ -291,7 +291,7 @@ def test_mark_applied_stamps_once() -> None:
     )
     assert first.status_code == 200
     first_stamp = first.json()["applied_at"]
-    assert first.json()["status"] == "applied"
+    assert first.json()["status"] == "application_ready"
 
     second = client.post(
         f"/api/v1/applications/{application['id']}/mark-applied",
@@ -313,7 +313,7 @@ def test_unmark_applied_clears_stamp_and_resets_status() -> None:
     company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=headers,
     ).json()
 
@@ -323,7 +323,7 @@ def test_unmark_applied_clears_stamp_and_resets_status() -> None:
         headers=headers,
     )
     assert marked.status_code == 200
-    assert marked.json()["status"] == "applied"
+    assert marked.json()["status"] == "application_ready"
     assert marked.json()["applied_at"] is not None
 
     unmarked = client.post(
@@ -334,7 +334,7 @@ def test_unmark_applied_clears_stamp_and_resets_status() -> None:
     assert unmarked.status_code == 200
     assert unmarked.json()["applied"] is False
     assert unmarked.json()["applied_at"] is None
-    assert unmarked.json()["status"] == "preparation_ready"
+    assert unmarked.json()["status"] == "application_ready"
 
 
 def test_rejects_invalid_status_transition() -> None:
@@ -348,12 +348,12 @@ def test_rejects_invalid_status_transition() -> None:
 
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "draft"},
+        json={"company_id": company["id"], "status": "company_research_pending"},
         headers=headers,
     ).json()
     response = client.put(
         f"/api/v1/applications/{application['id']}",
-        json={"status": "applied"},
+        json={"status": "application_pending"},
         headers=headers,
     )
     assert response.status_code == 400
@@ -461,7 +461,7 @@ def test_delete_email_route_removes_email() -> None:
     profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=headers,
     ).json()
     ppa = client.post(
@@ -550,7 +550,7 @@ def test_delete_email_and_freeze_profile_hides_agent_profile_fetches() -> None:
     company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=headers,
     ).json()
     ppa = client.post(

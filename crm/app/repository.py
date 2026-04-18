@@ -21,6 +21,7 @@ from app.models import (
     AuditListQuery,
     Company,
     CompanyCreate,
+    CompanyResearchStatus,
     CompanyUpdate,
     Email,
     EmailCreate,
@@ -42,6 +43,11 @@ from app.models import (
     UserCreate,
     UserInDB,
     UserNotification,
+    WorkerLease,
+    WorkerSettings,
+    WorkerSettingsUpdate,
+    WorkerStateResponse,
+    WorkerType,
     utcnow,
     validate_application_transition,
 )
@@ -81,7 +87,7 @@ class BaseRepository:
         raise NotImplementedError
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
-        """Companies with indexed=False, oldest created first (FIFO)."""
+        """Companies with research_status=pending, oldest created first (FIFO)."""
         raise NotImplementedError
 
     def create_company(self, payload: CompanyCreate) -> Company:
@@ -135,7 +141,26 @@ class BaseRepository:
     ) -> list[ApplicationListItem]:
         raise NotImplementedError
 
-    def list_pending_applications(self, limit: int) -> list[Application]:
+    def list_applications_by_status(self, status: ApplicationStatus, limit: int) -> list[Application]:
+        raise NotImplementedError
+
+    def get_worker_state(self) -> WorkerStateResponse:
+        raise NotImplementedError
+
+    def update_worker_settings(self, payload: WorkerSettingsUpdate) -> WorkerSettings:
+        raise NotImplementedError
+
+    def assign_worker(self, worker_type: WorkerType, agent_key_id: str) -> str:
+        raise NotImplementedError
+
+    def release_worker(self, lease_id: str) -> bool:
+        raise NotImplementedError
+
+    def release_worker_for_agent(self, lease_id: str, agent_key_id: str) -> bool:
+        """Release a lease only if it was created by the given agent API key."""
+        raise NotImplementedError
+
+    def release_all_workers(self, worker_type: WorkerType) -> int:
         raise NotImplementedError
 
     def create_application(self, payload: ApplicationCreate, created_by_user_id: str | None) -> Application:
@@ -167,8 +192,12 @@ class BaseRepository:
     def delete_application(self, application_id: str) -> bool:
         raise NotImplementedError
 
-    def clear_application_to_pending_preparation(self, application_id: str) -> Application | None:
-        """Remove all PPAs and their emails; reset application to pending_preparation (bypasses transition rules)."""
+    def clear_application_to_company_research_pending(self, application_id: str) -> Application | None:
+        """Remove all PPAs and their emails; reset application to company_research_pending (bypasses transition rules)."""
+        raise NotImplementedError
+
+    def clear_company_research_detail(self, company_id: str) -> Company | None:
+        """Clear enrichment text/links and set research_status to pending."""
         raise NotImplementedError
 
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:
@@ -280,6 +309,8 @@ class InMemoryRepository(BaseRepository):
         self.agent_api_keys: dict[str, AgentApiKeyInDB] = {}
         self.per_profile_applications: dict[str, PerProfileApplication] = {}
         self.emails: dict[str, Email] = {}
+        self._worker_settings = WorkerSettings()
+        self._worker_leases: dict[str, WorkerLease] = {}
 
     def _new_id(self) -> str:
         return str(uuid4())
@@ -352,9 +383,70 @@ class InMemoryRepository(BaseRepository):
         return values[skip : skip + limit]
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
-        values = [c for c in self.companies.values() if not c.indexed]
+        values = [c for c in self.companies.values() if c.research_status == CompanyResearchStatus.pending]
         values.sort(key=lambda c: c.created_at)
         return values[:limit]
+
+    def _initial_application_status_for_company(self, company_id: str) -> ApplicationStatus:
+        company = self.get_company(company_id)
+        if company and company.research_status == CompanyResearchStatus.indexed:
+            return ApplicationStatus.ppa_pending
+        return ApplicationStatus.company_research_pending
+
+    def get_worker_state(self) -> WorkerStateResponse:
+        active: dict[str, int] = {t.value: 0 for t in WorkerType}
+        for lease in self._worker_leases.values():
+            active[lease.worker_type.value] = active.get(lease.worker_type.value, 0) + 1
+        return WorkerStateResponse(
+            settings=self._worker_settings,
+            active=active,
+            max={
+                "company_researcher": self._worker_settings.max_company_researcher,
+                "ppa_analyser": self._worker_settings.max_ppa_analyser,
+                "application_drafter": self._worker_settings.max_application_drafter,
+            },
+        )
+
+    def update_worker_settings(self, payload: WorkerSettingsUpdate) -> WorkerSettings:
+        data = payload.model_dump(exclude_none=True)
+        merged = self._worker_settings.model_copy(update=data)
+        self._worker_settings = merged
+        return merged
+
+    def assign_worker(self, worker_type: WorkerType, agent_key_id: str) -> str:
+        max_map = {
+            WorkerType.company_researcher: self._worker_settings.max_company_researcher,
+            WorkerType.ppa_analyser: self._worker_settings.max_ppa_analyser,
+            WorkerType.application_drafter: self._worker_settings.max_application_drafter,
+        }
+        max_n = max_map[worker_type]
+        active = sum(1 for l in self._worker_leases.values() if l.worker_type == worker_type)
+        if active >= max_n:
+            raise ValueError("No worker slots available for this worker type")
+        lease_id = str(uuid4())
+        lease = WorkerLease(
+            id=lease_id,
+            worker_type=worker_type,
+            agent_key_id=agent_key_id,
+            created_at=utcnow(),
+        )
+        self._worker_leases[lease_id] = lease
+        return lease_id
+
+    def release_worker(self, lease_id: str) -> bool:
+        return self._worker_leases.pop(lease_id, None) is not None
+
+    def release_worker_for_agent(self, lease_id: str, agent_key_id: str) -> bool:
+        lease = self._worker_leases.get(lease_id)
+        if not lease or lease.agent_key_id != agent_key_id:
+            return False
+        return self.release_worker(lease_id)
+
+    def release_all_workers(self, worker_type: WorkerType) -> int:
+        to_drop = [lid for lid, l in self._worker_leases.items() if l.worker_type == worker_type]
+        for lid in to_drop:
+            self._worker_leases.pop(lid, None)
+        return len(to_drop)
 
     def create_company(self, payload: CompanyCreate) -> Company:
         now = utcnow()
@@ -498,17 +590,18 @@ class InMemoryRepository(BaseRepository):
             for a in sliced
         ]
 
-    def list_pending_applications(self, limit: int) -> list[Application]:
-        pending = [
-            a
-            for a in self.applications.values()
-            if a.status == ApplicationStatus.pending_preparation
-        ]
-        pending = _sort_applications(pending, "created_at_asc")
-        return pending[:limit]
+    def list_applications_by_status(self, status: ApplicationStatus, limit: int) -> list[Application]:
+        rows = [a for a in self.applications.values() if a.status == status]
+        rows = _sort_applications(rows, "created_at_asc")
+        return rows[:limit]
 
     def create_application(self, payload: ApplicationCreate, created_by_user_id: str | None) -> Application:
         now = utcnow()
+        payload_dict = _as_dict(payload)
+        initial_status = payload.status
+        if initial_status == ApplicationStatus.company_research_pending:
+            initial_status = self._initial_application_status_for_company(payload.company_id)
+        payload_dict["status"] = initial_status
         application = Application(
             id=self._new_id(),
             created_at=now,
@@ -519,7 +612,7 @@ class InMemoryRepository(BaseRepository):
             email_sent_at=None,
             archive_reason=None,
             created_by_user_id=created_by_user_id,
-            **_as_dict(payload),
+            **payload_dict,
         )
         self.applications[application.id] = application
         return application
@@ -533,7 +626,7 @@ class InMemoryRepository(BaseRepository):
         app_payload = ApplicationCreate(
             company_id=company.id,
             job_post=payload.job_post,
-            status=ApplicationStatus.pending_preparation,
+            status=ApplicationStatus.company_research_pending,
         )
         application = self.create_application(app_payload, created_by_user_id=created_by_user_id)
         return company, application
@@ -552,8 +645,6 @@ class InMemoryRepository(BaseRepository):
         if next_status and not validate_application_transition(application.status, next_status):
             raise ValueError("Invalid status transition")
         merged = application.model_copy(update={**updates, "updated_at": utcnow()})
-        if merged.status == ApplicationStatus.applied and not merged.applied_at:
-            merged = merged.model_copy(update={"applied": True, "applied_at": utcnow()})
         self.applications[application_id] = merged
         return merged
 
@@ -566,26 +657,21 @@ class InMemoryRepository(BaseRepository):
         if applied:
             if application.status == ApplicationStatus.archived:
                 raise ValueError("Archived application cannot be applied")
+            if application.status != ApplicationStatus.application_ready:
+                raise ValueError("Mark applied is only valid when status is application_ready")
             stamp = application.applied_at or utcnow()
             updated = application.model_copy(
                 update={
                     "applied": True,
                     "applied_at": stamp,
-                    "status": ApplicationStatus.applied,
                     "updated_at": utcnow(),
                 }
             )
         else:
-            next_status = (
-                ApplicationStatus.preparation_ready
-                if application.status == ApplicationStatus.applied
-                else application.status
-            )
             updated = application.model_copy(
                 update={
                     "applied": False,
                     "applied_at": None,
-                    "status": next_status,
                     "updated_at": utcnow(),
                 }
             )
@@ -621,7 +707,7 @@ class InMemoryRepository(BaseRepository):
     def delete_application(self, application_id: str) -> bool:
         return self.applications.pop(application_id, None) is not None
 
-    def clear_application_to_pending_preparation(self, application_id: str) -> Application | None:
+    def clear_application_to_company_research_pending(self, application_id: str) -> Application | None:
         application = self.get_application(application_id)
         if not application:
             return None
@@ -638,7 +724,7 @@ class InMemoryRepository(BaseRepository):
             self.per_profile_applications.pop(pid, None)
         merged = application.model_copy(
             update={
-                "status": ApplicationStatus.pending_preparation,
+                "status": ApplicationStatus.company_research_pending,
                 "applied": False,
                 "applied_at": None,
                 "email_sent": False,
@@ -648,6 +734,23 @@ class InMemoryRepository(BaseRepository):
             }
         )
         self.applications[application_id] = merged
+        return merged
+
+    def clear_company_research_detail(self, company_id: str) -> Company | None:
+        company = self.get_company(company_id)
+        if not company:
+            return None
+        merged = company.model_copy(
+            update={
+                "research_status": CompanyResearchStatus.pending,
+                "overview": None,
+                "full_overview": None,
+                "analysis_links": [],
+                "enrichment_source_links": [],
+                "updated_at": utcnow(),
+            }
+        )
+        self.companies[company_id] = merged
         return merged
 
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:
@@ -890,6 +993,57 @@ class MongoRepository(InMemoryRepository):
         self.client = MongoClient(settings.mongo_uri)
         self.db = self.client[settings.mongo_db_name]
         self._load()
+        self._load_workers_mongo()
+
+    def _load_workers_mongo(self) -> None:
+        doc = self.db.app_settings.find_one({"_id": "worker_settings"})
+        if not doc:
+            self._worker_settings = WorkerSettings()
+            self._worker_leases = {}
+            return
+        self._worker_settings = WorkerSettings(
+            max_company_researcher=int(doc.get("max_company_researcher", 1)),
+            max_ppa_analyser=int(doc.get("max_ppa_analyser", 1)),
+            max_application_drafter=int(doc.get("max_application_drafter", 1)),
+        )
+        self._worker_leases = {}
+        for row in doc.get("leases") or []:
+            lease = WorkerLease.model_validate(row)
+            self._worker_leases[lease.id] = lease
+
+    def _persist_workers_mongo(self) -> None:
+        doc = {
+            "_id": "worker_settings",
+            **self._worker_settings.model_dump(),
+            "leases": [l.model_dump(mode="json") for l in self._worker_leases.values()],
+        }
+        self.db.app_settings.replace_one({"_id": "worker_settings"}, doc, upsert=True)
+
+    def update_worker_settings(self, payload: WorkerSettingsUpdate) -> WorkerSettings:
+        result = super().update_worker_settings(payload)
+        self._persist_workers_mongo()
+        return result
+
+    def assign_worker(self, worker_type: WorkerType, agent_key_id: str) -> str:
+        lease_id = super().assign_worker(worker_type, agent_key_id)
+        self._persist_workers_mongo()
+        return lease_id
+
+    def release_worker(self, lease_id: str) -> bool:
+        ok = super().release_worker(lease_id)
+        if ok:
+            self._persist_workers_mongo()
+        return ok
+
+    def release_worker_for_agent(self, lease_id: str, agent_key_id: str) -> bool:
+        ok = super().release_worker_for_agent(lease_id, agent_key_id)
+        return ok
+
+    def release_all_workers(self, worker_type: WorkerType) -> int:
+        n = super().release_all_workers(worker_type)
+        if n:
+            self._persist_workers_mongo()
+        return n
 
     def _load(self) -> None:
         self.users = self._load_collection(self.db.users.find(), UserInDB)
@@ -972,6 +1126,11 @@ class MongoRepository(InMemoryRepository):
         self._sync()
         return deleted
 
+    def clear_company_research_detail(self, company_id: str) -> Company | None:
+        company = super().clear_company_research_detail(company_id)
+        self._sync()
+        return company
+
     def create_profile(self, payload: ProfileCreate) -> Profile:
         profile = super().create_profile(payload)
         self._sync()
@@ -1025,8 +1184,8 @@ class MongoRepository(InMemoryRepository):
         self._sync()
         return deleted
 
-    def clear_application_to_pending_preparation(self, application_id: str) -> Application | None:
-        application = super().clear_application_to_pending_preparation(application_id)
+    def clear_application_to_company_research_pending(self, application_id: str) -> Application | None:
+        application = super().clear_application_to_company_research_pending(application_id)
         self._sync()
         return application
 

@@ -31,7 +31,7 @@ def _register_admin(client: TestClient) -> str:
 def test_agent_requires_api_key() -> None:
     app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
     client = TestClient(app)
-    response = client.get("/api/v1/agent/applications/pending")
+    response = client.get("/api/v1/agent/applications/company-research-pending")
     assert response.status_code == 422 or response.status_code == 401
 
 
@@ -53,10 +53,10 @@ def test_agent_pending_and_company_update() -> None:
         headers=h,
     )
     assert boot.status_code == 201
-    assert boot.json()["status"] == ApplicationStatus.pending_preparation.value
+    assert boot.json()["status"] == ApplicationStatus.company_research_pending.value
 
     pending = client.get(
-        "/api/v1/agent/applications/pending",
+        "/api/v1/agent/applications/company-research-pending",
         headers={"X-API-Key": raw_key},
     )
     assert pending.status_code == 200
@@ -99,16 +99,22 @@ def test_preparation_ready_notification() -> None:
     token = _register_admin(client)
     h = _headers(token)
 
-    boot = client.post(
-        "/api/v1/applications/bootstrap",
-        json={"company_name": "Beta"},
+    co = client.post(
+        "/api/v1/companies",
+        json={"name": "Beta", "indexed": True},
         headers=h,
-    )
-    app_id = boot.json()["id"]
+    ).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": co["id"]},
+        headers=h,
+    ).json()
+    assert application["status"] == "ppa_pending"
+    app_id = application["id"]
 
     client.put(
         f"/api/v1/applications/{app_id}",
-        json={"status": "preparation_ready"},
+        json={"status": "application_ready"},
         headers=h,
     )
     notes = client.get("/api/v1/notifications", headers=h)
@@ -143,7 +149,7 @@ def test_per_profile_and_email_mark_sent() -> None:
     ).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=h,
     ).json()
 
@@ -218,7 +224,7 @@ def test_agent_get_per_profile_applications_by_application_id() -> None:
     ).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=h,
     ).json()
 
@@ -279,7 +285,7 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
     uj = unindexed.json()
     assert len(uj) == 2
     assert uj[0]["id"] == c_old["id"]
-    assert uj[0]["indexed"] is False
+    assert uj[0]["research_status"] == "pending"
 
     bulk = client.patch(
         "/api/v1/agent/companies/bulk",
@@ -291,7 +297,7 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
         headers=ak,
     )
     assert bulk.status_code == 200
-    assert bulk.json()[0]["indexed"] is True
+    assert bulk.json()[0]["research_status"] == "indexed"
     assert bulk.json()[0]["overview"] == "Done"
     assert bulk.json()[0]["full_overview"] is None
 
@@ -346,7 +352,7 @@ def test_agent_list_applications_filters() -> None:
     company = client.post("/api/v1/companies", json={"name": "Co"}, headers=h).json()
     app_sent = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=h,
     ).json()
     client.post(
@@ -356,7 +362,7 @@ def test_agent_list_applications_filters() -> None:
     )
 
     r = client.get(
-        "/api/v1/agent/applications?email_sent=true&status_filter=preparation_ready",
+        "/api/v1/agent/applications?email_sent=true&status_filter=application_ready",
         headers=ak,
     )
     assert r.status_code == 200
@@ -378,7 +384,7 @@ def test_agent_archive_application_with_reason() -> None:
     company = client.post("/api/v1/companies", json={"name": "Z"}, headers=h).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "pending_preparation"},
+        json={"company_id": company["id"], "status": "company_research_pending"},
         headers=h,
     ).json()
 
@@ -430,7 +436,7 @@ def test_notifications_resolve_links_by_notification_and_payload_id() -> None:
     company = client.post("/api/v1/companies", json={"name": "Link Co"}, headers=h).json()
     application = client.post(
         "/api/v1/applications",
-        json={"company_id": company["id"], "status": "preparation_ready"},
+        json={"company_id": company["id"], "status": "application_ready"},
         headers=h,
     ).json()
     profile = client.post(
@@ -513,7 +519,7 @@ def test_application_link_hidden_when_application_has_no_owner() -> None:
     uid = client.get("/api/v1/auth/me", headers=h_owner).json()["id"]
     company = client.post("/api/v1/companies", json={"name": "Hidden Link Co"}, headers=h_owner).json()
     application = repo.create_application(
-        ApplicationCreate(company_id=company["id"], status=ApplicationStatus.preparation_ready),
+        ApplicationCreate(company_id=company["id"], status=ApplicationStatus.application_ready),
         created_by_user_id=None,
     )
 

@@ -15,7 +15,7 @@ def notify_if_preparation_ready(
 ) -> None:
     if before and before.status == after.status:
         return
-    if after.status != ApplicationStatus.preparation_ready:
+    if after.status != ApplicationStatus.application_ready:
         return
     uid = after.created_by_user_id
     if not uid:
