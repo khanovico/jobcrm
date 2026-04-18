@@ -250,6 +250,14 @@ class CompanyUpdate(BaseModel):
         return data
 
 
+class CompanyApplicationCountResponse(BaseModel):
+    count: int
+
+
+class DeleteCompanyResponse(BaseModel):
+    applications_archived: int
+
+
 class Company(CompanyBase):
     id: str
     created_at: datetime

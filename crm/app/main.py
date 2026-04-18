@@ -38,8 +38,10 @@ from app.models import (
     AuditEvent,
     AuditListQuery,
     Company,
+    CompanyApplicationCountResponse,
     CompanyCreate,
     CompanyUpdate,
+    DeleteCompanyResponse,
     DashboardMetrics,
     Email,
     EmailCreate,
@@ -404,13 +406,27 @@ def update_company(
     return company
 
 
-@app.delete("/api/v1/companies/{company_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.get(
+    "/api/v1/companies/{company_id}/application-count",
+    response_model=CompanyApplicationCountResponse,
+)
+def company_application_count(
+    company_id: str,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> CompanyApplicationCountResponse:
+    if not repo.get_company(company_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    return CompanyApplicationCountResponse(count=repo.count_applications_for_company(company_id))
+
+
+@app.delete("/api/v1/companies/{company_id}", response_model=DeleteCompanyResponse)
 def delete_company(
     company_id: str,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
-) -> Response:
-    deleted = repo.delete_company(company_id)
+) -> DeleteCompanyResponse:
+    deleted, applications_archived = repo.delete_company(company_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
     _audit(
@@ -420,8 +436,9 @@ def delete_company(
         action="delete",
         entity_type="company",
         entity_id=company_id,
+        metadata={"applications_archived": applications_archived},
     )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return DeleteCompanyResponse(applications_archived=applications_archived)
 
 
 @app.post(

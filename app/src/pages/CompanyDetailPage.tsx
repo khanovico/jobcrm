@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
 import { Application, Company, CompanyResearchStatus, Industry } from "../types";
@@ -47,6 +48,7 @@ export const CompanyDetailPage = () => {
   const [selectedIndustryIds, setSelectedIndustryIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const industryNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -121,18 +123,6 @@ export const CompanyDetailPage = () => {
       setError((err as Error).message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const onDelete = async () => {
-    if (!companyId || !company) return;
-    if (!window.confirm(`Delete company “${company.name}”? This cannot be undone.`)) return;
-    setError(null);
-    try {
-      await api.deleteCompany(companyId);
-      navigate("/companies");
-    } catch (e) {
-      setError((e as Error).message);
     }
   };
 
@@ -462,12 +452,19 @@ export const CompanyDetailPage = () => {
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving ? "Saving…" : "Save changes"}
                 </button>
-                <button type="button" className="btn btn-outline btn-error" onClick={() => void onDelete()}>
+                <button type="button" className="btn btn-outline btn-error" onClick={() => setDeleteOpen(true)}>
                   Delete company
                 </button>
               </div>
             </form>
           </div>
+
+          <DeleteCompanyModal
+            open={deleteOpen}
+            onClose={() => setDeleteOpen(false)}
+            company={company ? { id: company.id, name: company.name } : null}
+            onDeleted={() => navigate("/companies")}
+          />
         </>
       )}
     </div>

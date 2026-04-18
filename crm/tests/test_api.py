@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.deps import get_repository
 from app.main import app
-from app.repository import InMemoryRepository
+from app.repository import InMemoryRepository, RELATED_COMPANY_DELETED_ARCHIVE_REASON
 
 
 def _register_and_login(client: TestClient) -> str:
@@ -294,6 +294,71 @@ def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
     assert r.status_code == 200
     assert r.json()["status"] == "ppa_pending"
     assert repo.get_per_profile_application(ppa["id"]) is None
+
+
+def test_company_application_count_matches_tied_applications() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Count Co"}, headers=headers).json()
+    r0 = client.get(f"/api/v1/companies/{company['id']}/application-count", headers=headers)
+    assert r0.status_code == 200
+    assert r0.json()["count"] == 0
+
+    client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    )
+    client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    )
+    r2 = client.get(f"/api/v1/companies/{company['id']}/application-count", headers=headers)
+    assert r2.json()["count"] == 2
+
+
+def test_delete_company_archives_all_tied_applications_then_removes_company() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Gone Co"}, headers=headers).json()
+    a1 = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+    a2 = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    client.put(
+        f"/api/v1/applications/{a2['id']}",
+        json={"status": "archived", "archive_reason": "old"},
+        headers=headers,
+    )
+
+    r = client.delete(f"/api/v1/companies/{company['id']}", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["applications_archived"] == 2
+
+    assert client.get(f"/api/v1/companies/{company['id']}", headers=headers).status_code == 404
+
+    got1 = client.get(f"/api/v1/applications/{a1['id']}", headers=headers).json()
+    assert got1["status"] == "archived"
+    assert got1["archive_reason"] == RELATED_COMPANY_DELETED_ARCHIVE_REASON
+
+    got2 = client.get(f"/api/v1/applications/{a2['id']}", headers=headers).json()
+    assert got2["status"] == "archived"
+    assert got2["archive_reason"] == RELATED_COMPANY_DELETED_ARCHIVE_REASON
 
 
 def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume() -> None:

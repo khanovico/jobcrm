@@ -52,6 +52,9 @@ from app.models import (
     validate_application_transition,
 )
 
+# Archived for every application tied to a company when that company is deleted (user UI + API).
+RELATED_COMPANY_DELETED_ARCHIVE_REASON = "Related company is deleted"
+
 
 class BaseRepository:
     def create_user(self, payload: UserCreate, password_hash: str) -> UserInDB:
@@ -99,7 +102,11 @@ class BaseRepository:
     def update_company(self, company_id: str, payload: CompanyUpdate) -> Company | None:
         raise NotImplementedError
 
-    def delete_company(self, company_id: str) -> bool:
+    def count_applications_for_company(self, company_id: str) -> int:
+        raise NotImplementedError
+
+    def delete_company(self, company_id: str) -> tuple[bool, int]:
+        """Delete company after archiving tied applications. Returns (deleted, applications_archived_count)."""
         raise NotImplementedError
 
     def list_profiles(
@@ -473,8 +480,45 @@ class InMemoryRepository(BaseRepository):
         self.companies[company_id] = merged
         return merged
 
-    def delete_company(self, company_id: str) -> bool:
-        return self.companies.pop(company_id, None) is not None
+    def count_applications_for_company(self, company_id: str) -> int:
+        return sum(1 for a in self.applications.values() if a.company_id == company_id)
+
+    def _archive_applications_for_deleted_company(self, company_id: str) -> int:
+        n = 0
+        for app_id, application in list(self.applications.items()):
+            if application.company_id != company_id:
+                continue
+            if application.status != ApplicationStatus.archived:
+                if not validate_application_transition(
+                    application.status, ApplicationStatus.archived
+                ):
+                    raise ValueError(
+                        f"Cannot archive application {app_id} from status {application.status}"
+                    )
+                merged = application.model_copy(
+                    update={
+                        "status": ApplicationStatus.archived,
+                        "archive_reason": RELATED_COMPANY_DELETED_ARCHIVE_REASON,
+                        "updated_at": utcnow(),
+                    }
+                )
+            else:
+                merged = application.model_copy(
+                    update={
+                        "archive_reason": RELATED_COMPANY_DELETED_ARCHIVE_REASON,
+                        "updated_at": utcnow(),
+                    }
+                )
+            self.applications[app_id] = merged
+            n += 1
+        return n
+
+    def delete_company(self, company_id: str) -> tuple[bool, int]:
+        if not self.get_company(company_id):
+            return (False, 0)
+        archived = self._archive_applications_for_deleted_company(company_id)
+        self.companies.pop(company_id, None)
+        return (True, archived)
 
     def list_profiles(
         self, skip: int, limit: int, search: str | None, include_frozen: bool = True
@@ -1124,10 +1168,11 @@ class MongoRepository(InMemoryRepository):
         self._sync()
         return company
 
-    def delete_company(self, company_id: str) -> bool:
-        deleted = super().delete_company(company_id)
-        self._sync()
-        return deleted
+    def delete_company(self, company_id: str) -> tuple[bool, int]:
+        ok, n = super().delete_company(company_id)
+        if ok:
+            self._sync()
+        return (ok, n)
 
     def clear_company_research_detail(self, company_id: str) -> Company | None:
         company = super().clear_company_research_detail(company_id)

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { Modal } from "../components/Modal";
 import { api } from "../api";
@@ -33,6 +34,7 @@ export const CompaniesPage = () => {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
 
   const load = async (targetPage = page) => {
     setLoading(true);
@@ -161,11 +163,10 @@ export const CompaniesPage = () => {
                       <button
                         type="button"
                         className="btn btn-xs btn-error btn-outline"
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           e.stopPropagation();
-                          if (!window.confirm(`Delete “${company.name}”?`)) return;
-                          await api.deleteCompany(company.id);
-                          await load();
+                          setError(null);
+                          setDeleteTarget(company);
                         }}
                       >
                         Delete
@@ -258,6 +259,16 @@ export const CompaniesPage = () => {
           setApplicationOpen(false);
           setApplyCompanyId(null);
           navigate("/applications");
+        }}
+      />
+
+      <DeleteCompanyModal
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        company={deleteTarget ? { id: deleteTarget.id, name: deleteTarget.name } : null}
+        onDeleted={async () => {
+          await load();
+          setDeleteTarget(null);
         }}
       />
     </div>

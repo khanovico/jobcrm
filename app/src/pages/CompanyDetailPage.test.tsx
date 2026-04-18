@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompanyDetailPage } from "./CompanyDetailPage";
 import type { Company } from "../types";
 
-const { getCompany, listApplications, listIndustries } = vi.hoisted(() => ({
+const { getCompany, listApplications, listIndustries, getCompanyApplicationCount } = vi.hoisted(() => ({
   getCompany: vi.fn(),
   listApplications: vi.fn(),
-  listIndustries: vi.fn()
+  listIndustries: vi.fn(),
+  getCompanyApplicationCount: vi.fn()
 }));
 
 vi.mock("../api", () => ({
@@ -18,7 +19,8 @@ vi.mock("../api", () => ({
     listIndustries,
     updateCompany: vi.fn(),
     deleteCompany: vi.fn(),
-    clearCompanyResearchDetail: vi.fn()
+    clearCompanyResearchDetail: vi.fn(),
+    getCompanyApplicationCount
   }
 }));
 
@@ -46,8 +48,10 @@ describe("CompanyDetailPage", () => {
     getCompany.mockReset();
     listApplications.mockReset();
     listIndustries.mockReset();
+    getCompanyApplicationCount.mockReset();
     listApplications.mockResolvedValue([]);
     listIndustries.mockResolvedValue([]);
+    getCompanyApplicationCount.mockResolvedValue({ count: 0 });
   });
 
   afterEach(() => {

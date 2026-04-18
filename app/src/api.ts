@@ -122,7 +122,10 @@ export const api = {
   getCompany: (id: string) => request<Company>(`/api/v1/companies/${id}`),
   updateCompany: (id: string, payload: Partial<Company>) =>
     request<Company>(`/api/v1/companies/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
-  deleteCompany: (id: string) => request<void>(`/api/v1/companies/${id}`, { method: "DELETE" }),
+  getCompanyApplicationCount: (companyId: string) =>
+    request<{ count: number }>(`/api/v1/companies/${companyId}/application-count`),
+  deleteCompany: (id: string) =>
+    request<{ applications_archived: number }>(`/api/v1/companies/${id}`, { method: "DELETE" }),
   listProfiles: () => request<Profile[]>("/api/v1/profiles"),
   getProfile: (id: string) => request<Profile>(`/api/v1/profiles/${id}`),
   createProfile: (payload: ProfileCreatePayload) =>
