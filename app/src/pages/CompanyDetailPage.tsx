@@ -3,9 +3,30 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
-import { Application, Company, Industry } from "../types";
+import { Application, Company, CompanyResearchStatus, Industry } from "../types";
 
 const dash = (value: string | null | undefined) => (value && String(value).trim() !== "" ? value : "—");
+
+const researchLabel = (s: CompanyResearchStatus | undefined) => {
+  if (s === "indexed") return "Indexed";
+  if (s === "indexing") return "Indexing";
+  return "Pending";
+};
+
+const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
+  if (s === "indexed") return "badge-success";
+  if (s === "indexing") return "badge-info";
+  return "badge-warning";
+};
+
+function companyHasStoredEnrichment(c: Company): boolean {
+  return (
+    Boolean(c.overview?.trim()) ||
+    Boolean(c.full_overview?.trim()) ||
+    (c.analysis_links?.length ?? 0) > 0 ||
+    (c.enrichment_source_links?.length ?? 0) > 0
+  );
+}
 
 export const CompanyDetailPage = () => {
   const { companyId } = useParams<{ companyId: string }>();
@@ -117,6 +138,8 @@ export const CompanyDetailPage = () => {
 
   if (!companyId) return <div>Missing company id</div>;
 
+  const showIndexedResearchSummary = company?.research_status === "indexed";
+
   return (
     <div className="space-y-4">
       <div className="breadcrumbs text-sm">
@@ -135,7 +158,7 @@ export const CompanyDetailPage = () => {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <h2 className="text-xl font-semibold">{company.name}</h2>
               <div className="flex flex-wrap items-center gap-2">
-                {company.full_overview?.trim() ? (
+                {showIndexedResearchSummary && company.full_overview?.trim() ? (
                   <a
                     href={company.full_overview}
                     className="link link-primary text-sm font-medium"
@@ -151,7 +174,7 @@ export const CompanyDetailPage = () => {
                   onClick={async () => {
                     if (
                       !window.confirm(
-                        "Set research status to Pending? Stored overview, links, and enrichment fields are kept."
+                        "Set research status to Pending? Overview and enrichment stay saved (Edit company); the indexed summary above will hide until research is indexed again."
                       )
                     ) {
                       return;
@@ -172,19 +195,27 @@ export const CompanyDetailPage = () => {
                 </button>
               </div>
             </div>
-            <p className="mt-1 text-xs opacity-70">
-              Research status:{" "}
-              <span className="font-medium capitalize">{company.research_status ?? "pending"}</span>
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-xs opacity-70">
+              <span>Research status:</span>
+              <span className={`badge badge-sm ${researchBadgeClass(company.research_status)}`}>
+                {researchLabel(company.research_status)}
+              </span>
             </p>
             <p className="text-sm opacity-70">
               Updated {new Date(company.updated_at).toLocaleString()} · ID{" "}
               <span className="font-mono text-xs">{company.id}</span>
             </p>
-            {company.overview?.trim() ? (
+            {showIndexedResearchSummary && company.overview?.trim() ? (
               <div className="mt-4">
                 <h3 className="text-sm font-semibold opacity-80">Overview</h3>
                 <p className="whitespace-pre-wrap text-sm">{company.overview}</p>
               </div>
+            ) : null}
+            {!showIndexedResearchSummary && companyHasStoredEnrichment(company) ? (
+              <p className="mt-4 text-sm opacity-70">
+                Overview and agent enrichment are hidden while research status is not Indexed. Values remain in{" "}
+                <strong>Edit company</strong> below.
+              </p>
             ) : null}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div>
@@ -250,7 +281,7 @@ export const CompanyDetailPage = () => {
                 </div>
               )}
             </div>
-            {company.analysis_links && company.analysis_links.length > 0 && (
+            {showIndexedResearchSummary && company.analysis_links && company.analysis_links.length > 0 && (
               <div className="mt-4">
                 <h3 className="text-sm font-semibold opacity-80">Analysis links</h3>
                 <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
@@ -265,20 +296,22 @@ export const CompanyDetailPage = () => {
                 </ul>
               </div>
             )}
-            {company.enrichment_source_links && company.enrichment_source_links.length > 0 && (
-              <div className="mt-4">
-                <h3 className="text-sm font-semibold opacity-80">Enrichment sources</h3>
-                <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
-                  {company.enrichment_source_links.map((url, idx) => (
-                    <li key={`${url}-${idx}`}>
-                      <a href={url} className="link link-accent break-all" target="_blank" rel="noreferrer">
-                        {url}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            {showIndexedResearchSummary &&
+              company.enrichment_source_links &&
+              company.enrichment_source_links.length > 0 && (
+                <div className="mt-4">
+                  <h3 className="text-sm font-semibold opacity-80">Enrichment sources</h3>
+                  <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
+                    {company.enrichment_source_links.map((url, idx) => (
+                      <li key={`${url}-${idx}`}>
+                        <a href={url} className="link link-accent break-all" target="_blank" rel="noreferrer">
+                          {url}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
           </div>
 
           <div className="card bg-base-100 p-4 shadow">
