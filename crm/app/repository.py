@@ -167,6 +167,10 @@ class BaseRepository:
     def delete_application(self, application_id: str) -> bool:
         raise NotImplementedError
 
+    def clear_application_to_pending_preparation(self, application_id: str) -> Application | None:
+        """Remove all PPAs and their emails; reset application to pending_preparation (bypasses transition rules)."""
+        raise NotImplementedError
+
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:
         raise NotImplementedError
 
@@ -246,9 +250,6 @@ class BaseRepository:
         raise NotImplementedError
 
     def mark_email_sent(self, email_id: str, sent: bool) -> Email | None:
-        raise NotImplementedError
-
-    def delete_email(self, email_id: str) -> bool:
         raise NotImplementedError
 
     def delete_email(self, email_id: str) -> bool:
@@ -620,6 +621,35 @@ class InMemoryRepository(BaseRepository):
     def delete_application(self, application_id: str) -> bool:
         return self.applications.pop(application_id, None) is not None
 
+    def clear_application_to_pending_preparation(self, application_id: str) -> Application | None:
+        application = self.get_application(application_id)
+        if not application:
+            return None
+        ppa_ids = {
+            p.id
+            for p in self.per_profile_applications.values()
+            if p.application_id == application_id
+        }
+        for eid in list(self.emails.keys()):
+            em = self.emails.get(eid)
+            if em and em.per_profile_application_id in ppa_ids:
+                self.emails.pop(eid, None)
+        for pid in ppa_ids:
+            self.per_profile_applications.pop(pid, None)
+        merged = application.model_copy(
+            update={
+                "status": ApplicationStatus.pending_preparation,
+                "applied": False,
+                "applied_at": None,
+                "email_sent": False,
+                "email_sent_at": None,
+                "archive_reason": None,
+                "updated_at": utcnow(),
+            }
+        )
+        self.applications[application_id] = merged
+        return merged
+
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:
         q = query.strip().lower()
         if not q:
@@ -853,9 +883,6 @@ class InMemoryRepository(BaseRepository):
     def delete_email(self, email_id: str) -> bool:
         return self.emails.pop(email_id, None) is not None
 
-    def delete_email(self, email_id: str) -> bool:
-        return self.emails.pop(email_id, None) is not None
-
 
 class MongoRepository(InMemoryRepository):
     def __init__(self) -> None:
@@ -997,6 +1024,11 @@ class MongoRepository(InMemoryRepository):
         deleted = super().delete_application(application_id)
         self._sync()
         return deleted
+
+    def clear_application_to_pending_preparation(self, application_id: str) -> Application | None:
+        application = super().clear_application_to_pending_preparation(application_id)
+        self._sync()
+        return application
 
     def create_audit_event(
         self,

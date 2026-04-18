@@ -174,6 +174,61 @@ def test_list_applications_includes_applied_profile_names() -> None:
     assert listed[0]["applied_profiles"] == [{"profile_name": "Alex Dev"}]
 
 
+def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Reset Co"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "preparation_ready"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "x",
+        },
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/per-profile-applications/{ppa['id']}/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "content": "Hi",
+        },
+        headers=headers,
+    )
+
+    r = client.post(
+        f"/api/v1/applications/{application['id']}/clear-to-pending-preparation",
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "pending_preparation"
+    assert body["applied"] is False
+    assert body["applied_at"] is None
+    assert body["email_sent"] is False
+    assert body["email_sent_at"] is None
+
+    ppas = client.get(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        headers=headers,
+    ).json()
+    assert ppas == []
+    assert repo.get_per_profile_application(ppa["id"]) is None
+    assert not any(e.per_profile_application_id == ppa["id"] for e in repo.emails.values())
+
+
 def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

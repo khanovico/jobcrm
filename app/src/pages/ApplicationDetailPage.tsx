@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import DOMPurify from "dompurify";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
+import { ClearApplicationToPendingModal } from "../components/ClearApplicationToPendingModal";
 import { api } from "../api";
 import {
   formatApplicationStatusLabel,
@@ -63,6 +64,7 @@ export const ApplicationDetailPage = () => {
   const [emailsByPpa, setEmailsByPpa] = useState<Record<string, Email[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [clearToPendingOpen, setClearToPendingOpen] = useState(false);
   const [subjectUpdateBusyKey, setSubjectUpdateBusyKey] = useState<string | null>(null);
   const [editingRecipientPpaId, setEditingRecipientPpaId] = useState<string | null>(null);
   const [recipientDraftByPpa, setRecipientDraftByPpa] = useState<Record<string, RecipientDraft>>({});
@@ -259,22 +261,33 @@ export const ApplicationDetailPage = () => {
                   </a>
                 )}
               </div>
-              <label className="form-control w-fit min-w-[11rem] max-w-[14rem]">
-                <span className="label sr-only py-0">Status</span>
-                <select
-                  className="select select-bordered select-sm w-full"
-                  aria-label="Application status"
-                  value={application.status}
-                  disabled={statusBusy || application.status === "archived"}
-                  onChange={(e) => void changeApplicationStatus(e.target.value as ApplicationStatus)}
-                >
-                  {getSelectableApplicationStatuses(application.status).map((s) => (
-                    <option key={s} value={s}>
-                      {formatApplicationStatusLabel(s)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="form-control w-fit min-w-[11rem] max-w-[14rem]">
+                  <span className="label sr-only py-0">Status</span>
+                  <select
+                    className="select select-bordered select-sm w-full"
+                    aria-label="Application status"
+                    value={application.status}
+                    disabled={statusBusy || application.status === "archived"}
+                    onChange={(e) => void changeApplicationStatus(e.target.value as ApplicationStatus)}
+                  >
+                    {getSelectableApplicationStatuses(application.status).map((s) => (
+                      <option key={s} value={s}>
+                        {formatApplicationStatusLabel(s)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {application.status !== "pending_preparation" && (
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-warning btn-sm"
+                    onClick={() => setClearToPendingOpen(true)}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="mt-2.5 grid gap-1.5 text-xs md:grid-cols-12">
@@ -554,6 +567,13 @@ export const ApplicationDetailPage = () => {
             applicationId={application.id}
             companyLabel={company?.name ?? application.company_id}
             onArchived={load}
+          />
+          <ClearApplicationToPendingModal
+            open={clearToPendingOpen}
+            onClose={() => setClearToPendingOpen(false)}
+            applicationId={application.id}
+            companyLabel={company?.name ?? application.company_id}
+            onCleared={load}
           />
         </>
       )}

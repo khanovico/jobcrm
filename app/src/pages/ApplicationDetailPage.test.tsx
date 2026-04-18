@@ -16,7 +16,8 @@ const {
   markApplied,
   markApplicationEmailSent,
   markEmailSent,
-  deleteEmail
+  deleteEmail,
+  clearApplicationToPendingPreparation
 } = vi.hoisted(() => ({
   getApplication: vi.fn(),
   getCompany: vi.fn(),
@@ -28,7 +29,8 @@ const {
   markApplied: vi.fn(),
   markApplicationEmailSent: vi.fn(),
   markEmailSent: vi.fn(),
-  deleteEmail: vi.fn()
+  deleteEmail: vi.fn(),
+  clearApplicationToPendingPreparation: vi.fn()
 }));
 
 vi.mock("../api", () => ({
@@ -43,12 +45,17 @@ vi.mock("../api", () => ({
     markApplied,
     markApplicationEmailSent,
     markEmailSent,
-    deleteEmail
+    deleteEmail,
+    clearApplicationToPendingPreparation
   }
 }));
 
 vi.mock("../components/ArchiveApplicationModal", () => ({
   ArchiveApplicationModal: () => null
+}));
+
+vi.mock("../components/ClearApplicationToPendingModal", () => ({
+  ClearApplicationToPendingModal: () => null
 }));
 
 describe("ApplicationDetailPage", () => {
@@ -66,6 +73,7 @@ describe("ApplicationDetailPage", () => {
     markApplicationEmailSent.mockReset();
     markEmailSent.mockReset();
     deleteEmail.mockReset();
+    clearApplicationToPendingPreparation.mockReset();
     scrollIntoViewMock.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -863,5 +871,66 @@ describe("ApplicationDetailPage", () => {
     const statusSelect = await screen.findByRole("combobox", { name: "Application status" });
     await userEvent.selectOptions(statusSelect, "applied");
     expect(updateApplication).toHaveBeenCalledWith("a1", { status: "applied" });
+  });
+
+  it("shows Clear next to status when status is not pending preparation", async () => {
+    getApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "preparation_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValueOnce({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValueOnce([]);
+    listProfiles.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("button", { name: "Clear" })).toBeInTheDocument();
+  });
+
+  it("does not show Clear when status is pending preparation", async () => {
+    getApplication.mockResolvedValueOnce({
+      id: "a1",
+      company_id: "c1",
+      status: "pending_preparation",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValueOnce({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValueOnce([]);
+    listProfiles.mockResolvedValueOnce([]);
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("combobox", { name: "Application status" });
+    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
   });
 });

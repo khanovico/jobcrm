@@ -155,6 +155,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ sent })
     }),
+  clearApplicationToPendingPreparation: (id: string) =>
+    request<Application>(`/api/v1/applications/${id}/clear-to-pending-preparation`, {
+      method: "POST"
+    }),
   deleteApplication: (id: string) =>
     request<void>(`/api/v1/applications/${id}`, { method: "DELETE" }),
   listPerProfileApplications: (applicationId: string) =>

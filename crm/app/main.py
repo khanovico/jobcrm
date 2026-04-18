@@ -646,6 +646,31 @@ def mark_application_email_sent_route(
     return application
 
 
+@app.post(
+    "/api/v1/applications/{application_id}/clear-to-pending-preparation",
+    response_model=Application,
+)
+def clear_application_to_pending_preparation_route(
+    application_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Application:
+    """Remove all per-profile rows and their emails; set status to pending_preparation."""
+    application = repo.clear_application_to_pending_preparation(application_id)
+    if not application:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=user.id,
+        action="clear_to_pending_preparation",
+        entity_type="application",
+        entity_id=application_id,
+        metadata={},
+    )
+    return application
+
+
 @app.delete("/api/v1/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_application(
     application_id: str,
