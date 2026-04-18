@@ -76,6 +76,15 @@ When your changes create orphans:
 
 The test: Every changed line should trace directly to the user's request.
 
+## 4. Test-Driven Development
+
+Make sure your task - new feature, bug fix, update func, any of them - all covered by enough test.
+If it is required, you can also leverage e2e testing strategy.
+North Star -> Once it goes into Prod, it works, without affecting others.
+
+Testing is not only for testing new func/feature, but this is also for future change won't affect this feature/implementation (future guardrail)
+So always make sure enough test coverage for the feature you are currently implementing/updating.
+
 ## 4. Goal-Driven Execution
 
 **Define success criteria. Loop until verified.**
