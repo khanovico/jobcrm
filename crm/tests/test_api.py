@@ -233,33 +233,57 @@ def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> 
     assert not any(e.per_profile_application_id == ppa["id"] for e in repo.emails.values())
 
 
-def test_clear_company_research_detail_sets_pending_without_clearing_enrichment() -> None:
+def test_clear_company_research_detail_clears_all_enrichment_fields() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
+    ind = client.post("/api/v1/industries", json={"name": "IndClr", "description": "d"}, headers=headers).json()
     company = client.post(
         "/api/v1/companies",
         json={
-            "name": "Keep Fields Co",
+            "name": "Full Clear Co",
             "research_status": "indexed",
+            "website": "https://w.example",
+            "linkedin": "https://li.example/x",
+            "industry_ids": [ind["id"]],
+            "hq_locations": ["Austin", "Remote"],
+            "employee_count_text": "50-100",
+            "actively_hiring": True,
+            "work_mode": "hybrid",
+            "work_mode_description": "flex",
             "overview": "Overview text",
             "full_overview": "https://example.com/detail",
+            "analysis_links": [{"topic": "T", "link": "https://a.example"}],
             "enrichment_source_links": ["https://src.example"],
         },
         headers=headers,
     ).json()
     assert company["overview"] == "Overview text"
 
-    r = client.post(f"/api/v1/companies/{company['id']}/clear-research-detail", headers=headers)
+    r = client.post(
+        f"/api/v1/companies/{company['id']}/clear-research-detail",
+        json={"related_applications": "none"},
+        headers=headers,
+    )
     assert r.status_code == 200
     body = r.json()
+    assert body["name"] == "Full Clear Co"
     assert body["research_status"] == "pending"
-    assert body["overview"] == "Overview text"
-    assert body["full_overview"] == "https://example.com/detail"
-    assert body["enrichment_source_links"] == ["https://src.example"]
+    assert body["website"] is None
+    assert body["linkedin"] is None
+    assert body["industry_ids"] == []
+    assert body["hq_locations"] == []
+    assert body["employee_count_text"] is None
+    assert body["actively_hiring"] is None
+    assert body["work_mode"] is None
+    assert body["work_mode_description"] is None
+    assert body["overview"] is None
+    assert body["full_overview"] is None
+    assert body["analysis_links"] == []
+    assert body["enrichment_source_links"] == []
 
 
 def test_clear_company_research_detail_archives_related_applications() -> None:

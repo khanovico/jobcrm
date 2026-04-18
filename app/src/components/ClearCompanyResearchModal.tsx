@@ -84,9 +84,10 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
         {company && (
           <>
             <p className="text-sm leading-relaxed opacity-90">
-              Set research status to <strong>Pending</strong> for{" "}
-              <span className="font-medium">{company.name}</span>. Overview and enrichment fields stay saved (Edit
-              company); the indexed summary hides until research is indexed again.
+              This will set research status to <strong>Pending</strong> for{" "}
+              <span className="font-medium">{company.name}</span> and{" "}
+              <strong>remove all stored company details</strong> (website, LinkedIn, industries, locations, overview,
+              links, and other enrichment). The company <strong>name</strong> is kept.
             </p>
             {loadError && (
               <p className="text-sm text-warning">
