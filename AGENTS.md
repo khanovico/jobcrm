@@ -9,6 +9,7 @@
 ## Tests (cloud)
 
 Failing tests only due to OS/deps you can’t fix → may bypass if change is clearly correct in prod. **Document bypass** in final report + PR.
+For frontend change, `cd app && npm run build` should work.
 
 ## Always
 
