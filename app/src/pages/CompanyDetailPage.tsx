@@ -39,10 +39,15 @@ export const CompanyDetailPage = () => {
     if (!companyId) return;
     setError(null);
     try {
+      const industryParams = new URLSearchParams();
+      industryParams.set("skip", "0");
+      // API default limit is 100; companies may reference any industry ID — load full taxonomy.
+      industryParams.set("limit", "10000");
+
       const [co, apps, inds] = await Promise.all([
         api.getCompany(companyId),
         api.listApplications(new URLSearchParams({ company_id: companyId })),
-        api.listIndustries()
+        api.listIndustries(industryParams)
       ]);
       setCompany(co);
       setApplications(apps);
@@ -201,7 +206,9 @@ export const CompanyDetailPage = () => {
                 <h3 className="text-sm font-semibold opacity-80">Industries</h3>
                 <p className="text-sm">
                   {company.industry_ids && company.industry_ids.length > 0
-                    ? company.industry_ids.map((id) => industryNameById[id] ?? id).join(", ")
+                    ? company.industry_ids
+                        .map((id) => industryNameById[id] ?? "Unknown industry")
+                        .join(", ")
                     : "—"}
                 </p>
               </div>
