@@ -121,25 +121,43 @@ OpenAPI with interactive schemas: `**GET {API_ORIGIN}/docs`**.
 
 ## Workers (agent)
 
-### `POST /api/v1/agent/workers/assign`
+Paths use **kebab-case** worker kinds (no JSON `worker_type` on assign):
 
-**Request body**
+| Kind | Path segment |
+| ---- | ------------ |
+| Company researcher | `company-researcher` |
+| PPA analyser | `ppa-analyser` |
+| Application drafter | `application-drafter` |
 
-```json
-{ "worker_type": "company_researcher" }
-```
+### `POST /api/v1/agent/workers/assign/{worker_kind}`
 
-(`worker_type` may be `ppa_analyser` or `application_drafter`.)
+**Example** — `POST /api/v1/agent/workers/assign/company-researcher` — **no body**.
 
 **Response 200** — `{ "lease_id": "uuid" }` when under the configured max for that type.
 
+**Response 404** — unknown `{worker_kind}`.
+
 **Response 409** — no free slot (`detail` explains).
 
-### `POST /api/v1/agent/workers/release`
+### `POST /api/v1/agent/workers/release/{worker_kind}`
 
-**Request body** — `{ "lease_id": "uuid" }` (must belong to the same API key that called `assign`).
+**Example** — `POST /api/v1/agent/workers/release/company-researcher`
 
-**Response 200** — `{ "released": true }` or **404** if not found.
+**Request body** — `{ "lease_id": "uuid" }` (must belong to the same API key that called `assign`, and must match `{worker_kind}`).
+
+**Response 200** — `{ "released": true }`.
+
+**Response 400** — lease exists for this key but **wrong** `{worker_kind}` in the path.
+
+**Response 404** — lease not found or not owned by this key.
+
+### `GET /api/v1/agent/workers/count/{worker_kind}`
+
+**Example** — `GET /api/v1/agent/workers/count/company-researcher`
+
+**Response 200** — `{ "active": <int>, "max": <int> }` for that worker type (read scope).
+
+**Response 404** — unknown `{worker_kind}`.
 
 ---
 

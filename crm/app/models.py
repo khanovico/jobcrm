@@ -386,12 +386,15 @@ class WorkerLease(BaseModel):
     created_at: datetime
 
 
-class WorkerAssignRequest(BaseModel):
-    worker_type: WorkerType
-
-
 class WorkerAssignResponse(BaseModel):
     lease_id: str
+
+
+class WorkerCountResponse(BaseModel):
+    """Active leases and configured max for one worker type (agent read)."""
+
+    active: int
+    max: int
 
 
 class WorkerReleaseRequest(BaseModel):

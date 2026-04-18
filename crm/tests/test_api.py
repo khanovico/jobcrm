@@ -607,3 +607,64 @@ def test_delete_email_and_freeze_profile_hides_agent_profile_fetches() -> None:
     one = client.get(f"/api/v1/agent/profiles/{profile['id']}", headers=agent_headers)
     assert one.status_code == 404
     assert one.json()["detail"] == "Profile not found"
+
+
+def test_agent_worker_path_assign_release_and_count() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    reg = client.post(
+        "/api/v1/auth/register",
+        json={
+            "name": "Admin",
+            "email": "worker-path-admin@example.com",
+            "password": "secret1234",
+            "admin": True,
+        },
+    )
+    assert reg.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "worker-path-admin@example.com", "password": "secret1234"},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = _auth_headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "worker-path-test"}, headers=headers)
+    assert key_resp.status_code == 201
+    ak = {"X-API-Key": key_resp.json()["raw_key"]}
+
+    count0 = client.get("/api/v1/agent/workers/count/company-researcher", headers=ak)
+    assert count0.status_code == 200
+    assert count0.json() == {"active": 0, "max": 1}
+
+    bad_path = client.post("/api/v1/agent/workers/assign/not-a-kind", headers=ak)
+    assert bad_path.status_code == 404
+
+    assign = client.post("/api/v1/agent/workers/assign/company-researcher", headers=ak)
+    assert assign.status_code == 200
+    lease_id = assign.json()["lease_id"]
+
+    count1 = client.get("/api/v1/agent/workers/count/company-researcher", headers=ak)
+    assert count1.json() == {"active": 1, "max": 1}
+
+    conflict = client.post("/api/v1/agent/workers/assign/company-researcher", headers=ak)
+    assert conflict.status_code == 409
+
+    wrong_kind = client.post(
+        "/api/v1/agent/workers/release/ppa-analyser",
+        json={"lease_id": lease_id},
+        headers=ak,
+    )
+    assert wrong_kind.status_code == 400
+
+    ok = client.post(
+        "/api/v1/agent/workers/release/company-researcher",
+        json={"lease_id": lease_id},
+        headers=ak,
+    )
+    assert ok.status_code == 200
+    assert ok.json() == {"released": True}
+
+    count2 = client.get("/api/v1/agent/workers/count/company-researcher", headers=ak)
+    assert count2.json() == {"active": 0, "max": 1}

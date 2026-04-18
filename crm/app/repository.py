@@ -153,6 +153,9 @@ class BaseRepository:
     def assign_worker(self, worker_type: WorkerType, agent_key_id: str) -> str:
         raise NotImplementedError
 
+    def get_worker_lease(self, lease_id: str) -> WorkerLease | None:
+        raise NotImplementedError
+
     def release_worker(self, lease_id: str) -> bool:
         raise NotImplementedError
 
@@ -432,6 +435,9 @@ class InMemoryRepository(BaseRepository):
         )
         self._worker_leases[lease_id] = lease
         return lease_id
+
+    def get_worker_lease(self, lease_id: str) -> WorkerLease | None:
+        return self._worker_leases.get(lease_id)
 
     def release_worker(self, lease_id: str) -> bool:
         return self._worker_leases.pop(lease_id, None) is not None

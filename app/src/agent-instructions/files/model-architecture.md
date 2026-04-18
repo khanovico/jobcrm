@@ -54,7 +54,7 @@ Other fields on Application:
 
 ## Workers (concurrency)
 
-- Per pipeline stage: **company researcher**, **PPA analyser**, **application drafter**. Agent **`POST /api/v1/agent/workers/assign`** / **`release`** with lease ids; humans configure max slots and **`release-all`** via **`/api/v1/settings/workers`** (JWT).
+- Per pipeline stage: **company researcher**, **PPA analyser**, **application drafter**. Agent **`POST /api/v1/agent/workers/assign/{worker_kind}`** / **`release/{worker_kind}`** (kebab-case paths; release body includes `lease_id`); **`GET /api/v1/agent/workers/count/{worker_kind}`** for active/max; humans configure max slots and **`release-all`** via **`/api/v1/settings/workers`** (JWT).
 
 ## Per-profile fields (PPA)
 
