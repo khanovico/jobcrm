@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { api } from "../api";
-import { AgentApiKeyCreated, UserPublic } from "../types";
+import { AgentApiKeyCreated, UserPublic, WorkerStateResponse, WorkerType } from "../types";
 
 export const SettingsPage = () => {
   const [user, setUser] = useState<UserPublic | null>(null);
@@ -13,6 +13,12 @@ export const SettingsPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [createdKey, setCreatedKey] = useState<AgentApiKeyCreated | null>(null);
   const [copyDone, setCopyDone] = useState(false);
+  const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
+  const [workerBusy, setWorkerBusy] = useState(false);
+  const [workerError, setWorkerError] = useState<string | null>(null);
+  const [maxResearcher, setMaxResearcher] = useState("");
+  const [maxPpa, setMaxPpa] = useState("");
+  const [maxDrafter, setMaxDrafter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +29,26 @@ export const SettingsPage = () => {
         if (!cancelled) setUser(me);
       } catch (e) {
         if (!cancelled) setLoadError((e as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const w = await api.getWorkerState();
+        if (!cancelled) {
+          setWorkerState(w);
+          setMaxResearcher(String(w.settings.max_company_researcher));
+          setMaxPpa(String(w.settings.max_ppa_analyser));
+          setMaxDrafter(String(w.settings.max_application_drafter));
+        }
+      } catch {
+        if (!cancelled) setWorkerState(null);
       }
     })();
     return () => {
@@ -86,8 +112,46 @@ export const SettingsPage = () => {
     );
   }
 
+  const saveWorkerMax = async () => {
+    setWorkerError(null);
+    setWorkerBusy(true);
+    try {
+      const parsed = {
+        max_company_researcher: Number(maxResearcher),
+        max_ppa_analyser: Number(maxPpa),
+        max_application_drafter: Number(maxDrafter)
+      };
+      if (Object.values(parsed).some((n) => Number.isNaN(n) || n < 0 || n > 100)) {
+        setWorkerError("Max workers must be numbers between 0 and 100.");
+        return;
+      }
+      const w = await api.patchWorkerSettings(parsed);
+      setWorkerState(await api.getWorkerState());
+      setMaxResearcher(String(w.max_company_researcher));
+      setMaxPpa(String(w.max_ppa_analyser));
+      setMaxDrafter(String(w.max_application_drafter));
+    } catch (e) {
+      setWorkerError((e as Error).message);
+    } finally {
+      setWorkerBusy(false);
+    }
+  };
+
+  const releaseWorkers = async (t: WorkerType) => {
+    setWorkerError(null);
+    setWorkerBusy(true);
+    try {
+      await api.releaseAllWorkers(t);
+      setWorkerState(await api.getWorkerState());
+    } catch (e) {
+      setWorkerError((e as Error).message);
+    } finally {
+      setWorkerBusy(false);
+    }
+  };
+
   return (
-    <div className="mx-auto max-w-lg space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h2 className="text-xl font-semibold">Settings</h2>
         <p className="text-sm opacity-70">
@@ -97,6 +161,99 @@ export const SettingsPage = () => {
           ) : null}
         </p>
       </div>
+
+      <section className="card bg-base-100 p-4 shadow">
+        <h3 className="mb-1 text-lg font-semibold">Worker concurrency</h3>
+        <p className="mb-4 text-sm opacity-80">
+          Limit how many concurrent agent workers can run per pipeline stage. Use release to clear stuck leases.
+        </p>
+        {workerError && <p className="mb-2 text-sm text-error">{workerError}</p>}
+        {workerState && (
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="form-control w-full">
+                <span className="label-text text-xs">Max company researchers</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="input input-bordered input-sm w-full"
+                  value={maxResearcher}
+                  onChange={(e) => setMaxResearcher(e.target.value)}
+                />
+                <span className="label-text-alt text-xs opacity-70">
+                  Active: {workerState.active.company_researcher ?? 0}
+                </span>
+              </label>
+              <label className="form-control w-full">
+                <span className="label-text text-xs">Max PPA analysers</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="input input-bordered input-sm w-full"
+                  value={maxPpa}
+                  onChange={(e) => setMaxPpa(e.target.value)}
+                />
+                <span className="label-text-alt text-xs opacity-70">
+                  Active: {workerState.active.ppa_analyser ?? 0}
+                </span>
+              </label>
+              <label className="form-control w-full">
+                <span className="label-text text-xs">Max application drafters</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="input input-bordered input-sm w-full"
+                  value={maxDrafter}
+                  onChange={(e) => setMaxDrafter(e.target.value)}
+                />
+                <span className="label-text-alt text-xs opacity-70">
+                  Active: {workerState.active.application_drafter ?? 0}
+                </span>
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={workerBusy}
+                onClick={() => void saveWorkerMax()}
+              >
+                Save limits
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-base-300 pt-3">
+              <button
+                type="button"
+                className="btn btn-outline btn-warning btn-sm"
+                disabled={workerBusy}
+                onClick={() => void releaseWorkers("company_researcher")}
+              >
+                Release company researcher workers
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-warning btn-sm"
+                disabled={workerBusy}
+                onClick={() => void releaseWorkers("ppa_analyser")}
+              >
+                Release PPA analyser workers
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-warning btn-sm"
+                disabled={workerBusy}
+                onClick={() => void releaseWorkers("application_drafter")}
+              >
+                Release application drafter workers
+              </button>
+            </div>
+          </div>
+        )}
+        {!workerState && <p className="text-sm opacity-70">Loading worker settings…</p>}
+      </section>
 
       <section className="card bg-base-100 p-4 shadow">
         <h3 className="mb-1 text-lg font-semibold">Agent API keys</h3>

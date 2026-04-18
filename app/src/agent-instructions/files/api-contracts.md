@@ -29,18 +29,27 @@ OpenAPI with interactive schemas: `**GET {API_ORIGIN}/docs`**.
 
 ## Applications
 
-### `GET /api/v1/agent/applications/pending`
+### `GET /api/v1/agent/applications/company-research-pending`
 
-**Query**
+**Query**: `limit` (default 5, max 50).
 
+**Response 200** — JSON array of **Application** with `status=company_research_pending`, FIFO oldest `created_at` first.
 
-| Param   | Type | Default | Max |
-| ------- | ---- | ------- | --- |
-| `limit` | int  | 5       | 5   |
+---
 
+### `GET /api/v1/agent/applications/ppa-pending`
 
-**Response 200** — JSON array of **Application** objects (see OpenAPI schema).  
-FIFO `**pending_preparation`**, oldest `created_at` first.
+**Query**: `limit` (default 5, max 50).
+
+**Response 200** — JSON array of **Application** with `status=ppa_pending`, FIFO oldest `created_at` first.
+
+---
+
+### `GET /api/v1/agent/applications/application-pending`
+
+**Query**: `limit` (default 5, max 50).
+
+**Response 200** — JSON array of **Application** with `status=application_pending`, FIFO oldest `created_at` first.
 
 ---
 
@@ -110,6 +119,30 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 
 ---
 
+## Workers (agent)
+
+### `POST /api/v1/agent/workers/assign`
+
+**Request body**
+
+```json
+{ "worker_type": "company_researcher" }
+```
+
+(`worker_type` may be `ppa_analyser` or `application_drafter`.)
+
+**Response 200** — `{ "lease_id": "uuid" }` when under the configured max for that type.
+
+**Response 409** — no free slot (`detail` explains).
+
+### `POST /api/v1/agent/workers/release`
+
+**Request body** — `{ "lease_id": "uuid" }` (must belong to the same API key that called `assign`).
+
+**Response 200** — `{ "released": true }` or **404** if not found.
+
+---
+
 ## Companies
 
 ### `GET /api/v1/agent/companies/unindexed`
@@ -122,7 +155,7 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 | `limit` | int  | 5       | 5   |
 
 
-**Response 200** — JSON array of **Company** with `indexed: false`, oldest first.
+**Response 200** — JSON array of **Company** with `research_status=pending`, oldest first.
 
 ---
 
@@ -141,7 +174,7 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 ```json
 {
   "name": "string",
-  "indexed": true,
+  "research_status": "indexed",
   "website": "https://...",
   "linkedin": "https://...",
   "industry_ids": ["uuid"],
@@ -359,3 +392,9 @@ FIFO `**pending_preparation`**, oldest `created_at` first.
 ## Human JWT routes (same API origin)
 
 Register/login and user CRUD use `**Authorization: Bearer <jwt>`**. JAA typically does not call these. Schemas in `**/docs**`.
+
+### Worker settings (human)
+
+- `GET /api/v1/settings/workers` — `{ settings: WorkerSettings, active: { ... }, max: { ... } }`.
+- `PATCH /api/v1/settings/workers` — body optional fields `max_company_researcher`, `max_ppa_analyser`, `max_application_drafter` (0–100).
+- `POST /api/v1/settings/workers/release-all` — body `{ "worker_type": "company_researcher" | "ppa_analyser" | "application_drafter" }`; response `{ "released": <int> }`.

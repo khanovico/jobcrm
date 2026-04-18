@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApplicationsPage } from "./ApplicationsPage";
 
+const WORKER_STATE = {
+  settings: { max_company_researcher: 1, max_ppa_analyser: 1, max_application_drafter: 1 },
+  active: { company_researcher: 0, ppa_analyser: 0, application_drafter: 0 },
+  max: { company_researcher: 1, ppa_analyser: 1, application_drafter: 1 }
+};
+
 describe("ApplicationsPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
@@ -16,11 +22,17 @@ describe("ApplicationsPage", () => {
 
   const isApplicationsListRequest = (url: string) => url.split("?")[0].endsWith("/applications");
 
-  const companyRow = { id: "c1", name: "Acme", created_at: "", updated_at: "" };
+  const companyRow = {
+    id: "c1",
+    name: "Acme",
+    research_status: "indexed",
+    created_at: "",
+    updated_at: ""
+  };
   const applicationRow = {
     id: "a1",
     company_id: "c1",
-    status: "preparation_ready",
+    status: "application_ready",
     applied: false,
     created_at: "2026-01-01",
     updated_at: "2026-01-01",
@@ -36,6 +48,9 @@ describe("ApplicationsPage", () => {
       }
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
@@ -64,6 +79,9 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
 
@@ -84,7 +102,7 @@ describe("ApplicationsPage", () => {
     const appliedPayload = {
       id: "a1",
       company_id: "c1",
-      status: "applied",
+      status: "application_ready",
       applied: true,
       applied_at: "2026-01-01",
       created_at: "2026-01-01",
@@ -126,7 +144,7 @@ describe("ApplicationsPage", () => {
     const unmarkedPayload = {
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       applied_at: null,
       created_at: "2026-01-01",
@@ -154,6 +172,9 @@ describe("ApplicationsPage", () => {
       }
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
@@ -185,6 +206,9 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
 
@@ -210,7 +234,7 @@ describe("ApplicationsPage", () => {
               {
                 ...applicationRow,
                 applied: true,
-                status: "applied",
+                status: "application_ready",
                 applied_at: "2026-01-01"
               }
             ]),
@@ -220,6 +244,9 @@ describe("ApplicationsPage", () => {
       }
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
@@ -236,8 +263,13 @@ describe("ApplicationsPage", () => {
 
   it("switches to Applied tab after marking an application as applied", async () => {
     const fetchMock = vi.mocked(fetch);
-    const pendingApp = { ...applicationRow, applied: false, status: "preparation_ready" };
-    const appliedApp = { ...applicationRow, applied: true, status: "applied", applied_at: "2026-01-01" };
+    const pendingApp = { ...applicationRow, applied: false, status: "application_ready" };
+    const appliedApp = {
+      ...applicationRow,
+      applied: true,
+      status: "application_ready",
+      applied_at: "2026-01-01"
+    };
 
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -256,6 +288,9 @@ describe("ApplicationsPage", () => {
       }
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
@@ -285,7 +320,7 @@ describe("ApplicationsPage", () => {
             JSON.stringify([
               {
                 ...applicationRow,
-                status: "preparation_ready"
+                status: "application_ready"
               }
             ]),
             { status: 200 }
@@ -294,6 +329,9 @@ describe("ApplicationsPage", () => {
       }
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
     });
@@ -307,10 +345,9 @@ describe("ApplicationsPage", () => {
     const companyCell = await screen.findByRole("cell", { name: "Acme" });
     const row = companyCell.closest("tr");
     expect(row).not.toBeNull();
-    const statusText = within(row as HTMLElement).getByText("preparation_ready");
+    const statusText = within(row as HTMLElement).getByText("Application ready");
     const statusBadge = statusText.closest("span");
     expect(statusBadge).not.toBeNull();
-    expect(statusBadge?.className).toContain("text-info");
-    expect(statusBadge?.className).toContain("bg-info/10");
+    expect(statusBadge?.className).toContain("badge-success");
   });
 });

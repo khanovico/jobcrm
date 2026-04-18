@@ -17,7 +17,7 @@ const {
   markApplicationEmailSent,
   markEmailSent,
   deleteEmail,
-  clearApplicationToPendingPreparation
+  clearApplicationToCompanyResearchPending
 } = vi.hoisted(() => ({
   getApplication: vi.fn(),
   getCompany: vi.fn(),
@@ -30,7 +30,7 @@ const {
   markApplicationEmailSent: vi.fn(),
   markEmailSent: vi.fn(),
   deleteEmail: vi.fn(),
-  clearApplicationToPendingPreparation: vi.fn()
+  clearApplicationToCompanyResearchPending: vi.fn()
 }));
 
 vi.mock("../api", () => ({
@@ -46,7 +46,7 @@ vi.mock("../api", () => ({
     markApplicationEmailSent,
     markEmailSent,
     deleteEmail,
-    clearApplicationToPendingPreparation
+    clearApplicationToCompanyResearchPending
   }
 }));
 
@@ -73,7 +73,7 @@ describe("ApplicationDetailPage", () => {
     markApplicationEmailSent.mockReset();
     markEmailSent.mockReset();
     deleteEmail.mockReset();
-    clearApplicationToPendingPreparation.mockReset();
+    clearApplicationToCompanyResearchPending.mockReset();
     scrollIntoViewMock.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -89,7 +89,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -171,7 +171,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -250,7 +250,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -327,7 +327,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       job_post: {
@@ -364,7 +364,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -460,7 +460,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -563,7 +563,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: true,
       applied_at: "2026-01-02T00:00:00Z",
       email_sent: true,
@@ -628,7 +628,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValue({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: true,
       applied_at: "2026-01-02T00:00:00Z",
       email_sent: true,
@@ -702,7 +702,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -771,7 +771,7 @@ describe("ApplicationDetailPage", () => {
     getApplication.mockResolvedValue({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -831,11 +831,11 @@ describe("ApplicationDetailPage", () => {
     expect(deleteEmail).toHaveBeenCalledWith("e1");
   });
 
-  it("updates application status when the status dropdown changes", async () => {
+  it("shows application status as plain text (no dropdown)", async () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -844,21 +844,12 @@ describe("ApplicationDetailPage", () => {
     getCompany.mockResolvedValueOnce({
       id: "c1",
       name: "Acme",
+      research_status: "pending",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z"
     });
     listPerProfileApplications.mockResolvedValueOnce([]);
     listProfiles.mockResolvedValueOnce([]);
-    updateApplication.mockResolvedValueOnce({
-      id: "a1",
-      company_id: "c1",
-      status: "applied",
-      applied: true,
-      applied_at: "2026-01-03T00:00:00Z",
-      email_sent: false,
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-03T00:00:00Z"
-    });
 
     render(
       <MemoryRouter initialEntries={["/applications/a1"]}>
@@ -868,16 +859,15 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    const statusSelect = await screen.findByRole("combobox", { name: "Application status" });
-    await userEvent.selectOptions(statusSelect, "applied");
-    expect(updateApplication).toHaveBeenCalledWith("a1", { status: "applied" });
+    expect(await screen.findByText("Application ready")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Application status" })).not.toBeInTheDocument();
   });
 
-  it("shows Clear next to status when status is not pending preparation", async () => {
+  it("shows Clear next to status when status is not company research pending", async () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "preparation_ready",
+      status: "application_ready",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -886,6 +876,7 @@ describe("ApplicationDetailPage", () => {
     getCompany.mockResolvedValueOnce({
       id: "c1",
       name: "Acme",
+      research_status: "pending",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z"
     });
@@ -903,11 +894,11 @@ describe("ApplicationDetailPage", () => {
     expect(await screen.findByRole("button", { name: "Clear" })).toBeInTheDocument();
   });
 
-  it("does not show Clear when status is pending preparation", async () => {
+  it("does not show Clear when status is company research pending", async () => {
     getApplication.mockResolvedValueOnce({
       id: "a1",
       company_id: "c1",
-      status: "pending_preparation",
+      status: "company_research_pending",
       applied: false,
       email_sent: false,
       created_at: "2026-01-01T00:00:00Z",
@@ -916,6 +907,7 @@ describe("ApplicationDetailPage", () => {
     getCompany.mockResolvedValueOnce({
       id: "c1",
       name: "Acme",
+      research_status: "pending",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z"
     });
@@ -930,7 +922,7 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    await screen.findByRole("combobox", { name: "Application status" });
+    expect(await screen.findByText("Company research pending")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
   });
 });

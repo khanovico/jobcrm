@@ -134,17 +134,48 @@ export const CompanyDetailPage = () => {
           <div className="card bg-base-100 p-4 shadow">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <h2 className="text-xl font-semibold">{company.name}</h2>
-              {company.full_overview?.trim() ? (
-                <a
-                  href={company.full_overview}
-                  className="link link-primary text-sm font-medium"
-                  target="_blank"
-                  rel="noreferrer"
+              <div className="flex flex-wrap items-center gap-2">
+                {company.full_overview?.trim() ? (
+                  <a
+                    href={company.full_overview}
+                    className="link link-primary text-sm font-medium"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Full Company Detail
+                  </a>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn btn-outline btn-warning btn-sm"
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        "Clear overview, full detail links, and enrichment fields, and set research status to Pending?"
+                      )
+                    ) {
+                      return;
+                    }
+                    setError(null);
+                    try {
+                      const updated = await api.clearCompanyResearchDetail(companyId);
+                      setCompany(updated);
+                      setOverview(updated.overview ?? "");
+                      setFullOverview(updated.full_overview ?? "");
+                      await load();
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
                 >
-                  Full Company Detail
-                </a>
-              ) : null}
+                  Clear
+                </button>
+              </div>
             </div>
+            <p className="mt-1 text-xs opacity-70">
+              Research status:{" "}
+              <span className="font-medium capitalize">{company.research_status ?? "pending"}</span>
+            </p>
             <p className="text-sm opacity-70">
               Updated {new Date(company.updated_at).toLocaleString()} · ID{" "}
               <span className="font-mono text-xs">{company.id}</span>

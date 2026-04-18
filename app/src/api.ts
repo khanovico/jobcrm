@@ -5,6 +5,10 @@ import {
   AuditEvent,
   Company,
   DashboardMetrics,
+  WorkerSettings,
+  WorkerStateResponse,
+  WorkerSettingsUpdatePayload,
+  WorkerType,
   Email,
   GlobalSearchResult,
   IndustryBulkCreatePayload,
@@ -155,9 +159,24 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ sent })
     }),
-  clearApplicationToPendingPreparation: (id: string) =>
-    request<Application>(`/api/v1/applications/${id}/clear-to-pending-preparation`, {
+  clearApplicationToCompanyResearchPending: (id: string) =>
+    request<Application>(`/api/v1/applications/${id}/clear-to-company-research-pending`, {
       method: "POST"
+    }),
+  clearCompanyResearchDetail: (companyId: string) =>
+    request<Company>(`/api/v1/companies/${companyId}/clear-research-detail`, {
+      method: "POST"
+    }),
+  getWorkerState: () => request<WorkerStateResponse>("/api/v1/settings/workers"),
+  patchWorkerSettings: (payload: WorkerSettingsUpdatePayload) =>
+    request<WorkerSettings>("/api/v1/settings/workers", {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  releaseAllWorkers: (workerType: WorkerType) =>
+    request<{ released: number }>("/api/v1/settings/workers/release-all", {
+      method: "POST",
+      body: JSON.stringify({ worker_type: workerType })
     }),
   deleteApplication: (id: string) =>
     request<void>(`/api/v1/applications/${id}`, { method: "DELETE" }),

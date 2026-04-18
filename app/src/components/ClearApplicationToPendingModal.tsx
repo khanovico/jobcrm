@@ -38,7 +38,7 @@ export const ClearApplicationToPendingModal = ({
     setError(null);
     setSubmitting(true);
     try {
-      await api.clearApplicationToPendingPreparation(applicationId);
+      await api.clearApplicationToCompanyResearchPending(applicationId);
       close();
       await onCleared();
     } catch (err) {
@@ -49,12 +49,12 @@ export const ClearApplicationToPendingModal = ({
   };
 
   return (
-    <Modal open={open} onClose={close} title="Reset to pending preparation" size="md">
+    <Modal open={open} onClose={close} title="Reset to company research pending" size="md">
       <form className="space-y-3" onSubmit={onSubmit}>
         <p className="text-sm leading-relaxed opacity-90">
           This will remove <strong>all per-profile rows</strong> and <strong>all emails</strong> tied to this
           application for <span className="font-medium">{companyLabel}</span>, then set status to{" "}
-          <strong>Pending preparation</strong>. Application-level marks (applied, email sent) are cleared. This
+          <strong>Company research pending</strong>. Application-level marks (applied, email sent) are cleared. This
           cannot be undone.
         </p>
         {error && <p className="text-sm text-error">{error}</p>}

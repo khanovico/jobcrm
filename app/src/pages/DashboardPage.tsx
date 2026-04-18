@@ -39,12 +39,12 @@ export const DashboardPage = () => {
       {error && <div className="alert alert-error text-sm">{error}</div>}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <div className="card bg-base-100 p-4 shadow">
-          <h3 className="font-semibold">Pending preparation</h3>
-          <p className="text-3xl">{metrics?.pending_preparation ?? "—"}</p>
+          <h3 className="font-semibold">Company research pipeline</h3>
+          <p className="text-3xl">{metrics?.company_research_pipeline ?? "—"}</p>
         </div>
         <div className="card bg-base-100 p-4 shadow">
-          <h3 className="font-semibold">Preparation ready</h3>
-          <p className="text-3xl">{metrics?.preparation_ready ?? "—"}</p>
+          <h3 className="font-semibold">Application ready</h3>
+          <p className="text-3xl">{metrics?.application_ready ?? "—"}</p>
         </div>
         <div className="card bg-base-100 p-4 shadow">
           <h3 className="font-semibold">Actions to review</h3>
