@@ -410,6 +410,8 @@ class InMemoryRepository(BaseRepository):
 
     def _initial_application_status_for_company(self, company_id: str) -> ApplicationStatus:
         company = self.get_company(company_id)
+        if company and company.research_status == CompanyResearchStatus.invalid:
+            return ApplicationStatus.invalid
         if company and company.research_status == CompanyResearchStatus.indexed:
             return ApplicationStatus.ppa_pending
         return ApplicationStatus.company_research_pending
@@ -496,6 +498,21 @@ class InMemoryRepository(BaseRepository):
                 update={"status": ApplicationStatus.ppa_pending, "updated_at": utcnow()}
             )
 
+    def _mark_applications_invalid_for_company(self, company_id: str) -> None:
+        """When company research becomes invalid, move non-archived tied applications → invalid."""
+        for app_id, application in list(self.applications.items()):
+            if application.company_id != company_id:
+                continue
+            if application.status == ApplicationStatus.archived:
+                continue
+            if application.status == ApplicationStatus.invalid:
+                continue
+            if not validate_application_transition(application.status, ApplicationStatus.invalid):
+                continue
+            self.applications[app_id] = application.model_copy(
+                update={"status": ApplicationStatus.invalid, "updated_at": utcnow()}
+            )
+
     def update_company(self, company_id: str, payload: CompanyUpdate) -> Company | None:
         company = self.get_company(company_id)
         if not company:
@@ -509,6 +526,11 @@ class InMemoryRepository(BaseRepository):
             and company.research_status != CompanyResearchStatus.indexed
         ):
             self._promote_company_research_pending_to_ppa_for_company(company_id)
+        if (
+            merged.research_status == CompanyResearchStatus.invalid
+            and company.research_status != CompanyResearchStatus.invalid
+        ):
+            self._mark_applications_invalid_for_company(company_id)
         return merged
 
     def count_applications_for_company(self, company_id: str) -> int:
@@ -740,6 +762,8 @@ class InMemoryRepository(BaseRepository):
         if applied:
             if application.status == ApplicationStatus.archived:
                 raise ValueError("Archived application cannot be applied")
+            if application.status == ApplicationStatus.invalid:
+                raise ValueError("Invalid application cannot be marked applied")
             if application.status != ApplicationStatus.application_ready:
                 raise ValueError("Mark applied is only valid when status is application_ready")
             stamp = application.applied_at or utcnow()

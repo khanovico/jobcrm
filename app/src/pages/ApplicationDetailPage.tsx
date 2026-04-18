@@ -9,7 +9,22 @@ import {
   applicationStatusBadgeClass,
   formatApplicationStatusLabel
 } from "../applicationStatus";
-import type { Application, Company, Email, PerProfileApplication, Profile } from "../types";
+import type {
+  Application,
+  ApplicationStatus,
+  Company,
+  Email,
+  PerProfileApplication,
+  Profile
+} from "../types";
+
+/** Status after clear/reset for this company’s research state. */
+function clearResetTargetStatus(company: Company | null): ApplicationStatus {
+  if (!company) return "company_research_pending";
+  if (company.research_status === "indexed") return "ppa_pending";
+  if (company.research_status === "invalid") return "invalid";
+  return "company_research_pending";
+}
 
 const decodeEscapedHtml = (content: string): string => {
   if (!content.includes("&lt;") && !content.includes("&#")) {
@@ -271,32 +286,36 @@ export const ApplicationDetailPage = () => {
               </p>
               {application.status !== "archived" && (
                 <div className="flex flex-wrap gap-1.5 md:col-span-6 md:justify-end">
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${application.applied ? "btn-outline" : "btn-success"}`}
-                    disabled={!application.applied && application.status !== "application_ready"}
-                    title={
-                      !application.applied && application.status !== "application_ready"
-                        ? "Mark applied is only available when status is Application ready."
-                        : undefined
-                    }
-                    onClick={async () => {
-                      await api.markApplied(application.id, !application.applied);
-                      await load();
-                    }}
-                  >
-                    {application.applied ? "Unmark applied" : "Mark applied"}
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${application.email_sent ? "btn-outline" : "btn-primary"}`}
-                    onClick={async () => {
-                      await api.markApplicationEmailSent(application.id, !application.email_sent);
-                      await load();
-                    }}
-                  >
-                    {application.email_sent ? "Unmark email sent" : "Mark email sent"}
-                  </button>
+                  {application.status !== "invalid" && (
+                    <>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${application.applied ? "btn-outline" : "btn-success"}`}
+                        disabled={!application.applied && application.status !== "application_ready"}
+                        title={
+                          !application.applied && application.status !== "application_ready"
+                            ? "Mark applied is only available when status is Application ready."
+                            : undefined
+                        }
+                        onClick={async () => {
+                          await api.markApplied(application.id, !application.applied);
+                          await load();
+                        }}
+                      >
+                        {application.applied ? "Unmark applied" : "Mark applied"}
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${application.email_sent ? "btn-outline" : "btn-primary"}`}
+                        onClick={async () => {
+                          await api.markApplicationEmailSent(application.id, !application.email_sent);
+                          await load();
+                        }}
+                      >
+                        {application.email_sent ? "Unmark email sent" : "Mark email sent"}
+                      </button>
+                    </>
+                  )}
                   <button type="button" className="btn btn-warning btn-outline btn-sm" onClick={() => setArchiveOpen(true)}>
                     Archive
                   </button>
@@ -551,9 +570,7 @@ export const ApplicationDetailPage = () => {
             onClose={() => setClearToPendingOpen(false)}
             applicationId={application.id}
             companyLabel={company?.name ?? application.company_id}
-            targetStatus={
-              company?.research_status === "indexed" ? "ppa_pending" : "company_research_pending"
-            }
+            targetStatus={clearResetTargetStatus(company)}
             onCleared={load}
           />
         </>

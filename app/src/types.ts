@@ -1,4 +1,4 @@
-export type CompanyResearchStatus = "pending" | "indexing" | "indexed";
+export type CompanyResearchStatus = "pending" | "indexing" | "indexed" | "invalid";
 
 export type Company = {
   id: string;
@@ -81,6 +81,7 @@ export type ApplicationStatus =
   | "ppa_pending"
   | "application_pending"
   | "application_ready"
+  | "invalid"
   | "archived";
 
 export type JobPost = {

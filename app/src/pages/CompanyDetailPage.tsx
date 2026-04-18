@@ -12,12 +12,14 @@ const dash = (value: string | null | undefined) => (value && String(value).trim(
 const researchLabel = (s: CompanyResearchStatus | undefined) => {
   if (s === "indexed") return "Indexed";
   if (s === "indexing") return "Indexing";
+  if (s === "invalid") return "Invalid";
   return "Pending";
 };
 
 const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
   if (s === "indexed") return "badge-success";
   if (s === "indexing") return "badge-info";
+  if (s === "invalid") return "badge-error";
   return "badge-warning";
 };
 

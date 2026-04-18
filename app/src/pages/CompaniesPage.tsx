@@ -12,12 +12,14 @@ const PAGE_SIZE = 10;
 const researchLabel = (s: CompanyResearchStatus | undefined) => {
   if (s === "indexed") return "Indexed";
   if (s === "indexing") return "Indexing";
+  if (s === "invalid") return "Invalid";
   return "Pending";
 };
 
 const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
   if (s === "indexed") return "badge-success";
   if (s === "indexing") return "badge-info";
+  if (s === "invalid") return "badge-error";
   return "badge-warning";
 };
 

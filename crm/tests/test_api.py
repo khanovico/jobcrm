@@ -425,6 +425,44 @@ def test_update_company_to_indexed_promotes_company_research_pending_to_ppa_pend
     assert got_ready["status"] == "application_ready"
 
 
+def test_update_company_to_invalid_marks_non_archived_applications_invalid() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Bad Co"}, headers=headers).json()
+    assert company["research_status"] == "pending"
+    app_crp = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    app_ready = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+
+    r = client.put(
+        f"/api/v1/companies/{company['id']}",
+        json={"research_status": "invalid"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["research_status"] == "invalid"
+
+    assert (
+        client.get(f"/api/v1/applications/{app_crp['id']}", headers=headers).json()["status"]
+        == "invalid"
+    )
+    assert (
+        client.get(f"/api/v1/applications/{app_ready['id']}", headers=headers).json()["status"]
+        == "invalid"
+    )
+
+
 def test_company_application_count_matches_tied_applications() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

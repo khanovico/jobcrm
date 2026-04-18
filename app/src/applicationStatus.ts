@@ -6,6 +6,7 @@ const LABELS: Record<ApplicationStatus, string> = {
   ppa_pending: "PPA pending",
   application_pending: "Application pending",
   application_ready: "Application ready",
+  invalid: "Invalid",
   archived: "Archived"
 };
 
@@ -26,6 +27,8 @@ export function applicationStatusBadgeClass(status: ApplicationStatus): string {
       return "badge badge-accent";
     case "application_ready":
       return "badge badge-success";
+    case "invalid":
+      return "badge badge-error";
     case "archived":
       return "badge badge-ghost";
     default:

@@ -17,6 +17,7 @@ class ApplicationStatus(str, Enum):
     ppa_pending = "ppa_pending"
     application_pending = "application_pending"
     application_ready = "application_ready"
+    invalid = "invalid"
     archived = "archived"
 
 
@@ -24,23 +25,31 @@ ALLOWED_APPLICATION_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]]
     ApplicationStatus.company_research_pending: {
         ApplicationStatus.company_researching,
         ApplicationStatus.ppa_pending,
+        ApplicationStatus.invalid,
         ApplicationStatus.archived,
     },
     ApplicationStatus.company_researching: {
         ApplicationStatus.ppa_pending,
         ApplicationStatus.company_research_pending,
+        ApplicationStatus.invalid,
         ApplicationStatus.archived,
     },
     ApplicationStatus.ppa_pending: {
         ApplicationStatus.application_pending,
         ApplicationStatus.application_ready,
+        ApplicationStatus.invalid,
         ApplicationStatus.archived,
     },
     ApplicationStatus.application_pending: {
         ApplicationStatus.application_ready,
+        ApplicationStatus.invalid,
         ApplicationStatus.archived,
     },
-    ApplicationStatus.application_ready: {ApplicationStatus.archived},
+    ApplicationStatus.application_ready: {
+        ApplicationStatus.archived,
+        ApplicationStatus.invalid,
+    },
+    ApplicationStatus.invalid: {ApplicationStatus.archived},
     ApplicationStatus.archived: set(),
 }
 
@@ -59,6 +68,7 @@ def migrate_legacy_application_status(raw: str) -> tuple[ApplicationStatus, bool
         "ppa_pending": ApplicationStatus.ppa_pending,
         "application_pending": ApplicationStatus.application_pending,
         "application_ready": ApplicationStatus.application_ready,
+        "invalid": ApplicationStatus.invalid,
         "archived": ApplicationStatus.archived,
     }
     if raw in legacy:
@@ -191,6 +201,7 @@ class CompanyResearchStatus(str, Enum):
     pending = "pending"
     indexing = "indexing"
     indexed = "indexed"
+    invalid = "invalid"
 
 
 class CompanyBase(BaseModel):
