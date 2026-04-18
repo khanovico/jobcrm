@@ -79,7 +79,7 @@ description: "JobCRM Agent HTTP API for external automations and worker clients.
 
 | Tag | Allowed values |
 |-----|----------------|
-| **app_status** | Main pipeline: `company_research_pending` → … → `application_ready` → `archived`. Also `invalid` (terminal except → `archived`); setting company **research** to `invalid` moves non-archived apps for that company to `invalid`. |
+| **app_status** | Pipeline includes `ppa_analyzing` (after `ppa_pending`) and `application_drafting` (after `application_pending`) before `application_ready`. Also `invalid` (terminal except → `archived`); setting company **research** to `invalid` moves non-archived apps for that company to `invalid`. |
 | **sort_app** | `created_at_desc` (default), `created_at_asc`, `updated_at_desc` |
 | **research** | `pending`, `indexing`, `indexed`, `invalid` |
 | **work** | `onsite`, `hybrid`, `remote_us`, `remote_eu`, `remote_global`, `other` |
