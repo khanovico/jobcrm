@@ -151,7 +151,7 @@ export const SettingsPage = () => {
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-5">
       <div>
         <h2 className="text-xl font-semibold">Settings</h2>
         <p className="text-sm opacity-70">
@@ -162,59 +162,59 @@ export const SettingsPage = () => {
         </p>
       </div>
 
-      <section className="card bg-base-100 p-4 shadow">
-        <h3 className="mb-1 text-lg font-semibold">Worker concurrency</h3>
-        <p className="mb-4 text-sm opacity-80">
-          Limit how many concurrent agent workers can run per pipeline stage. Use release to clear stuck leases.
-        </p>
-        {workerError && <p className="mb-2 text-sm text-error">{workerError}</p>}
-        {workerState && (
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="form-control w-full">
-                <span className="label-text text-xs">Max company researchers</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="input input-bordered input-sm w-full"
-                  value={maxResearcher}
-                  onChange={(e) => setMaxResearcher(e.target.value)}
-                />
-                <span className="label-text-alt text-xs opacity-70">
-                  Active: {workerState.active.company_researcher ?? 0}
-                </span>
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text text-xs">Max PPA analysers</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="input input-bordered input-sm w-full"
-                  value={maxPpa}
-                  onChange={(e) => setMaxPpa(e.target.value)}
-                />
-                <span className="label-text-alt text-xs opacity-70">
-                  Active: {workerState.active.ppa_analyser ?? 0}
-                </span>
-              </label>
-              <label className="form-control w-full">
-                <span className="label-text text-xs">Max application drafters</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  className="input input-bordered input-sm w-full"
-                  value={maxDrafter}
-                  onChange={(e) => setMaxDrafter(e.target.value)}
-                />
-                <span className="label-text-alt text-xs opacity-70">
-                  Active: {workerState.active.application_drafter ?? 0}
-                </span>
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
+        <section className="card bg-base-100 p-4 shadow">
+          <h3 className="mb-1 text-lg font-semibold">Worker concurrency</h3>
+          <p className="mb-3 text-sm opacity-80">
+            Limit concurrent agent workers per pipeline stage. Use release to clear stuck leases.
+          </p>
+          {workerError && <p className="mb-2 text-sm text-error">{workerError}</p>}
+          {workerState && (
+            <div className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <label className="form-control w-full">
+                  <span className="label-text text-xs">Max company researchers</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="input input-bordered input-sm w-full"
+                    value={maxResearcher}
+                    onChange={(e) => setMaxResearcher(e.target.value)}
+                  />
+                  <span className="label-text-alt text-xs opacity-70">
+                    Active: {workerState.active.company_researcher ?? 0}
+                  </span>
+                </label>
+                <label className="form-control w-full">
+                  <span className="label-text text-xs">Max PPA analysers</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="input input-bordered input-sm w-full"
+                    value={maxPpa}
+                    onChange={(e) => setMaxPpa(e.target.value)}
+                  />
+                  <span className="label-text-alt text-xs opacity-70">
+                    Active: {workerState.active.ppa_analyser ?? 0}
+                  </span>
+                </label>
+                <label className="form-control w-full">
+                  <span className="label-text text-xs">Max application drafters</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className="input input-bordered input-sm w-full"
+                    value={maxDrafter}
+                    onChange={(e) => setMaxDrafter(e.target.value)}
+                  />
+                  <span className="label-text-alt text-xs opacity-70">
+                    Active: {workerState.active.application_drafter ?? 0}
+                  </span>
+                </label>
+              </div>
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -223,118 +223,118 @@ export const SettingsPage = () => {
               >
                 Save limits
               </button>
+              <div className="flex flex-col gap-1.5 border-t border-base-300 pt-3">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-warning btn-sm w-full justify-center sm:w-auto"
+                  disabled={workerBusy}
+                  onClick={() => void releaseWorkers("company_researcher")}
+                >
+                  Release company researcher workers
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-warning btn-sm w-full justify-center sm:w-auto"
+                  disabled={workerBusy}
+                  onClick={() => void releaseWorkers("ppa_analyser")}
+                >
+                  Release PPA analyser workers
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-warning btn-sm w-full justify-center sm:w-auto"
+                  disabled={workerBusy}
+                  onClick={() => void releaseWorkers("application_drafter")}
+                >
+                  Release application drafter workers
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2 border-t border-base-300 pt-3">
-              <button
-                type="button"
-                className="btn btn-outline btn-warning btn-sm"
-                disabled={workerBusy}
-                onClick={() => void releaseWorkers("company_researcher")}
-              >
-                Release company researcher workers
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline btn-warning btn-sm"
-                disabled={workerBusy}
-                onClick={() => void releaseWorkers("ppa_analyser")}
-              >
-                Release PPA analyser workers
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline btn-warning btn-sm"
-                disabled={workerBusy}
-                onClick={() => void releaseWorkers("application_drafter")}
-              >
-                Release application drafter workers
-              </button>
+          )}
+          {!workerState && <p className="text-sm opacity-70">Loading worker settings…</p>}
+        </section>
+
+        <section className="card bg-base-100 p-4 shadow">
+          <h3 className="mb-1 text-lg font-semibold">Agent API keys</h3>
+          <p className="mb-3 text-sm opacity-80">
+            Keys authenticate the Job Application Agent (JAA) against the API using the <code className="text-xs">X-API-Key</code>{" "}
+            header. Each new key is shown <strong>once</strong> — store it securely.
+          </p>
+
+          {!user.admin ? (
+            <div className="alert alert-info text-sm">
+              Only <strong>administrators</strong> can create agent API keys. Ask an admin to promote your account or create a key for
+              you.
             </div>
-          </div>
-        )}
-        {!workerState && <p className="text-sm opacity-70">Loading worker settings…</p>}
-      </section>
-
-      <section className="card bg-base-100 p-4 shadow">
-        <h3 className="mb-1 text-lg font-semibold">Agent API keys</h3>
-        <p className="mb-4 text-sm opacity-80">
-          Keys authenticate the Job Application Agent (JAA) against the API using the <code className="text-xs">X-API-Key</code>{" "}
-          header. Each new key is shown <strong>once</strong> — store it securely.
-        </p>
-
-        {!user.admin ? (
-          <div className="alert alert-info text-sm">
-            Only <strong>administrators</strong> can create agent API keys. Ask an admin to promote your account or create a key for
-            you.
-          </div>
-        ) : (
-          <>
-            {createdKey && (
-              <div className="alert alert-warning mb-4 text-sm">
-                <div className="space-y-2">
-                  <p>
-                    Key <strong>{createdKey.name}</strong> created. Copy the secret below now — it will not be shown again.
-                  </p>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <input
-                      type="text"
-                      readOnly
-                      className="input input-bordered input-sm w-full font-mono text-xs"
-                      value={createdKey.raw_key}
-                      aria-label="New API key"
-                    />
-                    <button type="button" className="btn btn-sm btn-outline shrink-0" onClick={() => void copyRawKey()}>
-                      {copyDone ? "Copied" : "Copy"}
+          ) : (
+            <>
+              {createdKey && (
+                <div className="alert alert-warning mb-3 text-sm">
+                  <div className="space-y-2">
+                    <p>
+                      Key <strong>{createdKey.name}</strong> created. Copy the secret below now — it will not be shown again.
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        type="text"
+                        readOnly
+                        className="input input-bordered input-sm w-full font-mono text-xs"
+                        value={createdKey.raw_key}
+                        aria-label="New API key"
+                      />
+                      <button type="button" className="btn btn-sm btn-outline shrink-0" onClick={() => void copyRawKey()}>
+                        {copyDone ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => setCreatedKey(null)}>
+                      Dismiss
                     </button>
                   </div>
-                  <button type="button" className="btn btn-ghost btn-xs" onClick={() => setCreatedKey(null)}>
-                    Dismiss
-                  </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            <form className="space-y-3" onSubmit={(e) => void onCreateKey(e)}>
-              <label className="form-control w-full">
-                <span className="label-text">Key name</span>
-                <input
-                  className="input input-bordered w-full"
-                  value={keyName}
-                  onChange={(e) => setKeyName(e.target.value)}
-                  placeholder="e.g. production JAA, dev laptop"
-                  required
-                  autoComplete="off"
-                />
-              </label>
-              <fieldset className="form-control">
-                <legend className="label-text mb-1">Scopes</legend>
-                <label className="label cursor-pointer justify-start gap-2">
+              <form className="space-y-3" onSubmit={(e) => void onCreateKey(e)}>
+                <label className="form-control w-full">
+                  <span className="label-text">Key name</span>
                   <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={scopeRead}
-                    onChange={(e) => setScopeRead(e.target.checked)}
+                    className="input input-bordered input-sm w-full"
+                    value={keyName}
+                    onChange={(e) => setKeyName(e.target.value)}
+                    placeholder="e.g. production JAA, dev laptop"
+                    required
+                    autoComplete="off"
                   />
-                  <span className="label-text">read</span>
                 </label>
-                <label className="label cursor-pointer justify-start gap-2">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={scopeWrite}
-                    onChange={(e) => setScopeWrite(e.target.checked)}
-                  />
-                  <span className="label-text">write</span>
-                </label>
-              </fieldset>
-              {submitError && <p className="text-sm text-error">{submitError}</p>}
-              <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
-                {submitting ? "Creating…" : "Create API key"}
-              </button>
-            </form>
-          </>
-        )}
-      </section>
+                <fieldset className="form-control">
+                  <legend className="label-text mb-1">Scopes</legend>
+                  <label className="label cursor-pointer justify-start gap-2">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={scopeRead}
+                      onChange={(e) => setScopeRead(e.target.checked)}
+                    />
+                    <span className="label-text">read</span>
+                  </label>
+                  <label className="label cursor-pointer justify-start gap-2">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={scopeWrite}
+                      onChange={(e) => setScopeWrite(e.target.checked)}
+                    />
+                    <span className="label-text">write</span>
+                  </label>
+                </fieldset>
+                {submitError && <p className="text-sm text-error">{submitError}</p>}
+                <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
+                  {submitting ? "Creating…" : "Create API key"}
+                </button>
+              </form>
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 };
