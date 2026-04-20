@@ -364,6 +364,7 @@ class InMemoryRepository(BaseRepository):
             name=payload.name,
             email=payload.email,
             password_hash=password_hash,
+            role=payload.role,
             admin=payload.admin,
             created_at=now,
             updated_at=now,

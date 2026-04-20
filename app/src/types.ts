@@ -158,13 +158,10 @@ export type UserPublic = {
   id: string;
   name: string;
   email: string;
+  role: "admin" | "user";
   admin: boolean;
   created_at: string;
   updated_at: string;
-};
-
-export type RegistrationStatus = {
-  registration_open: boolean;
 };
 
 /** POST /api/v1/admin/agent-keys — response includes one-time raw_key */

@@ -1,8 +1,9 @@
 from fastapi.testclient import TestClient
 
+from app.auth import hash_password
 from app.deps import get_repository
 from app.main import app
-from app.models import ApplicationCreate, ApplicationStatus
+from app.models import ApplicationCreate, ApplicationStatus, UserCreate
 from app.repository import InMemoryRepository
 
 
@@ -11,14 +12,15 @@ def _headers(token: str) -> dict[str, str]:
 
 
 def _register_admin(client: TestClient) -> str:
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "name": "Admin",
-            "email": "admin@example.com",
-            "password": "secret1234",
-            "admin": True,
-        },
+    repo = app.dependency_overrides[get_repository]()
+    repo.create_user(
+        UserCreate(
+            name="Admin",
+            email="admin@example.com",
+            password="secret1234",
+            role="admin",
+        ),
+        hash_password("secret1234"),
     )
     login = client.post(
         "/api/v1/auth/login",

@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "../api";
+import { useAuth } from "../auth";
 import { Profile } from "../types";
 
 export const ProfilesPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [items, setItems] = useState<Profile[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const canEditProfiles = user?.role === "admin";
 
   const load = async () => {
     try {
@@ -30,17 +33,19 @@ export const ProfilesPage = () => {
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
               Refresh
             </button>
-            <button
-              type="button"
-              className="btn btn-circle btn-primary btn-sm"
-              title="New profile"
-              aria-label="New profile"
-              onClick={() => navigate("/profiles/new")}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-            </button>
+            {canEditProfiles && (
+              <button
+                type="button"
+                className="btn btn-circle btn-primary btn-sm"
+                title="New profile"
+                aria-label="New profile"
+                onClick={() => navigate("/profiles/new")}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
         {error && <div className="alert alert-error mb-3 text-sm">{error}</div>}
@@ -54,7 +59,7 @@ export const ProfilesPage = () => {
                 <th>Email</th>
                 <th>Phone</th>
                 <th className="whitespace-nowrap">Updated</th>
-                <th className="w-52 text-right">Actions</th>
+                <th className="w-52 text-right">{canEditProfiles ? "Actions" : ""}</th>
               </tr>
             </thead>
             <tbody>
@@ -83,41 +88,43 @@ export const ProfilesPage = () => {
                     {new Date(profile.updated_at).toLocaleString()}
                   </td>
                   <td className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        className={`btn btn-xs ${profile.frozen ? "btn-success btn-outline" : "btn-warning btn-outline"}`}
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          const action = profile.frozen ? "Unfreeze" : "Freeze";
-                          if (!window.confirm(`${action} profile "${profile.name}"?`)) return;
-                          try {
-                            await api.updateProfile(profile.id, { frozen: !profile.frozen });
-                            await load();
-                          } catch (err) {
-                            setError((err as Error).message);
-                          }
-                        }}
-                      >
-                        {profile.frozen ? "Unfreeze" : "Freeze"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-xs btn-error btn-outline"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!window.confirm(`Delete profile "${profile.name}"?`)) return;
-                          try {
-                            await api.deleteProfile(profile.id);
-                            await load();
-                          } catch (err) {
-                            setError((err as Error).message);
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    {canEditProfiles ? (
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className={`btn btn-xs ${profile.frozen ? "btn-success btn-outline" : "btn-warning btn-outline"}`}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const action = profile.frozen ? "Unfreeze" : "Freeze";
+                            if (!window.confirm(`${action} profile "${profile.name}"?`)) return;
+                            try {
+                              await api.updateProfile(profile.id, { frozen: !profile.frozen });
+                              await load();
+                            } catch (err) {
+                              setError((err as Error).message);
+                            }
+                          }}
+                        >
+                          {profile.frozen ? "Unfreeze" : "Freeze"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-error btn-outline"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!window.confirm(`Delete profile "${profile.name}"?`)) return;
+                            try {
+                              await api.deleteProfile(profile.id);
+                              await load();
+                            } catch (err) {
+                              setError((err as Error).message);
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -125,7 +132,11 @@ export const ProfilesPage = () => {
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No profiles yet.</p>}
         </div>
-        <p className="mt-2 text-xs opacity-60">Click a row to view and edit. Use + to create a profile (all fields except resume are required).</p>
+        <p className="mt-2 text-xs opacity-60">
+          {canEditProfiles
+            ? "Click a row to view and edit. Use + to create a profile (all fields except resume are required)."
+            : "Click a row to view profile details."}
+        </p>
       </section>
     </div>
   );

@@ -1,8 +1,9 @@
 from fastapi.testclient import TestClient
 
+from app.auth import hash_password
 from app.deps import get_repository
 from app.main import app
-from app.models import PerProfileApplication
+from app.models import PerProfileApplication, UserCreate
 from app.repository import (
     InMemoryRepository,
     RELATED_COMPANY_DELETED_ARCHIVE_REASON,
@@ -11,9 +12,14 @@ from app.repository import (
 
 
 def _register_and_login(client: TestClient) -> str:
-    payload = {"name": "Test", "email": "test@example.com", "password": "secret1234"}
-    register_response = client.post("/api/v1/auth/register", json=payload)
-    assert register_response.status_code == 201
+    payload = {
+        "name": "Test",
+        "email": "test@example.com",
+        "password": "secret1234",
+        "role": "admin",
+    }
+    repo = app.dependency_overrides[get_repository]()
+    repo.create_user(UserCreate.model_validate(payload), hash_password(payload["password"]))
 
     login_response = client.post(
         "/api/v1/auth/login", json={"email": payload["email"], "password": payload["password"]}
@@ -24,6 +30,29 @@ def _register_and_login(client: TestClient) -> str:
 
 def _auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _create_user_and_login(
+    client: TestClient,
+    *,
+    name: str,
+    email: str,
+    password: str = "secret1234",
+    role: str = "user",
+) -> str:
+    repo = app.dependency_overrides[get_repository]()
+    repo.create_user(
+        UserCreate.model_validate(
+            {"name": name, "email": email, "password": password, "role": role}
+        ),
+        hash_password(password),
+    )
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login_response.status_code == 200
+    return login_response.json()["access_token"]
 
 
 def _valid_profile_create_payload() -> dict:
@@ -167,38 +196,12 @@ def test_auth_me_returns_user() -> None:
     assert "admin" in body
 
 
-def test_registration_status_changes_after_first_user() -> None:
+def test_public_signup_routes_are_not_exposed() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
-
-    before = client.get("/api/v1/auth/registration-status")
-    assert before.status_code == 200
-    assert before.json() == {"registration_open": True}
-
-    payload = {"name": "Owner", "email": "owner@example.com", "password": "secret1234"}
-    created = client.post("/api/v1/auth/register", json=payload)
-    assert created.status_code == 201
-
-    after = client.get("/api/v1/auth/registration-status")
-    assert after.status_code == 200
-    assert after.json() == {"registration_open": False}
-
-
-def test_register_rejected_when_user_already_exists() -> None:
-    repo = InMemoryRepository()
-    app.dependency_overrides[get_repository] = lambda: repo
-    client = TestClient(app)
-
-    first = {"name": "Owner", "email": "owner@example.com", "password": "secret1234"}
-    second = {"name": "Second", "email": "second@example.com", "password": "secret1234"}
-
-    created = client.post("/api/v1/auth/register", json=first)
-    assert created.status_code == 201
-
-    blocked = client.post("/api/v1/auth/register", json=second)
-    assert blocked.status_code == 403
-    assert blocked.json()["detail"] == "Registration disabled: user already exists"
+    assert client.post("/api/v1/auth/register", json={}).status_code == 404
+    assert client.get("/api/v1/auth/registration-status").status_code == 404
 
 
 def test_auth_required_for_companies() -> None:
@@ -206,6 +209,70 @@ def test_auth_required_for_companies() -> None:
     client = TestClient(app)
     response = client.get("/api/v1/companies")
     assert response.status_code == 401
+
+
+def test_user_role_cannot_access_settings_or_audit() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _create_user_and_login(
+        client,
+        name="Basic User",
+        email="basic-user@example.com",
+        role="user",
+    )
+    headers = _auth_headers(token)
+
+    settings_response = client.get("/api/v1/settings/workers", headers=headers)
+    assert settings_response.status_code == 403
+
+    audit_response = client.get("/api/v1/audit-events", headers=headers)
+    assert audit_response.status_code == 403
+
+
+def test_user_role_profiles_are_read_only() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    admin_token = _register_and_login(client)
+    admin_headers = _auth_headers(admin_token)
+    created_profile = client.post(
+        "/api/v1/profiles",
+        json=_valid_profile_create_payload(),
+        headers=admin_headers,
+    )
+    assert created_profile.status_code == 201
+    profile_id = created_profile.json()["id"]
+
+    user_token = _create_user_and_login(
+        client,
+        name="Readonly User",
+        email="readonly-user@example.com",
+        role="user",
+    )
+    user_headers = _auth_headers(user_token)
+
+    listed = client.get("/api/v1/profiles", headers=user_headers)
+    assert listed.status_code == 200
+    fetched = client.get(f"/api/v1/profiles/{profile_id}", headers=user_headers)
+    assert fetched.status_code == 200
+
+    blocked_create = client.post(
+        "/api/v1/profiles",
+        json=_valid_profile_create_payload(),
+        headers=user_headers,
+    )
+    assert blocked_create.status_code == 403
+
+    blocked_update = client.put(
+        f"/api/v1/profiles/{profile_id}",
+        json={"name": "Updated"},
+        headers=user_headers,
+    )
+    assert blocked_update.status_code == 403
+
+    blocked_delete = client.delete(f"/api/v1/profiles/{profile_id}", headers=user_headers)
+    assert blocked_delete.status_code == 403
 
 
 def test_list_applications_includes_applied_profile_names() -> None:
@@ -800,11 +867,11 @@ def test_profile_create_rejects_incomplete_payload() -> None:
     assert response.status_code == 422
 
 
-def test_cors_preflight_register() -> None:
+def test_cors_preflight_login() -> None:
     app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
     client = TestClient(app)
     response = client.options(
-        "/api/v1/auth/register",
+        "/api/v1/auth/login",
         headers={
             "Origin": "http://localhost:5173",
             "Access-Control-Request-Method": "POST",
@@ -924,20 +991,12 @@ def test_delete_email_and_freeze_profile_hides_agent_profile_fetches() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
-    register_payload = {
-        "name": "Admin",
-        "email": "admin-freeze@example.com",
-        "password": "secret1234",
-        "admin": True,
-    }
-    register_response = client.post("/api/v1/auth/register", json=register_payload)
-    assert register_response.status_code == 201
-    login_response = client.post(
-        "/api/v1/auth/login",
-        json={"email": register_payload["email"], "password": register_payload["password"]},
+    token = _create_user_and_login(
+        client,
+        name="Admin",
+        email="admin-freeze@example.com",
+        role="admin",
     )
-    assert login_response.status_code == 200
-    token = login_response.json()["access_token"]
     headers = _auth_headers(token)
 
     # Create profile and application with one per-profile email.
@@ -1008,22 +1067,12 @@ def test_agent_worker_path_assign_release_and_count() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
-    reg = client.post(
-        "/api/v1/auth/register",
-        json={
-            "name": "Admin",
-            "email": "worker-path-admin@example.com",
-            "password": "secret1234",
-            "admin": True,
-        },
+    token = _create_user_and_login(
+        client,
+        name="Admin",
+        email="worker-path-admin@example.com",
+        role="admin",
     )
-    assert reg.status_code == 201
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "worker-path-admin@example.com", "password": "secret1234"},
-    )
-    assert login.status_code == 200
-    token = login.json()["access_token"]
     headers = _auth_headers(token)
     key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "worker-path-test"}, headers=headers)
     assert key_resp.status_code == 201

@@ -5,14 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth";
 import { Layout } from "./Layout";
 
-const { listNotifications, setUnauthorizedHandler } = vi.hoisted(() => ({
+const { listNotifications, setUnauthorizedHandler, getMe } = vi.hoisted(() => ({
   listNotifications: vi.fn(),
-  setUnauthorizedHandler: vi.fn()
+  setUnauthorizedHandler: vi.fn(),
+  getMe: vi.fn()
 }));
 
 vi.mock("../api", () => ({
   api: {
-    listNotifications
+    listNotifications,
+    getMe
   },
   setUnauthorizedHandler
 }));
@@ -25,6 +27,8 @@ afterEach(() => {
 beforeEach(() => {
   localStorage.setItem("jobcrm-token", "test-token");
   listNotifications.mockReset();
+  getMe.mockReset();
+  getMe.mockResolvedValue({ id: "u1", name: "Admin", email: "admin@example.com", role: "admin", admin: true });
 });
 
 function Placeholder({ title }: { title: string }) {
@@ -91,5 +95,26 @@ describe("Layout", () => {
     });
     expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 100 });
     expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 5 * 60 * 1000);
+  });
+
+  it("hides settings and audit links for user role", async () => {
+    getMe.mockResolvedValueOnce({ id: "u2", name: "User", email: "user@example.com", role: "user", admin: false });
+    listNotifications.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AuthProvider>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Placeholder title="Home" />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    const nav = await screen.findByRole("navigation", { name: "Main" });
+    expect(within(nav).queryByRole("link", { name: /Settings/i })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: /Audit/i })).not.toBeInTheDocument();
   });
 });
