@@ -62,12 +62,14 @@ describe("CompanyDetailPage", () => {
     cleanup();
   });
 
-  it("shows read-only Overview and Full Company Detail when research_status is indexed", async () => {
+  it("shows read-only Overview and full detail links when research_status is indexed", async () => {
     getCompany.mockResolvedValue(
       baseCompany({
         research_status: "indexed",
         overview: "Public overview body",
-        full_overview: "https://example.com/full-detail"
+        full_product_detail: "https://example.com/product-detail",
+        full_hiring_detail: "https://example.com/hiring-detail",
+        full_organization_detail: "https://example.com/organization-detail"
       })
     );
     renderPage();
@@ -78,9 +80,17 @@ describe("CompanyDetailPage", () => {
     });
     // Read-only paragraph + edit textarea both show the same copy.
     expect(screen.getAllByText("Public overview body")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: "Full Company Detail" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Full Product Detail" })).toHaveAttribute(
       "href",
-      "https://example.com/full-detail"
+      "https://example.com/product-detail"
+    );
+    expect(screen.getByRole("link", { name: "Full Hiring Detail" })).toHaveAttribute(
+      "href",
+      "https://example.com/hiring-detail"
+    );
+    expect(screen.getByRole("link", { name: "Full Organization Detail" })).toHaveAttribute(
+      "href",
+      "https://example.com/organization-detail"
     );
     expect(screen.getByText("Indexed")).toBeInTheDocument();
   });
@@ -90,7 +100,9 @@ describe("CompanyDetailPage", () => {
       baseCompany({
         research_status: "pending",
         overview: "Still in DB",
-        full_overview: "https://example.com/full-detail",
+        full_product_detail: "https://example.com/product-detail",
+        full_hiring_detail: "https://example.com/hiring-detail",
+        full_organization_detail: "https://example.com/organization-detail",
         analysis_links: [{ topic: "T", link: "https://a.example" }],
         enrichment_source_links: ["https://src.example"]
       })
@@ -102,7 +114,9 @@ describe("CompanyDetailPage", () => {
     });
 
     expect(screen.queryByRole("heading", { name: "Overview" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Full Company Detail" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Full Product Detail" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Full Hiring Detail" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Full Organization Detail" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Analysis links" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Enrichment sources" })).not.toBeInTheDocument();
 
@@ -120,7 +134,9 @@ describe("CompanyDetailPage", () => {
       baseCompany({
         research_status: "pending",
         overview: null,
-        full_overview: null,
+        full_product_detail: null,
+        full_hiring_detail: null,
+        full_organization_detail: null,
         analysis_links: [],
         enrichment_source_links: []
       })

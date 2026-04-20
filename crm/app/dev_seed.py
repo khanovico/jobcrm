@@ -56,7 +56,7 @@ def seed_rich_dummy_application(
             work_mode="hybrid",
             work_mode_description="Hybrid: 2 days onsite, flexible async collaboration",
             overview="Developer infrastructure platform for AI-native products.",
-            full_overview=(
+            full_product_detail=(
                 "Nebula Systems builds developer productivity tooling for enterprise AI teams, "
                 "including observability, release automation, and secure data workflows."
             ),

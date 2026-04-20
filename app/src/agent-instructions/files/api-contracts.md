@@ -202,7 +202,9 @@ Paths use **kebab-case** worker kinds (no JSON `worker_type` on assign):
   "work_mode": "remote_us",
   "work_mode_description": "string",
   "overview": "short summary string",
-  "full_overview": "https://drive.google.com/...",
+  "full_product_detail": "https://drive.google.com/...",
+  "full_hiring_detail": "https://drive.google.com/...",
+  "full_organization_detail": "https://drive.google.com/...",
   "analysis_links": [{ "topic": "t", "link": "url" }],
   "enrichment_source_links": ["url"]
 }

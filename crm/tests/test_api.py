@@ -318,7 +318,9 @@ def test_clear_company_research_detail_clears_enrichment_keeps_name_and_website(
             "work_mode": "hybrid",
             "work_mode_description": "flex",
             "overview": "Overview text",
-            "full_overview": "https://example.com/detail",
+            "full_product_detail": "https://example.com/detail",
+            "full_hiring_detail": "https://example.com/hiring-detail",
+            "full_organization_detail": "https://example.com/org-detail",
             "analysis_links": [{"topic": "T", "link": "https://a.example"}],
             "enrichment_source_links": ["https://src.example"],
         },
@@ -344,7 +346,9 @@ def test_clear_company_research_detail_clears_enrichment_keeps_name_and_website(
     assert body["work_mode"] is None
     assert body["work_mode_description"] is None
     assert body["overview"] is None
-    assert body["full_overview"] is None
+    assert body["full_product_detail"] is None
+    assert body["full_hiring_detail"] is None
+    assert body["full_organization_detail"] is None
     assert body["analysis_links"] == []
     assert body["enrichment_source_links"] == []
 
@@ -738,15 +742,25 @@ def test_company_profile_crud_happy_path() -> None:
         f"/api/v1/companies/{company['id']}",
         json={
             "overview": "Hiring fast",
-            "full_overview": "https://drive.google.com/file/d/company-overview",
+            "full_product_detail": "https://drive.google.com/file/d/company-overview",
+            "full_hiring_detail": "https://drive.google.com/file/d/company-hiring",
+            "full_organization_detail": "https://drive.google.com/file/d/company-organization",
         },
         headers=headers,
     )
     assert update_company.status_code == 200
     assert update_company.json()["overview"] == "Hiring fast"
     assert (
-        update_company.json()["full_overview"]
+        update_company.json()["full_product_detail"]
         == "https://drive.google.com/file/d/company-overview"
+    )
+    assert (
+        update_company.json()["full_hiring_detail"]
+        == "https://drive.google.com/file/d/company-hiring"
+    )
+    assert (
+        update_company.json()["full_organization_detail"]
+        == "https://drive.google.com/file/d/company-organization"
     )
 
     profile_res = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers)
@@ -755,6 +769,25 @@ def test_company_profile_crud_happy_path() -> None:
 
     delete_profile = client.delete(f"/api/v1/profiles/{profile['id']}", headers=headers)
     assert delete_profile.status_code == 204
+
+
+def test_company_update_accepts_legacy_full_overview_field() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Legacy Co"}, headers=headers).json()
+
+    update_company = client.put(
+        f"/api/v1/companies/{company['id']}",
+        json={"full_overview": "https://legacy.example.com/detail"},
+        headers=headers,
+    )
+    assert update_company.status_code == 200
+    assert update_company.json()["full_product_detail"] == "https://legacy.example.com/detail"
+    assert "full_overview" not in update_company.json()
 
 
 def test_profile_create_rejects_incomplete_payload() -> None:

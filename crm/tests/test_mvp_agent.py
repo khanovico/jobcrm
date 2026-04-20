@@ -77,14 +77,23 @@ def test_agent_pending_and_company_update() -> None:
         f"/api/v1/agent/companies/{company_id}",
         json={
             "overview": "Enriched by JAA",
-            "full_overview": "https://drive.google.com/file/d/acme-full-overview",
+            "full_product_detail": "https://drive.google.com/file/d/acme-full-product",
+            "full_hiring_detail": "https://drive.google.com/file/d/acme-full-hiring",
+            "full_organization_detail": "https://drive.google.com/file/d/acme-full-organization",
         },
         headers={"X-API-Key": raw_key},
     )
     assert upd.status_code == 200
     assert upd.json()["overview"] == "Enriched by JAA"
     assert (
-        upd.json()["full_overview"] == "https://drive.google.com/file/d/acme-full-overview"
+        upd.json()["full_product_detail"] == "https://drive.google.com/file/d/acme-full-product"
+    )
+    assert (
+        upd.json()["full_hiring_detail"] == "https://drive.google.com/file/d/acme-full-hiring"
+    )
+    assert (
+        upd.json()["full_organization_detail"]
+        == "https://drive.google.com/file/d/acme-full-organization"
     )
 
     audit = client.get("/api/v1/audit-events", headers=h)
@@ -299,7 +308,9 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
     assert bulk.status_code == 200
     assert bulk.json()[0]["research_status"] == "indexed"
     assert bulk.json()[0]["overview"] == "Done"
-    assert bulk.json()[0]["full_overview"] is None
+    assert bulk.json()[0]["full_product_detail"] is None
+    assert bulk.json()[0]["full_hiring_detail"] is None
+    assert bulk.json()[0]["full_organization_detail"] is None
 
     prof = client.post(
         "/api/v1/profiles",

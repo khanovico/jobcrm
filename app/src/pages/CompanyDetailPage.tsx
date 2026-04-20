@@ -26,7 +26,9 @@ const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
 function companyHasStoredEnrichment(c: Company): boolean {
   return (
     Boolean(c.overview?.trim()) ||
-    Boolean(c.full_overview?.trim()) ||
+    Boolean(c.full_product_detail?.trim()) ||
+    Boolean(c.full_hiring_detail?.trim()) ||
+    Boolean(c.full_organization_detail?.trim()) ||
     (c.analysis_links?.length ?? 0) > 0 ||
     (c.enrichment_source_links?.length ?? 0) > 0
   );
@@ -45,7 +47,9 @@ export const CompanyDetailPage = () => {
   const [workMode, setWorkMode] = useState("");
   const [workModeDescription, setWorkModeDescription] = useState("");
   const [overview, setOverview] = useState("");
-  const [fullOverview, setFullOverview] = useState("");
+  const [fullProductDetail, setFullProductDetail] = useState("");
+  const [fullHiringDetail, setFullHiringDetail] = useState("");
+  const [fullOrganizationDetail, setFullOrganizationDetail] = useState("");
   const [activelyHiring, setActivelyHiring] = useState<boolean | "">("");
   const [hqLocations, setHqLocations] = useState("");
   const [selectedIndustryIds, setSelectedIndustryIds] = useState<string[]>([]);
@@ -86,7 +90,9 @@ export const CompanyDetailPage = () => {
       setWorkMode(co.work_mode ?? "");
       setWorkModeDescription(co.work_mode_description ?? "");
       setOverview(co.overview ?? "");
-      setFullOverview(co.full_overview ?? "");
+      setFullProductDetail(co.full_product_detail ?? "");
+      setFullHiringDetail(co.full_hiring_detail ?? "");
+      setFullOrganizationDetail(co.full_organization_detail ?? "");
       setActivelyHiring(co.actively_hiring === null || co.actively_hiring === undefined ? "" : co.actively_hiring);
       setHqLocations((co.hq_locations ?? []).join(", "));
       setSelectedIndustryIds([...(co.industry_ids ?? [])]);
@@ -113,7 +119,9 @@ export const CompanyDetailPage = () => {
         work_mode: workMode.trim() || null,
         work_mode_description: workModeDescription.trim() || null,
         overview: overview.trim() || null,
-        full_overview: fullOverview.trim() || null,
+        full_product_detail: fullProductDetail.trim() || null,
+        full_hiring_detail: fullHiringDetail.trim() || null,
+        full_organization_detail: fullOrganizationDetail.trim() || null,
         actively_hiring: activelyHiring === "" ? null : activelyHiring,
         hq_locations: hqLocations
           .split(",")
@@ -152,14 +160,34 @@ export const CompanyDetailPage = () => {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <h2 className="text-xl font-semibold">{company.name}</h2>
               <div className="flex flex-wrap items-center gap-2">
-                {showIndexedResearchSummary && company.full_overview?.trim() ? (
+                {showIndexedResearchSummary && company.full_product_detail?.trim() ? (
                   <a
-                    href={company.full_overview}
+                    href={company.full_product_detail}
                     className="link link-primary text-sm font-medium"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Full Company Detail
+                    Full Product Detail
+                  </a>
+                ) : null}
+                {showIndexedResearchSummary && company.full_hiring_detail?.trim() ? (
+                  <a
+                    href={company.full_hiring_detail}
+                    className="link link-primary text-sm font-medium"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Full Hiring Detail
+                  </a>
+                ) : null}
+                {showIndexedResearchSummary && company.full_organization_detail?.trim() ? (
+                  <a
+                    href={company.full_organization_detail}
+                    className="link link-primary text-sm font-medium"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Full Organization Detail
                   </a>
                 ) : null}
                 <button
@@ -429,11 +457,29 @@ export const CompanyDetailPage = () => {
                 />
               </label>
               <label className="form-control w-full">
-                <span className="label-text">Full company detail link</span>
+                <span className="label-text">Full product detail link</span>
                 <input
                   className="input input-bordered w-full"
-                  value={fullOverview}
-                  onChange={(e) => setFullOverview(e.target.value)}
+                  value={fullProductDetail}
+                  onChange={(e) => setFullProductDetail(e.target.value)}
+                  placeholder="https://drive.google.com/..."
+                />
+              </label>
+              <label className="form-control w-full">
+                <span className="label-text">Full hiring detail link</span>
+                <input
+                  className="input input-bordered w-full"
+                  value={fullHiringDetail}
+                  onChange={(e) => setFullHiringDetail(e.target.value)}
+                  placeholder="https://drive.google.com/..."
+                />
+              </label>
+              <label className="form-control w-full">
+                <span className="label-text">Full organization detail link</span>
+                <input
+                  className="input input-bordered w-full"
+                  value={fullOrganizationDetail}
+                  onChange={(e) => setFullOrganizationDetail(e.target.value)}
                   placeholder="https://drive.google.com/..."
                 />
               </label>

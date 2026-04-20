@@ -59,7 +59,9 @@ test.describe("Company clear (enrichment wipe, keeps name + website)", () => {
         work_mode: "hybrid",
         work_mode_description: "3 days in office",
         overview: "Overview body for e2e",
-        full_overview: "https://drive.example.com/folder",
+        full_product_detail: "https://drive.example.com/product-folder",
+        full_hiring_detail: "https://drive.example.com/hiring-folder",
+        full_organization_detail: "https://drive.example.com/organization-folder",
         analysis_links: [{ topic: "Culture", link: "https://analysis.example" }],
         enrichment_source_links: ["https://source.example"]
       }
@@ -88,7 +90,9 @@ test.describe("Company clear (enrichment wipe, keeps name + website)", () => {
     await expect(page.getByLabel("LinkedIn")).toHaveValue("");
     await expect(page.getByLabel("Employee count (text)")).toHaveValue("");
     await expect(page.getByLabel("Overview")).toHaveValue("");
-    await expect(page.getByLabel("Full company detail link")).toHaveValue("");
+    await expect(page.getByLabel("Full product detail link")).toHaveValue("");
+    await expect(page.getByLabel("Full hiring detail link")).toHaveValue("");
+    await expect(page.getByLabel("Full organization detail link")).toHaveValue("");
     await expect(page.getByLabel("HQ locations (comma-separated)")).toHaveValue("");
     await expect(page.getByLabel("Work mode description")).toHaveValue("");
 
@@ -115,7 +119,9 @@ test.describe("Company clear (enrichment wipe, keeps name + website)", () => {
     expect(c.work_mode).toBeNull();
     expect(c.work_mode_description).toBeNull();
     expect(c.overview).toBeNull();
-    expect(c.full_overview).toBeNull();
+    expect(c.full_product_detail).toBeNull();
+    expect(c.full_hiring_detail).toBeNull();
+    expect(c.full_organization_detail).toBeNull();
     expect(c.industry_ids).toEqual([]);
     expect(c.hq_locations).toEqual([]);
     expect(c.analysis_links).toEqual([]);

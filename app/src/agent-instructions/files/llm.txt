@@ -39,7 +39,7 @@ Read these from the **web app origin** (same host/port as the UI in dev), not th
 - GET `/api/v1/agent/applications/{id}/per-profile-applications` — fetch all per-profile rows for one application id (ordered by `order_index`, then `created_at`).
 - PUT `/api/v1/agent/applications/{id}` — update application fields/status; use for lifecycle moves (`company_researching`, `ppa_pending`, `application_ready`, `archived`, etc.); include optional `archive_reason` when archiving.
 - GET `/api/v1/agent/companies/unindexed` — companies with `research_status=pending` (research backlog), oldest-first FIFO, max 5.
-- PUT `/api/v1/agent/companies/{id}` — update one company profile/enrichment fields (`overview`, `full_overview`, `analysis_links`, `research_status`, or legacy `indexed` mapped to `research_status`, etc.).
+- PUT `/api/v1/agent/companies/{id}` — update one company profile/enrichment fields (`overview`, `full_product_detail`, `full_hiring_detail`, `full_organization_detail`, `analysis_links`, `research_status`, or legacy `indexed` mapped to `research_status`, etc.).
 - PATCH `/api/v1/agent/companies/bulk` — batch company updates in one request (`updates[]` of `{company_id, payload}`).
 - POST `/api/v1/agent/workers/assign/{worker_kind}` — no body; `{worker_kind}` is `company-researcher` | `ppa-analyser` | `application-drafter`; returns `{ "lease_id" }` if a slot is free (**404** unknown kind, **409** if max concurrent workers reached).
 - POST `/api/v1/agent/workers/release/{worker_kind}` — body `{ "lease_id": "<id from assign>" }`; path kind must match the lease (**400** if lease is for a different worker kind).

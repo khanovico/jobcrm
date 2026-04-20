@@ -235,7 +235,9 @@ class CompanyBase(BaseModel):
     work_mode: WorkMode | None = None
     work_mode_description: str | None = None
     overview: str | None = None
-    full_overview: str | None = None
+    full_product_detail: str | None = None
+    full_hiring_detail: str | None = None
+    full_organization_detail: str | None = None
     analysis_links: list[AnalysisLink] = Field(default_factory=list)
     enrichment_source_links: list[str] = Field(default_factory=list)
 
@@ -249,6 +251,10 @@ class CompanyCreate(CompanyBase):
                 CompanyResearchStatus.indexed.value if data.get("indexed") else CompanyResearchStatus.pending.value
             )
             data.pop("indexed", None)
+        if isinstance(data, dict):
+            if not data.get("full_product_detail") and data.get("full_overview") is not None:
+                data["full_product_detail"] = data.get("full_overview")
+            data.pop("full_overview", None)
         return data
 
 
@@ -264,7 +270,9 @@ class CompanyUpdate(BaseModel):
     work_mode: WorkMode | None = None
     work_mode_description: str | None = None
     overview: str | None = None
-    full_overview: str | None = None
+    full_product_detail: str | None = None
+    full_hiring_detail: str | None = None
+    full_organization_detail: str | None = None
     analysis_links: list[AnalysisLink] | None = None
     enrichment_source_links: list[str] | None = None
 
@@ -277,6 +285,10 @@ class CompanyUpdate(BaseModel):
             )
         if isinstance(data, dict) and "indexed" in data:
             data.pop("indexed", None)
+        if isinstance(data, dict):
+            if not data.get("full_product_detail") and data.get("full_overview") is not None:
+                data["full_product_detail"] = data.get("full_overview")
+            data.pop("full_overview", None)
         return data
 
 
@@ -308,6 +320,9 @@ class Company(CompanyBase):
             data["research_status"] = (
                 CompanyResearchStatus.indexed.value if data.get("indexed") else CompanyResearchStatus.pending.value
             )
+        if not data.get("full_product_detail") and data.get("full_overview") is not None:
+            data["full_product_detail"] = data.get("full_overview")
+        data.pop("full_overview", None)
         return data
 
 
