@@ -25,6 +25,7 @@ export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [profileNames, setProfileNames] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
@@ -44,17 +45,8 @@ export const ApplicationsPage = () => {
   const companyNameById = (id: string) => companies.find((c) => c.id === id)?.name ?? id;
 
   const availableAppliedProfileNames = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          items.flatMap((application) =>
-            (application.applied_profiles ?? [])
-              .map((profile) => profile.profile_name?.trim())
-              .filter((profileName): profileName is string => Boolean(profileName))
-          )
-        )
-      ).sort((a, b) => a.localeCompare(b)),
-    [items]
+    () => Array.from(new Set(profileNames)).sort((a, b) => a.localeCompare(b)),
+    [profileNames]
   );
 
   useEffect(() => {
@@ -102,13 +94,23 @@ export const ApplicationsPage = () => {
   const load = async () => {
     setError(null);
     try {
-      const [applicationItems, companyItems, workers] = await Promise.all([
+      const [applicationItems, companyItems, profiles, workers] = await Promise.all([
         api.listApplications(listParams),
         api.listCompanies(),
+        api.listProfiles(),
         api.getWorkerState().catch(() => null)
       ]);
       setItems(applicationItems);
       setCompanies(companyItems);
+      setProfileNames(
+        Array.from(
+          new Set(
+            profiles
+              .map((profile) => profile.name?.trim())
+              .filter((profileName): profileName is string => Boolean(profileName))
+          )
+        )
+      );
       setWorkerState(workers);
     } catch (e) {
       setError((e as Error).message);

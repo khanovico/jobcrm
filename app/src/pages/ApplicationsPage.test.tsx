@@ -396,6 +396,19 @@ describe("ApplicationsPage", () => {
           )
         );
       }
+      if (url.endsWith("/profiles")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "p1", name: "Alice Park", created_at: "", updated_at: "" },
+              { id: "p2", name: "Bob Stone", created_at: "", updated_at: "" },
+              { id: "p3", name: "Carla Kim", created_at: "", updated_at: "" },
+              { id: "p4", name: "Daniel Roe", created_at: "", updated_at: "" }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
       if (url.includes("/settings/workers")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
@@ -413,6 +426,7 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    expect(screen.getByRole("checkbox", { name: "Daniel Roe" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Bob Stone" }));
 
@@ -452,6 +466,18 @@ describe("ApplicationsPage", () => {
             JSON.stringify([
               { ...companyRow, id: "c1", name: "Acme" },
               { ...companyRow, id: "c2", name: "Core" }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/profiles")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "p1", name: "Alice Park", created_at: "", updated_at: "" },
+              { id: "p2", name: "Bob Stone", created_at: "", updated_at: "" },
+              { id: "p2", name: "Carla Kim", created_at: "", updated_at: "" }
             ]),
             { status: 200 }
           )
