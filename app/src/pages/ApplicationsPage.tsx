@@ -68,13 +68,17 @@ export const ApplicationsPage = () => {
     if (availableAppliedProfileNames.length === 0) {
       return items;
     }
-    if (selectedNamesList.length === 0) {
-      return [];
-    }
+    const allSelected =
+      selectedNamesList.length === availableAppliedProfileNames.length &&
+      availableAppliedProfileNames.every((name) => selectedNamesList.includes(name));
     const selectedNames = new Set(selectedNamesList);
-    return items.filter((application) =>
-      (application.applied_profiles ?? []).some((profile) => selectedNames.has(profile.profile_name))
-    );
+    return items.filter((application) => {
+      const appliedProfiles = application.applied_profiles ?? [];
+      if (appliedProfiles.length === 0) {
+        return selectedNamesList.length === 0 || allSelected;
+      }
+      return appliedProfiles.some((profile) => selectedNames.has(profile.profile_name));
+    });
   }, [items, availableAppliedProfileNames, selectedAppliedProfileNames]);
 
   const listParams = useMemo(() => {

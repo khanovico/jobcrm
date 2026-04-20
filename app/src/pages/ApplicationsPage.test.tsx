@@ -435,6 +435,72 @@ describe("ApplicationsPage", () => {
     expect(screen.queryByRole("cell", { name: "Core" })).not.toBeInTheDocument();
   });
 
+  it("shows applications without applied profiles when all or none are selected", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                ...applicationRow,
+                id: "a1",
+                company_id: "c1",
+                applied_profiles: [{ profile_name: "Alice Park" }]
+              },
+              {
+                ...applicationRow,
+                id: "a2",
+                company_id: "c2",
+                applied_profiles: []
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { ...companyRow, id: "c1", name: "Acme" },
+              { ...companyRow, id: "c2", name: "Beta" }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/profiles")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([{ id: "p1", name: "Alice Park", created_at: "", updated_at: "" }]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
+
+    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+  });
+
   it("preserves applied profile filter selection when page is revisited", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
