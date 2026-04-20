@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetAppliedProfilesFilterSelectionForTests } from "../state/applicationsFilters";
 import { ApplicationsPage } from "./ApplicationsPage";
 
 const WORKER_STATE = {
@@ -17,6 +18,7 @@ describe("ApplicationsPage", () => {
   });
   afterEach(() => {
     cleanup();
+    resetAppliedProfilesFilterSelectionForTests();
     vi.unstubAllGlobals();
   });
 
@@ -349,5 +351,142 @@ describe("ApplicationsPage", () => {
     const statusBadge = statusText.closest("span");
     expect(statusBadge).not.toBeNull();
     expect(statusBadge?.className).toContain("badge-success");
+  });
+
+  it("filters applications by selected applied profiles from header dropdown", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                ...applicationRow,
+                id: "a1",
+                company_id: "c1",
+                applied_profiles: [{ profile_name: "Alice Park" }, { profile_name: "Bob Stone" }]
+              },
+              {
+                ...applicationRow,
+                id: "a2",
+                company_id: "c2",
+                applied_profiles: [{ profile_name: "Bob Stone" }]
+              },
+              {
+                ...applicationRow,
+                id: "a3",
+                company_id: "c3",
+                applied_profiles: [{ profile_name: "Carla Kim" }]
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { ...companyRow, id: "c1", name: "Acme" },
+              { ...companyRow, id: "c2", name: "Beta" },
+              { ...companyRow, id: "c3", name: "Core" }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Bob Stone" }));
+
+    expect(screen.getByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "Core" })).not.toBeInTheDocument();
+  });
+
+  it("preserves applied profile filter selection when page is revisited", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                ...applicationRow,
+                id: "a1",
+                company_id: "c1",
+                applied_profiles: [{ profile_name: "Alice Park" }]
+              },
+              {
+                ...applicationRow,
+                id: "a2",
+                company_id: "c2",
+                applied_profiles: [{ profile_name: "Carla Kim" }]
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { ...companyRow, id: "c1", name: "Acme" },
+              { ...companyRow, id: "c2", name: "Core" }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    const firstMount = render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Carla Kim" }));
+    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
+
+    firstMount.unmount();
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Core" })).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
   });
 });
