@@ -6,6 +6,11 @@ import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
 import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "../applicationStatus";
+import {
+  getSelectedAppliedProfileNames,
+  initializeSelectedAppliedProfileNames,
+  setSelectedAppliedProfileNames
+} from "../state/applicationsFilters";
 import { ApplicationListItem, Company, WorkerStateResponse } from "../types";
 
 const PlusIcon = () => (
@@ -22,6 +27,8 @@ export const ApplicationsPage = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
+  const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
+  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[]>([]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ApplicationListItem | null>(null);
@@ -31,6 +38,48 @@ export const ApplicationsPage = () => {
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
 
   const companyNameById = (id: string) => companies.find((c) => c.id === id)?.name ?? id;
+
+  const availableAppliedProfileNames = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          items.flatMap((application) =>
+            (application.applied_profiles ?? [])
+              .map((profile) => profile.profile_name?.trim())
+              .filter((profileName): profileName is string => Boolean(profileName))
+          )
+        )
+      ).sort((a, b) => a.localeCompare(b)),
+    [items]
+  );
+
+  useEffect(() => {
+    if (availableAppliedProfileNames.length === 0) {
+      setSelectedAppliedProfileNamesState([]);
+      return;
+    }
+    setSelectedAppliedProfileNamesState(initializeSelectedAppliedProfileNames(availableAppliedProfileNames));
+  }, [availableAppliedProfileNames]);
+
+  const updateAppliedProfileSelection = (nextSelection: string[]) => {
+    const sanitizedSelection = nextSelection.filter((name) => availableAppliedProfileNames.includes(name));
+    setSelectedAppliedProfileNamesState(sanitizedSelection);
+    setSelectedAppliedProfileNames(sanitizedSelection);
+  };
+
+  const filteredItems = useMemo(() => {
+    const selectedNamesList = getSelectedAppliedProfileNames() ?? availableAppliedProfileNames;
+    if (availableAppliedProfileNames.length === 0) {
+      return items;
+    }
+    if (selectedNamesList.length === 0) {
+      return [];
+    }
+    const selectedNames = new Set(selectedNamesList);
+    return items.filter((application) =>
+      (application.applied_profiles ?? []).some((profile) => selectedNames.has(profile.profile_name))
+    );
+  }, [items, availableAppliedProfileNames, selectedAppliedProfileNames]);
 
   const listParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -145,14 +194,76 @@ export const ApplicationsPage = () => {
               <tr>
                 <th>Company</th>
                 <th>Status</th>
-                <th className="min-w-[140px]">Applied profiles</th>
+                <th className="min-w-[220px]">
+                  <div className="relative" onClick={(event) => event.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs normal-case"
+                      aria-label="Applied profiles filter"
+                      onClick={() => setAppliedProfileFilterOpen((open) => !open)}
+                    >
+                      Applied profiles
+                    </button>
+                    {appliedProfileFilterOpen ? (
+                      <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-lg border border-base-300 bg-base-100 p-2 shadow-xl">
+                        <div className="mb-2 flex items-center justify-between gap-1">
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            aria-label="Select all profiles"
+                            onClick={() => updateAppliedProfileSelection(availableAppliedProfileNames)}
+                          >
+                            Select all
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            aria-label="Unselect all profiles"
+                            onClick={() => updateAppliedProfileSelection([])}
+                          >
+                            Unselect all
+                          </button>
+                        </div>
+                        <div className="max-h-56 space-y-1 overflow-auto pr-1">
+                          {availableAppliedProfileNames.length === 0 ? (
+                            <p className="text-xs opacity-70">No profiles available</p>
+                          ) : (
+                            availableAppliedProfileNames.map((profileName) => (
+                              <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
+                                <input
+                                  type="checkbox"
+                                  className="checkbox checkbox-sm"
+                                  checked={selectedAppliedProfileNames.includes(profileName)}
+                                  onChange={(event) => {
+                                    if (event.target.checked) {
+                                      updateAppliedProfileSelection(
+                                        Array.from(new Set([...selectedAppliedProfileNames, profileName])).sort((a, b) =>
+                                          a.localeCompare(b)
+                                        )
+                                      );
+                                      return;
+                                    }
+                                    updateAppliedProfileSelection(
+                                      selectedAppliedProfileNames.filter((name) => name !== profileName)
+                                    );
+                                  }}
+                                />
+                                <span className="label-text text-xs">{profileName}</span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </th>
                 <th className="whitespace-nowrap">Applied</th>
                 <th className="whitespace-nowrap">Updated</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((application) => (
+              {filteredItems.map((application) => (
                 <tr
                   key={application.id}
                   className="cursor-pointer hover:bg-base-200"
@@ -226,7 +337,7 @@ export const ApplicationsPage = () => {
               ))}
             </tbody>
           </table>
-          {items.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
+          {filteredItems.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
         </div>
         <p className="mt-2 text-xs opacity-60">
           Click a row to open application detail. Use <strong>Pending</strong> for in-flight work, <strong>Applied</strong> for already-submitted applications, <strong>Archived</strong> to review closed pipelines, <strong>All</strong> for everything.
