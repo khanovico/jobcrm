@@ -10,14 +10,15 @@ const links = [
   { to: "/profiles", label: "Profiles", emoji: "👤" },
   { to: "/applications", label: "Applications", emoji: "📋" },
   { to: "/industries", label: "Industries", emoji: "🏭" },
-  { to: "/audit", label: "Audit", emoji: "📜" },
+  { to: "/audit", label: "Audit", emoji: "📜", adminOnly: true },
   { to: "/notifications", label: "Notifications", emoji: "🔔" },
-  { to: "/settings", label: "Settings", emoji: "⚙️" }
+  { to: "/settings", label: "Settings", emoji: "⚙️", adminOnly: true }
 ];
 
 export const Layout = () => {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const visibleLinks = links.filter((link) => !link.adminOnly || user?.role === "admin");
 
   const toggleTheme = () => {
     const current = document.documentElement.getAttribute("data-theme");
@@ -83,7 +84,7 @@ export const Layout = () => {
           </div>
           <nav className="flex-1 p-3" aria-label="Main">
             <ul className="menu menu-md gap-1 rounded-lg bg-base-200/60 p-2">
-              {links.map((link) => (
+              {visibleLinks.map((link) => (
                 <li key={link.to}>
                   <NavLink
                     to={link.to}

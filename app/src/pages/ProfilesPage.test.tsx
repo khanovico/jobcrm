@@ -1,21 +1,32 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProfilesPage } from "./ProfilesPage";
 
+const { useAuthMock } = vi.hoisted(() => ({
+  useAuthMock: vi.fn(() => ({ user: { role: "admin" } }))
+}));
+
+vi.mock("../auth", () => ({
+  useAuth: () => useAuthMock()
+}));
+
 describe("ProfilesPage", () => {
   const confirmMock = vi.fn();
 
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    useAuthMock.mockReset();
+    useAuthMock.mockReturnValue({ user: { role: "admin" } });
     confirmMock.mockReset();
     confirmMock.mockReturnValue(true);
     vi.stubGlobal("confirm", confirmMock);
   });
 
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
@@ -77,5 +88,38 @@ describe("ProfilesPage", () => {
     const unfreezeButtons = screen.getAllByRole("button", { name: "Unfreeze" });
     await userEvent.click(unfreezeButtons[0]);
     expect(await screen.findByText("Morgan")).toBeInTheDocument();
+  });
+
+  it("hides profile mutation controls for non-admin users", async () => {
+    useAuthMock.mockReturnValue({ user: { role: "user" } });
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            id: "p1",
+            name: "Alex",
+            location: "Remote",
+            email: "alex@example.com",
+            phone: "123",
+            frozen: false,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z"
+          }
+        ]),
+        { status: 200 }
+      )
+    );
+
+    render(
+      <MemoryRouter>
+        <ProfilesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Alex")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New profile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Freeze" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 });

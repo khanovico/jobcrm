@@ -1,50 +1,44 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LoginPage } from "./LoginPage";
 
-const { getRegistrationStatus, login, registerAndLogin } = vi.hoisted(() => ({
-  getRegistrationStatus: vi.fn(),
+const { login } = vi.hoisted(() => ({
   login: vi.fn(),
-  registerAndLogin: vi.fn()
-}));
-
-vi.mock("../api", () => ({
-  api: {
-    getRegistrationStatus
-  }
+  getMe: vi.fn()
 }));
 
 vi.mock("../auth", () => ({
   useAuth: () => ({
     token: null,
     login,
-    registerAndLogin,
-    logout: vi.fn()
+    logout: vi.fn(),
+    user: null,
+    isUserLoading: false
   })
 }));
 
 describe("LoginPage", () => {
   beforeEach(() => {
-    getRegistrationStatus.mockReset();
+    login.mockReset();
   });
 
-  it("shows login-only mode when registration is closed", async () => {
-    getRegistrationStatus.mockResolvedValueOnce({ registration_open: false });
-    render(<LoginPage />);
+  afterEach(() => {
+    cleanup();
+  });
 
-    await waitFor(() => expect(getRegistrationStatus).toHaveBeenCalledTimes(1));
+  it("renders login form without signup controls", () => {
+    render(<LoginPage />);
     expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
-    expect(screen.queryByText("Need account? Register")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
   });
 
-  it("allows register mode when registration is open", async () => {
-    getRegistrationStatus.mockResolvedValueOnce({ registration_open: true });
+  it("submits credentials to login", async () => {
+    login.mockResolvedValueOnce(undefined);
     render(<LoginPage />);
-
-    expect(await screen.findByRole("heading", { name: "Register" })).toBeInTheDocument();
-    expect(screen.getByText("Already have account? Login")).toBeInTheDocument();
-    expect(screen.getByLabelText("Name")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "user@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret1234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(login).toHaveBeenCalledWith("user@example.com", "secret1234"));
   });
 });

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { MarkdownModal } from "../components/MarkdownModal";
 import { api } from "../api";
+import { useAuth } from "../auth";
 import { Profile, ProfileCreatePayload } from "../types";
 
 type EdRow = { university_name: string; from_year: string; to_year: string };
@@ -12,7 +13,9 @@ const emptyEdRow = (): EdRow => ({ university_name: "", from_year: "", to_year: 
 export const ProfileDetailPage = () => {
   const { profileId } = useParams<{ profileId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isNew = profileId === "new";
+  const canEditProfiles = user?.role === "admin";
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState("");
@@ -102,6 +105,7 @@ export const ProfileDetailPage = () => {
 
   const onCreate = async (event: FormEvent) => {
     event.preventDefault();
+    if (!canEditProfiles) return;
     const v = validateCreate();
     if (v) {
       setError(v);
@@ -131,6 +135,7 @@ export const ProfileDetailPage = () => {
 
   const onSaveEdit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!canEditProfiles) return;
     if (!profileId || isNew) return;
     setSaving(true);
     setError(null);
@@ -154,7 +159,7 @@ export const ProfileDetailPage = () => {
   };
 
   const onDelete = async () => {
-    if (!profileId || isNew || !profile) return;
+    if (!canEditProfiles || !profileId || isNew || !profile) return;
     if (!window.confirm(`Delete profile “${profile.name}”? This cannot be undone.`)) return;
     setError(null);
     try {
@@ -166,6 +171,7 @@ export const ProfileDetailPage = () => {
   };
 
   if (!profileId) return <div>Missing profile id</div>;
+  if (isNew && !canEditProfiles) return <div className="alert alert-warning">Profile creation is admin-only.</div>;
 
   return (
     <div className="space-y-4">
@@ -235,6 +241,7 @@ export const ProfileDetailPage = () => {
                 <button
                   type="button"
                   className="btn btn-ghost btn-xs"
+                  disabled={!canEditProfiles}
                   onClick={() => setEdRows((rows) => [...rows, emptyEdRow()])}
                 >
                   + Add row
@@ -279,6 +286,7 @@ export const ProfileDetailPage = () => {
                       <button
                         type="button"
                         className="btn btn-ghost btn-xs"
+                        disabled={!canEditProfiles}
                         onClick={() => setEdRows((rows) => rows.filter((_, i) => i !== idx))}
                       >
                         Remove
@@ -342,10 +350,12 @@ export const ProfileDetailPage = () => {
             </label>
 
             <div className="flex flex-wrap gap-2 pt-2">
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? "Saving…" : isNew ? "Create profile" : "Save changes"}
-              </button>
-              {!isNew && (
+              {canEditProfiles && (
+                <button type="submit" className="btn btn-primary" disabled={saving}>
+                  {saving ? "Saving…" : isNew ? "Create profile" : "Save changes"}
+                </button>
+              )}
+              {!isNew && canEditProfiles && (
                 <button type="button" className="btn btn-outline btn-error" onClick={() => void onDelete()}>
                   Delete profile
                 </button>
