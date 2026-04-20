@@ -7,11 +7,12 @@ from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 
 from app.agent_auth import generate_api_key, hash_api_key
-from app.auth import create_access_token, hash_password, verify_password
+from app.auth import create_access_token, verify_password
 from app.config import settings
 from app.deps import (
     get_agent_context,
     get_current_admin,
+    get_current_admin_or_readonly_user,
     get_current_user,
     get_repository,
     require_agent_scope,
@@ -61,9 +62,7 @@ from app.models import (
     ProfileCreate,
     ProfileIdList,
     ProfileUpdate,
-    RegistrationStatus,
     TokenResponse,
-    UserCreate,
     UserInDB,
     UserLogin,
     UserNotification,
@@ -134,32 +133,6 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/v1/auth/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-def register(payload: UserCreate, repo: BaseRepository = Depends(get_repository)) -> UserPublic:
-    if repo.has_registered_user():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Registration disabled: user already exists",
-        )
-    try:
-        user = repo.create_user(payload, hash_password(payload.password))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return UserPublic(
-        id=user.id,
-        name=user.name,
-        email=user.email,
-        admin=user.admin,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-    )
-
-
-@app.get("/api/v1/auth/registration-status", response_model=RegistrationStatus)
-def registration_status(repo: BaseRepository = Depends(get_repository)) -> RegistrationStatus:
-    return RegistrationStatus(registration_open=not repo.has_registered_user())
-
-
 @app.post("/api/v1/auth/login", response_model=TokenResponse)
 def login(payload: UserLogin, repo: BaseRepository = Depends(get_repository)) -> TokenResponse:
     user = repo.get_user_by_email(payload.email)
@@ -174,6 +147,7 @@ def auth_me(user: UserInDB = Depends(get_current_user)) -> UserPublic:
         id=user.id,
         name=user.name,
         email=user.email,
+        role=user.role,
         admin=user.admin,
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -484,7 +458,7 @@ def list_profiles(
 @app.post("/api/v1/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)
 def create_profile(
     payload: ProfileCreate,
-    user: UserInDB = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_admin_or_readonly_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Profile:
     profile = repo.create_profile(payload)
@@ -515,7 +489,7 @@ def get_profile(
 def update_profile(
     profile_id: str,
     payload: ProfileUpdate,
-    user: UserInDB = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_admin_or_readonly_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Profile:
     profile = repo.update_profile(profile_id, payload)
@@ -535,7 +509,7 @@ def update_profile(
 @app.delete("/api/v1/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_profile(
     profile_id: str,
-    user: UserInDB = Depends(get_current_user),
+    user: UserInDB = Depends(get_current_admin_or_readonly_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Response:
     deleted = repo.delete_profile(profile_id)
@@ -961,7 +935,7 @@ def list_audit(
     entity_type: str | None = None,
     from_ts: str | None = None,
     to_ts: str | None = None,
-    _: UserInDB = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_admin),
     repo: BaseRepository = Depends(get_repository),
 ):
     def _parse(ts: str | None):
@@ -982,7 +956,7 @@ def list_audit(
 
 @app.get("/api/v1/settings/workers", response_model=WorkerStateResponse)
 def get_worker_settings_route(
-    _: UserInDB = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_admin),
     repo: BaseRepository = Depends(get_repository),
 ) -> WorkerStateResponse:
     return repo.get_worker_state()
@@ -991,7 +965,7 @@ def get_worker_settings_route(
 @app.patch("/api/v1/settings/workers", response_model=WorkerSettings)
 def patch_worker_settings_route(
     payload: WorkerSettingsUpdate,
-    _: UserInDB = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_admin),
     repo: BaseRepository = Depends(get_repository),
 ) -> WorkerSettings:
     return repo.update_worker_settings(payload)
@@ -1000,7 +974,7 @@ def patch_worker_settings_route(
 @app.post("/api/v1/settings/workers/release-all")
 def release_all_workers_route(
     payload: WorkerReleaseAllRequest,
-    _: UserInDB = Depends(get_current_user),
+    _: UserInDB = Depends(get_current_admin),
     repo: BaseRepository = Depends(get_repository),
 ) -> dict[str, int]:
     released = repo.release_all_workers(payload.worker_type)

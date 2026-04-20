@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.agent_auth import hash_api_key
 from app.auth import decode_access_token
 from app.config import settings
-from app.models import AgentContext, UserInDB
+from app.models import AgentContext, UserInDB, UserRole
 from app.rate_limit import MinuteRateLimiter
 from app.repository import BaseRepository, InMemoryRepository, MongoRepository
 
@@ -39,8 +39,17 @@ def get_current_user(
 
 
 def get_current_admin(user: UserInDB = Depends(get_current_user)) -> UserInDB:
-    if not user.admin:
+    if user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
+    return user
+
+
+def get_current_admin_or_readonly_user(user: UserInDB = Depends(get_current_user)) -> UserInDB:
+    if user.role != UserRole.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Profile write access requires admin role",
+        )
     return user
 
 

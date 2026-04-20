@@ -141,11 +141,36 @@ class EmailLifecycleStatus(str, Enum):
     failed = "failed"
 
 
+class UserRole(str, Enum):
+    admin = "admin"
+    user = "user"
+
+
+def _normalize_user_role_payload(data: Any) -> Any:
+    if not isinstance(data, dict):
+        return data
+    role = data.get("role")
+    admin = data.get("admin")
+    if role in (None, ""):
+        if isinstance(admin, bool):
+            data["role"] = UserRole.admin.value if admin else UserRole.user.value
+    if admin is None and isinstance(role, (str, UserRole)):
+        role_value = role.value if isinstance(role, UserRole) else role
+        data["admin"] = role_value == UserRole.admin.value
+    return data
+
+
 class UserCreate(BaseModel):
     name: str
     email: EmailStr
     password: str = Field(min_length=8)
-    admin: bool = False
+    role: UserRole = UserRole.user
+    admin: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_role(cls, data: Any) -> Any:
+        return _normalize_user_role_payload(data)
 
 
 class UserLogin(BaseModel):
@@ -157,9 +182,15 @@ class UserPublic(BaseModel):
     id: str
     name: str
     email: EmailStr
+    role: UserRole = UserRole.user
     admin: bool
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_role(cls, data: Any) -> Any:
+        return _normalize_user_role_payload(data)
 
 
 class UserInDB(BaseModel):
@@ -167,9 +198,15 @@ class UserInDB(BaseModel):
     name: str
     email: EmailStr
     password_hash: str
+    role: UserRole = UserRole.user
     admin: bool = False
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_role(cls, data: Any) -> Any:
+        return _normalize_user_role_payload(data)
 
 
 class TokenResponse(BaseModel):
