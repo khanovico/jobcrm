@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,15 +7,22 @@ import { resetIndustryCatalogCacheForTests } from "../state/industryCatalog";
 import { CompanyDetailPage } from "./CompanyDetailPage";
 import type { Company } from "../types";
 
-const { getCompany, listApplications, listIndustries, getCompanyApplicationCount } = vi.hoisted(() => ({
-  getCompany: vi.fn(),
-  listApplications: vi.fn(),
-  listIndustries: vi.fn(),
-  getCompanyApplicationCount: vi.fn()
-}));
+const { getCompany, listApplications, listIndustries, getCompanyApplicationCount, markApplied } = vi.hoisted(
+  () => ({
+    getCompany: vi.fn(),
+    listApplications: vi.fn(),
+    listIndustries: vi.fn(),
+    getCompanyApplicationCount: vi.fn(),
+    markApplied: vi.fn()
+  })
+);
 
 vi.mock("../components/ClearCompanyResearchModal", () => ({
   ClearCompanyResearchModal: () => null
+}));
+
+vi.mock("../components/ApplicationWorkflowOverrideModal", () => ({
+  ApplicationWorkflowOverrideModal: () => null
 }));
 
 vi.mock("../api", () => ({
@@ -26,7 +33,8 @@ vi.mock("../api", () => ({
     updateCompany: vi.fn(),
     deleteCompany: vi.fn(),
     clearCompanyResearchDetail: vi.fn(),
-    getCompanyApplicationCount
+    getCompanyApplicationCount,
+    markApplied
   }
 }));
 
@@ -55,9 +63,11 @@ describe("CompanyDetailPage", () => {
     listApplications.mockReset();
     listIndustries.mockReset();
     getCompanyApplicationCount.mockReset();
+    markApplied.mockReset();
     listApplications.mockResolvedValue([]);
     listIndustries.mockResolvedValue([]);
     getCompanyApplicationCount.mockResolvedValue({ count: 0 });
+    markApplied.mockResolvedValue({ id: "a1", applied: true } as never);
   });
 
   afterEach(() => {
@@ -95,7 +105,8 @@ describe("CompanyDetailPage", () => {
       "href",
       "https://example.com/organization-detail"
     );
-    expect(screen.getByText("Indexed")).toBeInTheDocument();
+    const researchLine = screen.getByText("Research status:").parentElement!;
+    expect(within(researchLine).getByText("Indexed")).toBeInTheDocument();
   });
 
   it("hides read-only enrichment summary when research_status is pending but data exists", async () => {
@@ -126,7 +137,8 @@ describe("CompanyDetailPage", () => {
     expect(
       screen.getByText(/hidden while research status is not Indexed/i)
     ).toBeInTheDocument();
-    expect(screen.getByText("Pending")).toBeInTheDocument();
+    const researchLine = screen.getByText("Research status:").parentElement!;
+    expect(within(researchLine).getByText("Pending")).toBeInTheDocument();
 
     // Read-only card does not render overview; value only in the edit form.
     expect(screen.getByDisplayValue("Still in DB")).toBeInTheDocument();
@@ -232,7 +244,7 @@ describe("CompanyDetailPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
     expect(await screen.findByText("Page 2")).toBeInTheDocument();
-    expect(screen.getByText("archived")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.getByText("2026-02-01T00:00:00Z")).toBeInTheDocument();
   });
 });

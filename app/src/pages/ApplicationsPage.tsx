@@ -2,10 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
+import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
 import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "../applicationStatus";
+import {
+  applicationSortLabel,
+  type ApplicationTableSort
+} from "../applicationTableSort";
 import {
   getSelectedAppliedProfileNames,
   initializeSelectedAppliedProfileNames,
@@ -40,9 +45,11 @@ export const ApplicationsPage = () => {
 
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
+  const [statusOverrideApplication, setStatusOverrideApplication] = useState<ApplicationListItem | null>(null);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [tableSort, setTableSort] = useState<ApplicationTableSort>("updated_at_desc");
 
   const availableAppliedProfileNames = useMemo(
     () =>
@@ -101,8 +108,9 @@ export const ApplicationsPage = () => {
     } else if (listMode === "archived") {
       p.set("status_filter", "archived");
     }
+    p.set("sort", tableSort);
     return p;
-  }, [listMode]);
+  }, [listMode, tableSort]);
 
   const load = useCallback(
     async (targetPage = page) => {
@@ -128,6 +136,10 @@ export const ApplicationsPage = () => {
   useEffect(() => {
     setPage(1);
   }, [listMode]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tableSort]);
 
   useEffect(() => {
     void load(page);
@@ -200,6 +212,20 @@ export const ApplicationsPage = () => {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 max-w-[280px] flex-nowrap items-center gap-2">
+              <span className="shrink-0 text-xs opacity-70">Order by</span>
+              <select
+                className="select select-bordered select-sm min-w-0 grow max-w-[220px]"
+                aria-label="Order applications by"
+                value={tableSort}
+                onChange={(e) => setTableSort(e.target.value as ApplicationTableSort)}
+              >
+                <option value="updated_at_desc">{applicationSortLabel("updated_at_desc")}</option>
+                <option value="updated_at_asc">{applicationSortLabel("updated_at_asc")}</option>
+                <option value="created_at_desc">{applicationSortLabel("created_at_desc")}</option>
+                <option value="created_at_asc">{applicationSortLabel("created_at_asc")}</option>
+              </select>
+            </div>
             <div className="join join-horizontal border border-base-300">
               {(
                 [
@@ -280,6 +306,16 @@ export const ApplicationsPage = () => {
                   </td>
                   <td className="text-right">
                     <div className="flex flex-wrap justify-end gap-1">
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setStatusOverrideApplication(application);
+                        }}
+                      >
+                        Set status…
+                      </button>
                       <button
                         type="button"
                         className="btn btn-xs btn-ghost"
@@ -427,6 +463,16 @@ export const ApplicationsPage = () => {
         companies={editing ? [{ id: editing.company_id, name: editing.company_name }] : []}
         editing={editing}
         onSuccess={load}
+      />
+
+      <ApplicationWorkflowOverrideModal
+        open={statusOverrideApplication !== null}
+        onClose={() => setStatusOverrideApplication(null)}
+        application={statusOverrideApplication}
+        onSaved={async () => {
+          setStatusOverrideApplication(null);
+          await load(page);
+        }}
       />
 
       <ArchiveApplicationModal

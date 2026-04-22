@@ -149,10 +149,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload)
     }),
-  markApplied: (id: string, applied: boolean) =>
+  markApplied: (id: string, applied: boolean, options?: { force?: boolean }) =>
     request<Application>(`/api/v1/applications/${id}/mark-applied`, {
       method: "POST",
-      body: JSON.stringify({ applied })
+      body: JSON.stringify({ applied, force: options?.force ?? false })
     }),
   markApplicationEmailSent: (id: string, sent: boolean) =>
     request<Application>(`/api/v1/applications/${id}/mark-email-sent`, {

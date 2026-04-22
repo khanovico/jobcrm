@@ -1,10 +1,15 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
 import { ClearCompanyResearchModal } from "../components/ClearCompanyResearchModal";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
+import {
+  applicationStatusBadgeClass,
+  formatApplicationStatusLabel
+} from "../applicationStatus";
 import { getAllIndustries } from "../state/industryCatalog";
 import { invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Application, Company, CompanyResearchStatus, Industry } from "../types";
@@ -63,6 +68,7 @@ export const CompanyDetailPage = () => {
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [clearResearchOpen, setClearResearchOpen] = useState(false);
+  const [statusOverrideApplication, setStatusOverrideApplication] = useState<Application | null>(null);
 
   const industryNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -364,18 +370,72 @@ export const CompanyDetailPage = () => {
                       <tr>
                         <th>Status</th>
                         <th>Applied</th>
-                        <th></th>
+                        <th className="text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {applications.map((a) => (
                         <tr key={a.id}>
-                          <td>{a.status}</td>
-                          <td className="whitespace-nowrap text-xs">{a.applied_at ?? "—"}</td>
                           <td>
-                            <Link to={`/applications/${a.id}`} className="btn btn-ghost btn-xs">
-                              Open
-                            </Link>
+                            <span className={`badge badge-sm ${applicationStatusBadgeClass(a.status)}`}>
+                              {formatApplicationStatusLabel(a.status)}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap text-xs">{a.applied_at ?? "—"}</td>
+                          <td className="text-right">
+                            <div className="flex flex-wrap justify-end gap-1">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() => setStatusOverrideApplication(a)}
+                              >
+                                Set status…
+                              </button>
+                              {a.status !== "archived" && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className={`btn btn-xs ${a.applied ? "btn-outline" : "btn-success"}`}
+                                    disabled={!a.applied && a.status !== "application_ready"}
+                                    title={
+                                      !a.applied && a.status !== "application_ready"
+                                        ? "Use Force mark below when workflow rules block marking applied."
+                                        : undefined
+                                    }
+                                    onClick={async () => {
+                                      try {
+                                        await api.markApplied(a.id, !a.applied);
+                                        await loadApplicationsPage(applicationsPage);
+                                      } catch (e) {
+                                        setError((e as Error).message);
+                                      }
+                                    }}
+                                  >
+                                    {a.applied ? "Unmark" : "Mark applied"}
+                                  </button>
+                                  {!a.applied ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-xs"
+                                      title="Mark applied ignoring workflow (use when correcting data)"
+                                      onClick={async () => {
+                                        try {
+                                          await api.markApplied(a.id, true, { force: true });
+                                          await loadApplicationsPage(applicationsPage);
+                                        } catch (e) {
+                                          setError((e as Error).message);
+                                        }
+                                      }}
+                                    >
+                                      Force mark
+                                    </button>
+                                  ) : null}
+                                </>
+                              )}
+                              <Link to={`/applications/${a.id}`} className="btn btn-primary btn-outline btn-xs">
+                                Open detail
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -553,6 +613,15 @@ export const CompanyDetailPage = () => {
             onClose={() => setDeleteOpen(false)}
             company={company ? { id: company.id, name: company.name } : null}
             onDeleted={() => navigate("/companies")}
+          />
+
+          <ApplicationWorkflowOverrideModal
+            open={statusOverrideApplication !== null}
+            onClose={() => setStatusOverrideApplication(null)}
+            application={statusOverrideApplication}
+            onSaved={async () => {
+              await loadApplicationsPage(applicationsPage);
+            }}
           />
 
           <ClearCompanyResearchModal

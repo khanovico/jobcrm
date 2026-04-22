@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import Response
@@ -43,6 +44,7 @@ from app.models import (
     CompanyApplicationCountResponse,
     ClearCompanyResearchDetailRequest,
     CompanyCreate,
+    CompanyResearchStatus,
     CompanyUpdate,
     DeleteCompanyResponse,
     DashboardMetrics,
@@ -331,10 +333,26 @@ def list_companies(
     skip: int = 0,
     limit: int = 50,
     search: str | None = None,
+    sort: Literal[
+        "updated_at_desc",
+        "created_at_desc",
+        "created_at_asc",
+        "updated_at_asc",
+        "name_asc",
+    ] = "updated_at_desc",
+    research_status: CompanyResearchStatus | None = None,
+    has_application: bool | None = None,
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Company]:
-    return repo.list_companies(skip=skip, limit=limit, search=search)
+    return repo.list_companies(
+        skip=skip,
+        limit=limit,
+        search=search,
+        sort=sort,
+        research_status=research_status,
+        has_application=has_application,
+    )
 
 
 @app.post("/api/v1/companies", response_model=Company, status_code=status.HTTP_201_CREATED)
@@ -566,7 +584,12 @@ def list_applications(
     company_id: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
-    sort: str = "created_at_desc",
+    sort: Literal[
+        "updated_at_desc",
+        "updated_at_asc",
+        "created_at_desc",
+        "created_at_asc",
+    ] = "updated_at_desc",
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ApplicationListItem]:
@@ -701,7 +724,9 @@ def mark_applied(
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
     try:
-        application = repo.mark_application_applied(application_id, payload.applied)
+        application = repo.mark_application_applied(
+            application_id, payload.applied, force=payload.force
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not application:
@@ -1310,7 +1335,12 @@ def agent_list_applications(
     company_id: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
-    sort: str = "created_at_desc",
+    sort: Literal[
+        "updated_at_desc",
+        "updated_at_asc",
+        "created_at_desc",
+        "created_at_asc",
+    ] = "updated_at_desc",
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ApplicationListItem]:
