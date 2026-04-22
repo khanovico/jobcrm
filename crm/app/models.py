@@ -591,6 +591,7 @@ class AppliedProfileName(BaseModel):
 class ApplicationListItem(Application):
     """Application with resolved names for profiles marked applied on per-profile rows."""
 
+    company_name: str
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
 
 

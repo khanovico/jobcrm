@@ -305,6 +305,7 @@ def test_list_applications_includes_applied_profile_names() -> None:
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
+    assert listed[0]["company_name"] == company["name"]
     assert listed[0]["applied_profiles"] == [{"profile_name": "Alex Dev"}]
 
 
@@ -698,6 +699,7 @@ def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume()
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
+    assert listed[0]["company_name"] == company["name"]
     assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 

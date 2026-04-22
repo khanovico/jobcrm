@@ -705,9 +705,13 @@ class InMemoryRepository(BaseRepository):
         values = _sort_applications(values, sort)
         sliced = values[skip : skip + limit]
         batch = self._batch_applied_profile_names_for_applications([a.id for a in sliced])
+        company_name_by_id = {
+            company_id: company.name for company_id, company in self.companies.items()
+        }
         return [
             ApplicationListItem(
                 **a.model_dump(),
+                company_name=company_name_by_id.get(a.company_id, "Unknown company"),
                 applied_profiles=batch.get(a.id, []),
             )
             for a in sliced
