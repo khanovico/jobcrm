@@ -591,20 +591,21 @@ class InMemoryRepository(BaseRepository):
         company = self.get_company(company_id)
         if not company:
             return None
-        merged = company.model_copy(
-            update={**payload.model_dump(exclude_none=True), "updated_at": utcnow()}
-        )
+        updates = payload.model_dump(exclude_none=True)
+        skip_side = bool(updates.pop("skip_research_side_effects", False))
+        merged = company.model_copy(update={**updates, "updated_at": utcnow()})
         self.companies[company_id] = merged
-        if (
-            merged.research_status == CompanyResearchStatus.indexed
-            and company.research_status != CompanyResearchStatus.indexed
-        ):
-            self._promote_company_research_pending_to_ppa_for_company(company_id)
-        if (
-            merged.research_status == CompanyResearchStatus.invalid
-            and company.research_status != CompanyResearchStatus.invalid
-        ):
-            self._mark_applications_invalid_for_company(company_id)
+        if not skip_side:
+            if (
+                merged.research_status == CompanyResearchStatus.indexed
+                and company.research_status != CompanyResearchStatus.indexed
+            ):
+                self._promote_company_research_pending_to_ppa_for_company(company_id)
+            if (
+                merged.research_status == CompanyResearchStatus.invalid
+                and company.research_status != CompanyResearchStatus.invalid
+            ):
+                self._mark_applications_invalid_for_company(company_id)
         return merged
 
     def count_applications_for_company(self, company_id: str) -> int:
