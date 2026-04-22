@@ -1,8 +1,19 @@
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { NotificationKind, UserNotification } from "../types";
+
+const TOAST_POLL_MS = 45_000;
+const TOAST_AUTO_DISMISS_MS = 10_000;
+
+const kindLabel: Record<NotificationKind, string> = {
+  APPLICATION_UPDATE: "Application",
+  COMPANY_UPDATE: "Company",
+  SYSTEM_ERROR: "System",
+  FOLLOW_UP_DRAFT: "Follow-up draft"
+};
 
 const links = [
   { to: "/", label: "Dashboard", emoji: "📊" },
@@ -15,10 +26,36 @@ const links = [
   { to: "/settings", label: "Settings", emoji: "⚙️", adminOnly: true }
 ];
 
+type ToastItem = { toastKey: string; note: UserNotification };
+
 export const Layout = () => {
   const { logout, user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  const isFirstNotificationPollRef = useRef(true);
+  const toastDismissTimersRef = useRef<Map<string, number>>(new Map());
   const visibleLinks = links.filter((link) => !link.adminOnly || user?.role === "admin");
+
+  const dismissToast = useCallback((toastKey: string) => {
+    const tid = toastDismissTimersRef.current.get(toastKey);
+    if (tid !== undefined) window.clearTimeout(tid);
+    toastDismissTimersRef.current.delete(toastKey);
+    setToasts((prev) => prev.filter((t) => t.toastKey !== toastKey));
+  }, []);
+
+  const showToastForNote = useCallback(
+    (note: UserNotification) => {
+      const toastKey = `${note.id}-${Date.now()}`;
+      setToasts((prev) => {
+        if (prev.some((t) => t.note.id === note.id)) return prev;
+        return [...prev, { toastKey, note }];
+      });
+      const timerId = window.setTimeout(() => dismissToast(toastKey), TOAST_AUTO_DISMISS_MS);
+      toastDismissTimersRef.current.set(toastKey, timerId);
+    },
+    [dismissToast]
+  );
 
   const toggleTheme = () => {
     const current = document.documentElement.getAttribute("data-theme");
@@ -28,25 +65,42 @@ export const Layout = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const loadUnreadCount = async () => {
+    const poll = async () => {
       try {
         const unread = await api.getUnreadNotificationsCount();
         if (!cancelled) setUnreadCount(unread.count);
+
+        const rows = await api.listNotifications({ unreadOnly: true, skip: 0, limit: 25 });
+        if (cancelled) return;
+
+        if (isFirstNotificationPollRef.current) {
+          rows.forEach((n) => seenNotificationIdsRef.current.add(n.id));
+          isFirstNotificationPollRef.current = false;
+        } else {
+          for (const n of rows) {
+            if (!seenNotificationIdsRef.current.has(n.id)) {
+              seenNotificationIdsRef.current.add(n.id);
+              showToastForNote(n);
+            }
+          }
+        }
       } catch {
         if (!cancelled) setUnreadCount(0);
       }
     };
 
-    void loadUnreadCount();
+    void poll();
     const timer = window.setInterval(() => {
-      void loadUnreadCount();
-    }, 5 * 60 * 1000);
+      void poll();
+    }, TOAST_POLL_MS);
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      toastDismissTimersRef.current.forEach((tid) => window.clearTimeout(tid));
+      toastDismissTimersRef.current.clear();
     };
-  }, []);
+  }, [showToastForNote]);
 
   return (
     <div className="drawer lg:drawer-open">
@@ -75,6 +129,58 @@ export const Layout = () => {
             <Outlet />
           </Suspense>
         </main>
+        <div
+          className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[min(100vw-2rem,22rem)] flex-col gap-3"
+          aria-live="polite"
+          aria-relevant="additions"
+        >
+          {toasts.map(({ toastKey, note }) => (
+            <div
+              key={toastKey}
+              role="alert"
+              className="pointer-events-auto relative overflow-hidden rounded-xl border border-base-300 bg-base-100 p-4 shadow-xl ring-1 ring-black/5 dark:ring-white/10"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-secondary to-accent" />
+              <div className="flex gap-3 pt-1">
+                <span className="text-2xl leading-none" aria-hidden>
+                  🔔
+                </span>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-base-content/60">
+                    {kindLabel[note.notification]}
+                  </p>
+                  <p className="text-sm leading-snug text-base-content">{note.payload.message}</p>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {note.link ? (
+                      <Link
+                        to={note.link}
+                        className="btn btn-primary btn-xs"
+                        onClick={() => dismissToast(toastKey)}
+                      >
+                        Open
+                      </Link>
+                    ) : null}
+                    <Link
+                      to="/notifications"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => dismissToast(toastKey)}
+                    >
+                      View all
+                    </Link>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-circle btn-ghost shrink-0"
+                  aria-label="Dismiss notification"
+                  onClick={() => dismissToast(toastKey)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="drawer-side z-40">
         <label htmlFor="main-drawer" className="drawer-overlay" />
