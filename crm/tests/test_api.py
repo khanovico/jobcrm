@@ -13,7 +13,7 @@ from app.models import (
 )
 from app.repository import (
     InMemoryRepository,
-    RELATED_COMPANY_DELETED_ARCHIVE_REASON,
+    RELATED_COMPANY_ARCHIVED_ARCHIVE_REASON,
     RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON,
 )
 
@@ -134,7 +134,12 @@ def test_list_applications_tolerates_ppa_cold_email_plan_stored_as_dict() -> Non
             "cold_email_plan": {
                 "subjects": ["Hi"],
                 "selected_subject_index": 0,
-                "to": {"title": "Eng", "name": "Pat", "email": "pat@corp.com"},
+                "to": {
+                    "title": "Eng",
+                    "name": "Pat",
+                    "email": "pat@corp.com",
+                    "timezone": "America/New_York",
+                },
                 "status": "none",
             },
         },
@@ -155,7 +160,12 @@ def test_list_applications_tolerates_ppa_cold_email_plan_stored_as_dict() -> Non
         cold_email_plan={
             "subjects": ["Hi"],
             "selected_subject_index": 0,
-            "to": {"title": "Eng", "name": "Pat", "email": "pat@corp.com"},
+            "to": {
+                "title": "Eng",
+                "name": "Pat",
+                "email": "pat@corp.com",
+                "timezone": "America/New_York",
+            },
             "status": "none",
         },
         applied=raw.applied,
@@ -698,7 +708,7 @@ def test_company_application_count_matches_tied_applications() -> None:
     assert r2.json()["count"] == 2
 
 
-def test_delete_company_archives_all_tied_applications_then_removes_company() -> None:
+def test_archive_company_archives_all_tied_applications_and_hides_company() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -722,7 +732,11 @@ def test_delete_company_archives_all_tied_applications_then_removes_company() ->
         headers=headers,
     )
 
-    r = client.delete(f"/api/v1/companies/{company['id']}", headers=headers)
+    r = client.post(
+        f"/api/v1/companies/{company['id']}/archive",
+        json={"archive_reason": "No longer targeting"},
+        headers=headers,
+    )
     assert r.status_code == 200
     assert r.json()["applications_archived"] == 2
 
@@ -730,11 +744,51 @@ def test_delete_company_archives_all_tied_applications_then_removes_company() ->
 
     got1 = client.get(f"/api/v1/applications/{a1['id']}", headers=headers).json()
     assert got1["status"] == "archived"
-    assert got1["archive_reason"] == RELATED_COMPANY_DELETED_ARCHIVE_REASON
+    assert got1["archive_reason"] == RELATED_COMPANY_ARCHIVED_ARCHIVE_REASON
 
     got2 = client.get(f"/api/v1/applications/{a2['id']}", headers=headers).json()
     assert got2["status"] == "archived"
-    assert got2["archive_reason"] == RELATED_COMPANY_DELETED_ARCHIVE_REASON
+    assert got2["archive_reason"] == RELATED_COMPANY_ARCHIVED_ARCHIVE_REASON
+
+
+def test_archive_company_requires_reason() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Needs Reason"}, headers=headers).json()
+    r = client.post(
+        f"/api/v1/companies/{company['id']}/archive",
+        json={"archive_reason": ""},
+        headers=headers,
+    )
+    assert r.status_code == 422
+
+
+def test_create_company_rejects_duplicate_and_archived_blacklist_name() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Blocklist Co"}, headers=headers).json()
+    duplicate = client.post("/api/v1/companies", json={"name": "  blocklist co "}, headers=headers)
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"] == "Company with this name already exists"
+
+    archived = client.post(
+        f"/api/v1/companies/{company['id']}/archive",
+        json={"archive_reason": "Do not target"},
+        headers=headers,
+    )
+    assert archived.status_code == 200
+
+    blacklisted = client.post("/api/v1/companies", json={"name": "BLOCKLIST CO"}, headers=headers)
+    assert blacklisted.status_code == 400
+    assert "blacklisted by archived company" in blacklisted.json()["detail"]
 
 
 def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume() -> None:

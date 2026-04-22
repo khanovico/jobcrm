@@ -271,7 +271,7 @@ export const CompaniesPage = () => {
                           setDeleteTarget(company);
                         }}
                       >
-                        Delete
+                        Archive
                       </button>
                     </div>
                   </td>
@@ -368,7 +368,7 @@ export const CompaniesPage = () => {
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         company={deleteTarget ? { id: deleteTarget.id, name: deleteTarget.name } : null}
-        onDeleted={async () => {
+        onArchived={async () => {
           invalidateCompanySummariesCache();
           await load(page, { force: true });
           setDeleteTarget(null);

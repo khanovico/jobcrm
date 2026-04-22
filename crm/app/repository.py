@@ -54,8 +54,8 @@ from app.models import (
     validate_application_transition,
 )
 
-# Archived for every application tied to a company when that company is deleted (user UI + API).
-RELATED_COMPANY_DELETED_ARCHIVE_REASON = "Related company is deleted"
+# Archived for every application tied to a company when that company is archived (user UI + API).
+RELATED_COMPANY_ARCHIVED_ARCHIVE_REASON = "Related company is archived"
 # When company research is cleared and the user chooses to archive related applications.
 RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON = "Related company research cleared"
 
@@ -135,8 +135,8 @@ class BaseRepository:
     def count_applications_for_company(self, company_id: str) -> int:
         raise NotImplementedError
 
-    def delete_company(self, company_id: str) -> tuple[bool, int]:
-        """Delete company after archiving tied applications. Returns (deleted, applications_archived_count)."""
+    def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        """Archive company after archiving tied applications. Returns (archived, applications_archived_count)."""
         raise NotImplementedError
 
     def list_profiles(
@@ -468,7 +468,7 @@ class InMemoryRepository(BaseRepository):
         research_status: CompanyResearchStatus | None = None,
         has_application: bool | None = None,
     ) -> list[Company]:
-        values = list(self.companies.values())
+        values = [company for company in self.companies.values() if company.archived_at is None]
         if search:
             needle = search.lower()
             values = [c for c in values if needle in c.name.lower()]
@@ -482,7 +482,11 @@ class InMemoryRepository(BaseRepository):
         return self._annotate_companies_has_application(sliced)
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
-        values = [c for c in self.companies.values() if c.research_status == CompanyResearchStatus.pending]
+        values = [
+            c
+            for c in self.companies.values()
+            if c.research_status == CompanyResearchStatus.pending and c.archived_at is None
+        ]
         values.sort(key=lambda c: c.created_at)
         return values[:limit]
 
@@ -553,6 +557,14 @@ class InMemoryRepository(BaseRepository):
         return len(to_drop)
 
     def create_company(self, payload: CompanyCreate) -> Company:
+        normalized_name = payload.name.strip().lower()
+        for company in self.companies.values():
+            if company.name.strip().lower() != normalized_name:
+                continue
+            if company.archived_at is None:
+                raise ValueError("Company with this name already exists")
+            reason_suffix = f" ({company.archive_reason})" if company.archive_reason else ""
+            raise ValueError(f"Company name is blacklisted by archived company{reason_suffix}")
         now = utcnow()
         company = Company(id=self._new_id(), created_at=now, updated_at=now, **_as_dict(payload))
         self.companies[company.id] = company
@@ -560,7 +572,7 @@ class InMemoryRepository(BaseRepository):
 
     def get_company(self, company_id: str) -> Company | None:
         co = self.companies.get(company_id)
-        if not co:
+        if not co or co.archived_at is not None:
             return None
         return self._annotate_companies_has_application([co])[0]
 
@@ -647,13 +659,16 @@ class InMemoryRepository(BaseRepository):
             n += 1
         return n
 
-    def delete_company(self, company_id: str) -> tuple[bool, int]:
-        if not self.get_company(company_id):
+    def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        company = self.companies.get(company_id)
+        if not company or company.archived_at is not None:
             return (False, 0)
         archived = self._archive_all_company_applications(
-            company_id, RELATED_COMPANY_DELETED_ARCHIVE_REASON
+            company_id, RELATED_COMPANY_ARCHIVED_ARCHIVE_REASON
         )
-        self.companies.pop(company_id, None)
+        self.companies[company_id] = company.model_copy(
+            update={"archived_at": utcnow(), "archive_reason": archive_reason, "updated_at": utcnow()}
+        )
         return (True, archived)
 
     def list_profiles(
@@ -723,16 +738,13 @@ class InMemoryRepository(BaseRepository):
             em = _recipient_email_from_cold_email_plan(ppa.cold_email_plan)
             return bool(em)
 
-        def ppa_qualifies(ppa: PerProfileApplication) -> bool:
-            return ppa_has_tailored_resume(ppa) or ppa_has_email_signal(ppa)
-
         out: dict[str, list[AppliedProfileName]] = {}
         for aid in application_ids:
             rows = sorted(ppas_by_app[aid], key=lambda p: (p.order_index, p.created_at))
             seen: set[str] = set()
             names: list[AppliedProfileName] = []
             for ppa in rows:
-                if not ppa_qualifies(ppa) or ppa.profile_id in seen:
+                if ppa.profile_id in seen:
                     continue
                 seen.add(ppa.profile_id)
                 prof = self.get_profile(ppa.profile_id)
@@ -1366,8 +1378,8 @@ class MongoRepository(InMemoryRepository):
         self._sync()
         return company
 
-    def delete_company(self, company_id: str) -> tuple[bool, int]:
-        ok, n = super().delete_company(company_id)
+    def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        ok, n = super().archive_company(company_id, archive_reason)
         if ok:
             self._sync()
         return (ok, n)

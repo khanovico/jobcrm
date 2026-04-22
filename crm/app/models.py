@@ -337,6 +337,10 @@ class DeleteCompanyResponse(BaseModel):
     applications_archived: int
 
 
+class ArchiveCompanyRequest(BaseModel):
+    archive_reason: str = Field(min_length=1, description="Reason for archiving this company.")
+
+
 class ClearCompanyResearchDetailRequest(BaseModel):
     """How to handle applications tied to the company when clearing research status."""
 
@@ -347,6 +351,8 @@ class Company(CompanyBase):
     id: str
     created_at: datetime
     updated_at: datetime
+    archived_at: datetime | None = None
+    archive_reason: str | None = None
     has_application: bool = Field(
         default=False,
         description="True when at least one application exists for this company (set by API when listing/reading).",
@@ -560,6 +566,7 @@ class ColdEmailRecipient(BaseModel):
     title: str
     name: str
     email: str | None = None
+    timezone: str | None = None
 
 
 class ColdEmailPlan(BaseModel):
@@ -631,6 +638,7 @@ class ApplicationDetailResponse(BaseModel):
 class EmailBase(BaseModel):
     per_profile_application_id: str
     kind: EmailKind
+    to: ColdEmailRecipient | None = None
     content: str
     lifecycle_status: EmailLifecycleStatus = EmailLifecycleStatus.drafted
     sent: bool = False
@@ -642,6 +650,7 @@ class EmailCreate(EmailBase):
 
 
 class EmailUpdate(BaseModel):
+    to: ColdEmailRecipient | None = None
     content: str | None = None
     lifecycle_status: EmailLifecycleStatus | None = None
     sent: bool | None = None

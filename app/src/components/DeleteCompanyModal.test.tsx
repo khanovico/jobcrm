@@ -4,52 +4,53 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeleteCompanyModal } from "./DeleteCompanyModal";
 
-const { getCompanyApplicationCount, deleteCompany } = vi.hoisted(() => ({
+const { getCompanyApplicationCount, archiveCompany } = vi.hoisted(() => ({
   getCompanyApplicationCount: vi.fn(),
-  deleteCompany: vi.fn()
+  archiveCompany: vi.fn()
 }));
 
 vi.mock("../api", () => ({
   api: {
     getCompanyApplicationCount,
-    deleteCompany
+    archiveCompany
   }
 }));
 
 describe("DeleteCompanyModal", () => {
   beforeEach(() => {
     getCompanyApplicationCount.mockReset();
-    deleteCompany.mockReset();
+    archiveCompany.mockReset();
     getCompanyApplicationCount.mockResolvedValue({ count: 2 });
-    deleteCompany.mockResolvedValue({ applications_archived: 2 });
+    archiveCompany.mockResolvedValue({ applications_archived: 2 });
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it("loads application count and explains archiving on submit", async () => {
+  it("loads application count and archives with provided reason on submit", async () => {
     const onClose = vi.fn();
-    const onDeleted = vi.fn();
+    const onArchived = vi.fn();
 
     render(
       <DeleteCompanyModal
         open
         onClose={onClose}
         company={{ id: "c1", name: "Acme" }}
-        onDeleted={onDeleted}
+        onArchived={onArchived}
       />
     );
 
     expect(await screen.findByText(/2/)).toBeInTheDocument();
-    expect(screen.getByText(/Related company is deleted/)).toBeInTheDocument();
+    expect(screen.getByText(/Related company is archived/)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Delete company" }));
+    await userEvent.type(screen.getByLabelText("Archive reason"), "No longer target");
+    await userEvent.click(screen.getByRole("button", { name: "Archive company" }));
 
     await waitFor(() => {
-      expect(deleteCompany).toHaveBeenCalledWith("c1");
+      expect(archiveCompany).toHaveBeenCalledWith("c1", "No longer target");
     });
-    expect(onDeleted).toHaveBeenCalled();
+    expect(onArchived).toHaveBeenCalled();
   });
 
   it("shows zero applications when count is 0", async () => {
@@ -60,7 +61,7 @@ describe("DeleteCompanyModal", () => {
         open
         onClose={vi.fn()}
         company={{ id: "c1", name: "Solo" }}
-        onDeleted={vi.fn()}
+        onArchived={vi.fn()}
       />
     );
 

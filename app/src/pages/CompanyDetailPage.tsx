@@ -66,7 +66,7 @@ export const CompanyDetailPage = () => {
   const [selectedIndustryIds, setSelectedIndustryIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [clearResearchOpen, setClearResearchOpen] = useState(false);
   const [statusOverrideApplication, setStatusOverrideApplication] = useState<Application | null>(null);
 
@@ -601,18 +601,18 @@ export const CompanyDetailPage = () => {
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving ? "Saving…" : "Save changes"}
                 </button>
-                <button type="button" className="btn btn-outline btn-error" onClick={() => setDeleteOpen(true)}>
-                  Delete company
+                <button type="button" className="btn btn-outline btn-error" onClick={() => setArchiveOpen(true)}>
+                  Archive company
                 </button>
               </div>
             </form>
           </div>
 
           <DeleteCompanyModal
-            open={deleteOpen}
-            onClose={() => setDeleteOpen(false)}
+            open={archiveOpen}
+            onClose={() => setArchiveOpen(false)}
             company={company ? { id: company.id, name: company.name } : null}
-            onDeleted={() => navigate("/companies")}
+            onArchived={() => navigate("/companies")}
           />
 
           <ApplicationWorkflowOverrideModal

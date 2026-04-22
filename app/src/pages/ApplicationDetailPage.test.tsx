@@ -145,7 +145,12 @@ describe("ApplicationDetailPage", () => {
         cold_email_plan: {
           subjects: ["Quick intro", "LLM reliability for legal workflows", "15-minute chat?"],
           selected_subject_index: 1,
-          to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
+          to: {
+            title: "Hiring Manager",
+            name: "Benjamin",
+            email: "benjamin@lawgoat.com",
+            timezone: "America/New_York"
+          },
           status: "ready"
         },
         applied: false,
@@ -306,7 +311,12 @@ describe("ApplicationDetailPage", () => {
         cold_email_plan: {
           subjects: ["Quick intro", "LLM reliability for legal workflows", "15-minute chat?"],
           selected_subject_index: 1,
-          to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
+          to: {
+            title: "Hiring Manager",
+            name: "Benjamin",
+            email: "benjamin@lawgoat.com",
+            timezone: "America/New_York"
+          },
           status: "ready"
         },
         applied: false,
@@ -351,7 +361,7 @@ describe("ApplicationDetailPage", () => {
     expect(screen.getAllByText("15-minute chat?").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Subject:").length).toBeGreaterThan(0);
     expect(screen.getAllByText("To:").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Hiring Manager - Benjamin (benjamin@lawgoat.com)").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Hiring Manager - Benjamin (benjamin@lawgoat.com) [America/New_York]").length).toBeGreaterThan(0);
     const emphasis = screen.getByText("team");
     expect(emphasis.tagName).toBe("STRONG");
     expect(container.querySelector("script")).toBeNull();
@@ -420,7 +430,12 @@ describe("ApplicationDetailPage", () => {
         cold_email_plan: {
           subjects: ["Subject A", "Subject B", "Subject C"],
           selected_subject_index: 0,
-          to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
+          to: {
+            title: "Hiring Manager",
+            name: "Benjamin",
+            email: "benjamin@lawgoat.com",
+            timezone: "America/New_York"
+          },
           status: "ready"
         },
         applied: false,
@@ -457,7 +472,12 @@ describe("ApplicationDetailPage", () => {
       cold_email_plan: {
         subjects: ["Subject A", "Subject B", "Subject C"],
         selected_subject_index: 2,
-        to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
+        to: {
+          title: "Hiring Manager",
+          name: "Benjamin",
+          email: "benjamin@lawgoat.com",
+          timezone: "America/New_York"
+        },
         status: "ready"
       },
       applied: false,
@@ -482,7 +502,12 @@ describe("ApplicationDetailPage", () => {
         cold_email_plan: {
           subjects: ["Subject A", "Subject B", "Subject C"],
           selected_subject_index: 2,
-          to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
+          to: {
+            title: "Hiring Manager",
+            name: "Benjamin",
+            email: "benjamin@lawgoat.com",
+            timezone: "America/New_York"
+          },
           status: "ready"
         }
       });
@@ -553,7 +578,12 @@ describe("ApplicationDetailPage", () => {
       cold_email_plan: {
         subjects: ["Subject A", "Subject B"],
         selected_subject_index: 0,
-        to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com" },
+        to: {
+          title: "CTO",
+          name: "Benjamin Kim",
+          email: "bk@lawgoat.com",
+          timezone: "America/Los_Angeles"
+        },
         status: "ready"
       },
       applied: false,
@@ -578,6 +608,8 @@ describe("ApplicationDetailPage", () => {
     await user.type(screen.getByLabelText("Recipient name"), "Benjamin Kim");
     await user.clear(screen.getByLabelText("Recipient email"));
     await user.type(screen.getByLabelText("Recipient email"), "bk@lawgoat.com");
+    await user.clear(screen.getByLabelText("Recipient timezone"));
+    await user.type(screen.getByLabelText("Recipient timezone"), "America/Los_Angeles");
     await user.click(screen.getByRole("button", { name: "Save recipient" }));
 
     await waitFor(() => {
@@ -585,12 +617,17 @@ describe("ApplicationDetailPage", () => {
         cold_email_plan: {
           subjects: ["Subject A", "Subject B"],
           selected_subject_index: 0,
-          to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com" },
+          to: {
+            title: "CTO",
+            name: "Benjamin Kim",
+            email: "bk@lawgoat.com",
+            timezone: "America/Los_Angeles"
+          },
           status: "ready"
         }
       });
     });
-    expect(screen.getByText("CTO - Benjamin Kim (bk@lawgoat.com)")).toBeInTheDocument();
+    expect(screen.getByText("CTO - Benjamin Kim (bk@lawgoat.com) [America/Los_Angeles]")).toBeInTheDocument();
   });
 
   it("shows unmark actions when application and email are already marked", async () => {

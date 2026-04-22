@@ -411,6 +411,60 @@ def test_agent_archive_application_with_reason() -> None:
     assert upd.json()["archive_reason"] == "Role filled"
 
 
+def test_agent_create_email_accepts_recipient_timezone() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_admin(client)
+    h = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "jaa-email-tz"}, headers=h)
+    raw_key = key_resp.json()["raw_key"]
+    ak = {"X-API-Key": raw_key}
+
+    company = client.post("/api/v1/companies", json={"name": "TZ Co"}, headers=h).json()
+    profile = client.post(
+        "/api/v1/profiles",
+        json={
+            "name": "TZ Profile",
+            "location": "Remote",
+            "email": "tz@example.com",
+            "phone": "+10000000013",
+            "educations": [{"university_name": "U", "from_year": 2020, "to_year": 2024}],
+            "bio_md": "Bio",
+            "niche_info_md": "Niche",
+        },
+        headers=h,
+    ).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=h,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={"application_id": application["id"], "profile_id": profile["id"]},
+        headers=h,
+    ).json()
+
+    email_resp = client.post(
+        "/api/v1/agent/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "to": {
+                "title": "VP Engineering",
+                "name": "Jamie Doe",
+                "email": "jamie@tzco.example",
+                "timezone": "America/Los_Angeles",
+            },
+            "content": "Hello from agent",
+        },
+        headers=ak,
+    )
+    assert email_resp.status_code == 201
+    assert email_resp.json()["to"]["timezone"] == "America/Los_Angeles"
+
+
 def test_agent_notification_requires_payload_id_for_application_update() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

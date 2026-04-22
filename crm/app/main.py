@@ -41,6 +41,7 @@ from app.models import (
     AuditEvent,
     AuditListQuery,
     Company,
+    ArchiveCompanyRequest,
     CompanyApplicationCountResponse,
     ClearCompanyResearchDetailRequest,
     CompanyCreate,
@@ -361,7 +362,10 @@ def create_company(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Company:
-    company = repo.create_company(payload)
+    try:
+        company = repo.create_company(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _audit(
         repo,
         actor_type=ActorType.user,
@@ -420,23 +424,27 @@ def company_application_count(
     return CompanyApplicationCountResponse(count=repo.count_applications_for_company(company_id))
 
 
-@app.delete("/api/v1/companies/{company_id}", response_model=DeleteCompanyResponse)
-def delete_company(
+@app.post("/api/v1/companies/{company_id}/archive", response_model=DeleteCompanyResponse)
+def archive_company(
     company_id: str,
+    payload: ArchiveCompanyRequest,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> DeleteCompanyResponse:
-    deleted, applications_archived = repo.delete_company(company_id)
-    if not deleted:
+    archived, applications_archived = repo.archive_company(company_id, payload.archive_reason)
+    if not archived:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
     _audit(
         repo,
         actor_type=ActorType.user,
         actor_id=user.id,
-        action="delete",
+        action="archive",
         entity_type="company",
         entity_id=company_id,
-        metadata={"applications_archived": applications_archived},
+        metadata={
+            "archive_reason": payload.archive_reason,
+            "applications_archived": applications_archived,
+        },
     )
     return DeleteCompanyResponse(applications_archived=applications_archived)
 
