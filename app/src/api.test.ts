@@ -58,4 +58,16 @@ describe("api auth request handling", () => {
 
     await expect(api.login("demo@example.com", "bad-pass")).rejects.toThrow("Invalid credentials");
   });
+
+  it("sends bulk delete body for deleteNotificationsBulk", async () => {
+    localStorage.setItem("jobcrm-token", "t1");
+    fetchMock.mockResolvedValueOnce(mockJsonResponse({ deleted: 2 }));
+
+    const out = await api.deleteNotificationsBulk(["a", "b"]);
+    expect(out).toEqual({ deleted: 2 });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/notifications");
+    expect(init.method).toBe("DELETE");
+    expect(init.body).toBe(JSON.stringify({ ids: ["a", "b"] }));
+  });
 });
