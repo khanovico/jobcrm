@@ -168,6 +168,7 @@ export const api = {
     company_name: string;
     company_website?: string | null;
     job_post?: { job_link?: string | null; job_description?: string | null } | null;
+    acknowledge_reuse_of_archived_company?: boolean;
   }) =>
     request<Application>("/api/v1/applications/bootstrap", {
       method: "POST",
