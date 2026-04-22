@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
@@ -40,8 +40,9 @@ export const ApplicationsPage = () => {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
+  const hasLoadedCompaniesRef = useRef(false);
 
-  const companyNameById = (id: string) => companies.find((c) => c.id === id)?.name ?? id;
+  const companyNameById = useMemo(() => new Map(companies.map((company) => [company.id, company.name])), [companies]);
 
   const availableAppliedProfileNames = useMemo(
     () =>
@@ -103,21 +104,28 @@ export const ApplicationsPage = () => {
     return p;
   }, [listMode]);
 
-  const load = async () => {
-    setError(null);
-    try {
-      const [applicationItems, companyItems, workers] = await Promise.all([
-        api.listApplications(listParams),
-        api.listCompanies(),
-        api.getWorkerState().catch(() => null)
-      ]);
-      setItems(applicationItems);
-      setCompanies(companyItems);
-      setWorkerState(workers);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
+  const load = useCallback(
+    async (options?: { includeCompanies?: boolean }) => {
+      setError(null);
+      const shouldLoadCompanies = options?.includeCompanies ?? !hasLoadedCompaniesRef.current;
+      try {
+        const [applicationItems, workers, companyItems] = await Promise.all([
+          api.listApplications(listParams),
+          api.getWorkerState().catch(() => null),
+          shouldLoadCompanies ? api.listCompanies() : Promise.resolve(null)
+        ]);
+        setItems(applicationItems);
+        setWorkerState(workers);
+        if (companyItems) {
+          setCompanies(companyItems);
+          hasLoadedCompaniesRef.current = true;
+        }
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    },
+    [listParams]
+  );
 
   useEffect(() => {
     void load();
@@ -203,7 +211,7 @@ export const ApplicationsPage = () => {
                 </button>
               ))}
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load({ includeCompanies: true })}>
               Refresh
             </button>
             <button
@@ -249,7 +257,7 @@ export const ApplicationsPage = () => {
                   className="cursor-pointer hover:bg-base-200"
                   onClick={() => navigate(`/applications/${application.id}`)}
                 >
-                  <td className="font-medium">{companyNameById(application.company_id)}</td>
+                  <td className="font-medium">{companyNameById.get(application.company_id) ?? application.company_id}</td>
                   <td>
                     <span className={`${applicationStatusBadgeClass(application.status)} badge-sm`}>
                       {formatApplicationStatusLabel(application.status)}
@@ -399,7 +407,7 @@ export const ApplicationsPage = () => {
           setArchiveTarget(null);
         }}
         applicationId={archiveTarget?.id ?? ""}
-        companyLabel={archiveTarget ? companyNameById(archiveTarget.company_id) : ""}
+        companyLabel={archiveTarget ? companyNameById.get(archiveTarget.company_id) ?? archiveTarget.company_id : ""}
         onArchived={load}
       />
     </div>

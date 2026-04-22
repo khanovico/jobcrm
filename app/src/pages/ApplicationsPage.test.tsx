@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -310,6 +310,51 @@ describe("ApplicationsPage", () => {
       .map(([input]) => (typeof input === "string" ? input : input.toString()))
       .filter((url) => isApplicationsListRequest(url));
     expect(listCalls.some((url) => url.includes("applied=true"))).toBe(true);
+  });
+
+  it("does not refetch companies when switching application list modes", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.endsWith("/companies"))
+    ).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Applied" }));
+
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => isApplicationsListRequest(url));
+      expect(listCalls.some((url) => url.includes("applied=true"))).toBe(true);
+    });
+
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.endsWith("/companies"))
+    ).toHaveLength(1);
   });
 
   it("uses highlighted badge style for *_ready statuses", async () => {
