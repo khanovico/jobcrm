@@ -13,12 +13,13 @@ type Props = {
   open: boolean;
   onClose: () => void;
   company: CompanyRef | null;
-  onDeleted: () => void | Promise<void>;
+  onArchived: () => void | Promise<void>;
 };
 
-export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props) => {
+export const DeleteCompanyModal = ({ open, onClose, company, onArchived }: Props) => {
   const [count, setCount] = useState<number | null>(null);
   const [countError, setCountError] = useState<string | null>(null);
+  const [archiveReason, setArchiveReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +27,7 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
     if (!open || !company) {
       setCount(null);
       setCountError(null);
+      setArchiveReason("");
       setError(null);
       setSubmitting(false);
       return;
@@ -60,13 +62,17 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!company) return;
+    if (!archiveReason.trim()) {
+      setError("Archive reason is required.");
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
-      await api.deleteCompany(company.id);
+      await api.archiveCompany(company.id, archiveReason.trim());
       invalidateCompanySummariesCache();
       close();
-      await onDeleted();
+      await onArchived();
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -75,16 +81,17 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
   };
 
   return (
-    <Modal open={open} onClose={close} title="Delete company" size="md">
+    <Modal open={open} onClose={close} title="Archive company" size="md">
       <form className="space-y-3" onSubmit={onSubmit}>
         {company && (
           <>
             <p className="text-sm leading-relaxed opacity-90">
-              Permanently delete <span className="font-medium">{company.name}</span>? This cannot be undone.
+              Archive <span className="font-medium">{company.name}</span>? This will hide the company and archive tied
+              applications.
             </p>
             {countError && (
               <p className="text-sm text-warning">
-                Could not load application count: {countError}. You can still delete; tied applications will be
+                Could not load application count: {countError}. You can still archive; tied applications will be
                 archived.
               </p>
             )}
@@ -96,7 +103,7 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
                   <>
                     <strong>{count}</strong> application{count === 1 ? "" : "s"} tied to this company will be{" "}
                     <strong>archived</strong> with reason{" "}
-                    <span className="font-mono text-xs opacity-90">&quot;Related company is deleted&quot;</span>.
+                    <span className="font-mono text-xs opacity-90">&quot;Related company is archived&quot;</span>.
                   </>
                 )}
               </p>
@@ -104,6 +111,16 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
             {count === null && !countError && company && (
               <p className="text-sm opacity-70">Loading application count…</p>
             )}
+            <label className="form-control w-full">
+              <span className="label-text">Archive reason</span>
+              <input
+                className="input input-bordered w-full"
+                value={archiveReason}
+                onChange={(event) => setArchiveReason(event.target.value)}
+                placeholder="e.g. Duplicate company, no longer target"
+                required
+              />
+            </label>
           </>
         )}
         {error && <p className="text-sm text-error">{error}</p>}
@@ -114,9 +131,9 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
           <button
             type="submit"
             className="btn btn-error"
-            disabled={submitting || !company || !countReady}
+            disabled={submitting || !company || !countReady || !archiveReason.trim()}
           >
-            {submitting ? "Deleting…" : "Delete company"}
+            {submitting ? "Archiving…" : "Archive company"}
           </button>
         </div>
       </form>

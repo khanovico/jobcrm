@@ -7,18 +7,23 @@ import { resetIndustryCatalogCacheForTests } from "../state/industryCatalog";
 import { CompanyDetailPage } from "./CompanyDetailPage";
 import type { Company } from "../types";
 
-const { getCompany, listApplications, listIndustries, getCompanyApplicationCount, markApplied } = vi.hoisted(
+const { getCompany, listApplications, listIndustries, getCompanyApplicationCount, markApplied, archiveCompany } = vi.hoisted(
   () => ({
     getCompany: vi.fn(),
     listApplications: vi.fn(),
     listIndustries: vi.fn(),
     getCompanyApplicationCount: vi.fn(),
-    markApplied: vi.fn()
+    markApplied: vi.fn(),
+    archiveCompany: vi.fn()
   })
 );
 
 vi.mock("../components/ClearCompanyResearchModal", () => ({
   ClearCompanyResearchModal: () => null
+}));
+
+vi.mock("../components/DeleteCompanyModal", () => ({
+  DeleteCompanyModal: () => null
 }));
 
 vi.mock("../components/ApplicationWorkflowOverrideModal", () => ({
@@ -31,7 +36,7 @@ vi.mock("../api", () => ({
     listApplications,
     listIndustries,
     updateCompany: vi.fn(),
-    deleteCompany: vi.fn(),
+    archiveCompany,
     clearCompanyResearchDetail: vi.fn(),
     getCompanyApplicationCount,
     markApplied
@@ -64,10 +69,12 @@ describe("CompanyDetailPage", () => {
     listIndustries.mockReset();
     getCompanyApplicationCount.mockReset();
     markApplied.mockReset();
+    archiveCompany.mockReset();
     listApplications.mockResolvedValue([]);
     listIndustries.mockResolvedValue([]);
     getCompanyApplicationCount.mockResolvedValue({ count: 0 });
     markApplied.mockResolvedValue({ id: "a1", applied: true } as never);
+    archiveCompany.mockResolvedValue({ applications_archived: 0 });
   });
 
   afterEach(() => {

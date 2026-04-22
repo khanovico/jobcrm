@@ -117,8 +117,11 @@ export const api = {
     request<Company>(`/api/v1/companies/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   getCompanyApplicationCount: (companyId: string) =>
     request<{ count: number }>(`/api/v1/companies/${companyId}/application-count`),
-  deleteCompany: (id: string) =>
-    request<{ applications_archived: number }>(`/api/v1/companies/${id}`, { method: "DELETE" }),
+  archiveCompany: (id: string, archiveReason: string) =>
+    request<{ applications_archived: number }>(`/api/v1/companies/${id}/archive`, {
+      method: "POST",
+      body: JSON.stringify({ archive_reason: archiveReason })
+    }),
   listProfiles: () => request<Profile[]>("/api/v1/profiles"),
   listProfileSummaries: (params?: URLSearchParams) =>
     request<ProfileListItem[]>(`/api/v1/profiles/summary${params ? `?${params.toString()}` : ""}`),
