@@ -87,7 +87,7 @@ description: "JobCRM Agent HTTP API for external automations and worker clients.
 | **email_life** | `drafted`, `sent`, `received`, `timed_out`, `failed` |
 | **notif_kind** | `APPLICATION_UPDATE`, `COMPANY_UPDATE`, `SYSTEM_ERROR`, `FOLLOW_UP_DRAFT` |
 | **notif_sev** | `SUCCESS`, `FAILED`, `WARN` |
-| **cold_plan** | `{ "subjects": string[], "selected_subject_index": number, "to": null \| { "title", "name", "email"? }, "status": "none"\|"received"\|"timed_out"\|"down" }` |
+| **cold_plan** | `{ "subjects": string[], "selected_subject_index": number, "to": null \| { "title", "name", "email"?, "timezone"? }, "status": "none"\|"received"\|"timed_out"\|"down" }` — `to.timezone` is optional (IANA id or free-text label for the recipient). |
 
 ---
 
