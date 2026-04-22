@@ -37,27 +37,32 @@ const AdminOnlyOutlet = () => {
 
 export default function App() {
   return (
-    <Suspense fallback={<PageFallback />}>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<PrivateOutlet />}>
-          <Route element={<Layout />}>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/companies" element={<CompaniesPage />} />
-            <Route path="/companies/:companyId" element={<CompanyDetailPage />} />
-            <Route path="/profiles" element={<ProfilesPage />} />
-            <Route path="/profiles/:profileId" element={<ProfileDetailPage />} />
-            <Route path="/applications" element={<ApplicationsPage />} />
-            <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
-            <Route path="/industries" element={<IndustriesPage />} />
-            <Route element={<AdminOnlyOutlet />}>
-              <Route path="/audit" element={<AuditPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Route>
-            <Route path="/notifications" element={<NotificationsPage />} />
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={<PageFallback />}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
+      <Route element={<PrivateOutlet />}>
+        <Route element={<Layout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/companies" element={<CompaniesPage />} />
+          <Route path="/companies/:companyId" element={<CompanyDetailPage />} />
+          <Route path="/profiles" element={<ProfilesPage />} />
+          <Route path="/profiles/:profileId" element={<ProfileDetailPage />} />
+          <Route path="/applications" element={<ApplicationsPage />} />
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+          <Route path="/industries" element={<IndustriesPage />} />
+          <Route element={<AdminOnlyOutlet />}>
+            <Route path="/audit" element={<AuditPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
+          <Route path="/notifications" element={<NotificationsPage />} />
         </Route>
-      </Routes>
-    </Suspense>
+      </Route>
+    </Routes>
   );
 }

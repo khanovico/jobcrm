@@ -14,3 +14,4 @@
 - `2026-04-21` `GET /profiles/summary` + `ProfilesPage`: added a lightweight paginated profile-summary route so the profiles table stops loading full profile documents (bio/resume markdown) for list view.
 - `2026-04-21` `NewApplicationModal`: replaced the “load every company into a giant select” flow with bounded company search (`limit=20`) so application create/edit no longer pages through the full company catalog.
 - `2026-04-21` `App` routes: lazy-loaded page bundles with `React.lazy` + `Suspense` so the shell stops paying the up-front parse/download cost for every screen on first load.
+- `2026-04-21` `Layout` + `App`: moved lazy-route loading fallback into the main content outlet so first-time page navigations keep the side panel mounted and show loading state only in the content panel.

@@ -1,4 +1,5 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { lazy } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -116,5 +117,39 @@ describe("Layout", () => {
     const nav = await screen.findByRole("navigation", { name: "Main" });
     expect(within(nav).queryByRole("link", { name: /Settings/i })).not.toBeInTheDocument();
     expect(within(nav).queryByRole("link", { name: /Audit/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps the sidebar mounted while a lazy route loads", async () => {
+    getUnreadNotificationsCount.mockResolvedValue({ count: 0 });
+    let resolveLazyRoute: ((value: { default: () => JSX.Element }) => void) | null = null;
+    const LazyRoute = lazy(
+      () =>
+        new Promise<{ default: () => JSX.Element }>((resolve) => {
+          resolveLazyRoute = resolve;
+        })
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/applications"]}>
+        <AuthProvider>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/applications" element={<LazyRoute />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
+    expect(screen.getByText("Loading page...")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Applications/i })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveLazyRoute?.({ default: () => <div>Applications page</div> });
+    });
+
+    expect(await screen.findByText("Applications page")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
   });
 });
