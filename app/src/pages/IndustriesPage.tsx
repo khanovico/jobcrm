@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { api } from "../api";
+import { invalidateIndustryCatalogCache } from "../state/industryCatalog";
 import { Industry } from "../types";
 
 export const IndustriesPage = () => {
@@ -50,6 +51,7 @@ export const IndustriesPage = () => {
     setSubmitting(true);
     try {
       await api.createIndustry({ name, description });
+      invalidateIndustryCatalogCache();
       setName("");
       setDescription("");
       await load();
@@ -90,6 +92,7 @@ export const IndustriesPage = () => {
     try {
       const industries = parseBulkEntries(bulkText);
       await api.bulkCreateIndustries({ industries });
+      invalidateIndustryCatalogCache();
       setBulkText("");
       await load();
       setSuccess(`${industries.length} industries created.`);
@@ -127,6 +130,7 @@ export const IndustriesPage = () => {
         name: editName.trim(),
         description: editDescription.trim()
       });
+      invalidateIndustryCatalogCache();
       await load();
       cancelEdit();
       setSuccess("Industry updated.");
@@ -146,6 +150,7 @@ export const IndustriesPage = () => {
     setSuccess(null);
     try {
       await api.deleteIndustry(industry.id);
+      invalidateIndustryCatalogCache();
       await load();
       setSuccess(`Deleted "${industry.name}".`);
     } catch (err) {
