@@ -24,6 +24,17 @@ describe("ApplicationsPage", () => {
 
   const isApplicationsListRequest = (url: string) => url.split("?")[0].endsWith("/applications");
 
+  const profileListItem = (id: string, name: string) => ({
+    id,
+    name,
+    frozen: false,
+    location: null as null,
+    email: null,
+    phone: null,
+    created_at: "",
+    updated_at: ""
+  });
+
   const companyRow = {
     id: "c1",
     name: "Acme",
@@ -542,6 +553,18 @@ describe("ApplicationsPage", () => {
           )
         );
       }
+      if (url.includes("/profiles/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              profileListItem("p1", "Alice Park"),
+              profileListItem("p2", "Bob Stone"),
+              profileListItem("p3", "Carla Kim")
+            ]),
+            { status: 200 }
+          )
+        );
+      }
       if (url.endsWith("/companies")) {
         return Promise.resolve(
           new Response(
@@ -606,6 +629,11 @@ describe("ApplicationsPage", () => {
           )
         );
       }
+      if (url.includes("/profiles/summary")) {
+        return Promise.resolve(
+          new Response(JSON.stringify([profileListItem("p1", "Alice Park")]), { status: 200 })
+        );
+      }
       if (url.endsWith("/companies")) {
         return Promise.resolve(
           new Response(
@@ -613,14 +641,6 @@ describe("ApplicationsPage", () => {
               { ...companyRow, id: "c1", name: "Acme" },
               { ...companyRow, id: "c2", name: "Beta" }
             ]),
-            { status: 200 }
-          )
-        );
-      }
-      if (url.endsWith("/profiles")) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify([{ id: "p1", name: "Alice Park", created_at: "", updated_at: "" }]),
             { status: 200 }
           )
         );
@@ -670,6 +690,14 @@ describe("ApplicationsPage", () => {
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
             ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/profiles/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([profileListItem("p1", "Alice Park"), profileListItem("p2", "Carla Kim")]),
             { status: 200 }
           )
         );

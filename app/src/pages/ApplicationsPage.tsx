@@ -50,20 +50,25 @@ export const ApplicationsPage = () => {
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [tableSort, setTableSort] = useState<ApplicationTableSort>("updated_at_desc");
+  const [profileNamesForFilter, setProfileNamesForFilter] = useState<string[]>([]);
 
-  const availableAppliedProfileNames = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          items.flatMap((application) =>
-            (application.applied_profiles ?? [])
-              .map((profile) => profile.profile_name?.trim())
-              .filter((profileName): profileName is string => Boolean(profileName))
-          )
-        )
-      ).sort((a, b) => a.localeCompare(b)),
-    [items]
-  );
+  const loadProfileNamesForFilter = useCallback(async () => {
+    try {
+      const summaries = await api.listAllProfileSummaries();
+      const names = Array.from(
+        new Set(summaries.map((row) => row.name.trim()).filter((n) => n.length > 0))
+      ).sort((a, b) => a.localeCompare(b));
+      setProfileNamesForFilter(names);
+    } catch {
+      setProfileNamesForFilter([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProfileNamesForFilter();
+  }, [loadProfileNamesForFilter]);
+
+  const availableAppliedProfileNames = profileNamesForFilter;
 
   useEffect(() => {
     if (availableAppliedProfileNames.length === 0) {
@@ -126,11 +131,12 @@ export const ApplicationsPage = () => {
         setItems(applicationItems);
         setHasNextPage(applicationItems.length === PAGE_SIZE);
         setWorkerState(workers);
+        void loadProfileNamesForFilter();
       } catch (e) {
         setError((e as Error).message);
       }
     },
-    [listParams, page]
+    [listParams, page, loadProfileNamesForFilter]
   );
 
   useEffect(() => {

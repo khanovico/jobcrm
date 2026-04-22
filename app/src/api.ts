@@ -119,7 +119,20 @@ export const api = {
     request<{ count: number }>(`/api/v1/companies/${companyId}/application-count`),
   deleteCompany: (id: string) =>
     request<{ applications_archived: number }>(`/api/v1/companies/${id}`, { method: "DELETE" }),
-  listProfiles: () => request<Profile[]>("/api/v1/profiles"),
+  listProfiles: (params?: URLSearchParams) =>
+    request<Profile[]>(`/api/v1/profiles${params ? `?${params.toString()}` : ""}`),
+  /** Paginates summary until exhausted — for filters that need every profile name. */
+  listAllProfileSummaries: async () => {
+    const pageSize = 200;
+    const all: ProfileListItem[] = [];
+    for (let skip = 0; ; skip += pageSize) {
+      const params = new URLSearchParams({ skip: String(skip), limit: String(pageSize) });
+      const chunk = await request<ProfileListItem[]>(`/api/v1/profiles/summary?${params.toString()}`);
+      all.push(...chunk);
+      if (chunk.length < pageSize) break;
+    }
+    return all;
+  },
   listProfileSummaries: (params?: URLSearchParams) =>
     request<ProfileListItem[]>(`/api/v1/profiles/summary${params ? `?${params.toString()}` : ""}`),
   getProfile: (id: string) => request<Profile>(`/api/v1/profiles/${id}`),
