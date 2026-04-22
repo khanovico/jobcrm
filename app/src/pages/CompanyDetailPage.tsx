@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
 import { ClearCompanyResearchModal } from "../components/ClearCompanyResearchModal";
-import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
+import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
 import {
@@ -66,7 +66,7 @@ export const CompanyDetailPage = () => {
   const [selectedIndustryIds, setSelectedIndustryIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [clearResearchOpen, setClearResearchOpen] = useState(false);
   const [statusOverrideApplication, setStatusOverrideApplication] = useState<Application | null>(null);
 
@@ -193,6 +193,14 @@ export const CompanyDetailPage = () => {
       {!company && !error && <span className="loading loading-spinner" />}
       {company && (
         <>
+          {company.archived ? (
+            <div className="alert alert-warning text-sm">
+              <span>
+                This company is archived{company.archive_reason ? `: ${company.archive_reason}` : ""}. It is hidden from
+                the main company list; you can still open this page and linked applications.
+              </span>
+            </div>
+          ) : null}
           <div className="card bg-base-100 p-4 shadow">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <h2 className="text-xl font-semibold">{company.name}</h2>
@@ -601,18 +609,23 @@ export const CompanyDetailPage = () => {
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving ? "Saving…" : "Save changes"}
                 </button>
-                <button type="button" className="btn btn-outline btn-error" onClick={() => setDeleteOpen(true)}>
-                  Delete company
+                <button
+                  type="button"
+                  className="btn btn-outline btn-warning"
+                  onClick={() => setArchiveOpen(true)}
+                  disabled={!!company.archived}
+                >
+                  Archive company
                 </button>
               </div>
             </form>
           </div>
 
-          <DeleteCompanyModal
-            open={deleteOpen}
-            onClose={() => setDeleteOpen(false)}
+          <ArchiveCompanyModal
+            open={archiveOpen}
+            onClose={() => setArchiveOpen(false)}
             company={company ? { id: company.id, name: company.name } : null}
-            onDeleted={() => navigate("/companies")}
+            onArchived={() => navigate("/companies")}
           />
 
           <ApplicationWorkflowOverrideModal

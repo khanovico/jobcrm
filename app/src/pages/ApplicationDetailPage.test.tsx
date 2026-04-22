@@ -553,7 +553,7 @@ describe("ApplicationDetailPage", () => {
       cold_email_plan: {
         subjects: ["Subject A", "Subject B"],
         selected_subject_index: 0,
-        to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com" },
+        to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com", timezone: "America/Chicago" },
         status: "ready"
       },
       applied: false,
@@ -578,6 +578,8 @@ describe("ApplicationDetailPage", () => {
     await user.type(screen.getByLabelText("Recipient name"), "Benjamin Kim");
     await user.clear(screen.getByLabelText("Recipient email"));
     await user.type(screen.getByLabelText("Recipient email"), "bk@lawgoat.com");
+    await user.clear(screen.getByLabelText("Recipient timezone"));
+    await user.type(screen.getByLabelText("Recipient timezone"), "America/Chicago");
     await user.click(screen.getByRole("button", { name: "Save recipient" }));
 
     await waitFor(() => {
@@ -585,12 +587,14 @@ describe("ApplicationDetailPage", () => {
         cold_email_plan: {
           subjects: ["Subject A", "Subject B"],
           selected_subject_index: 0,
-          to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com" },
+          to: { title: "CTO", name: "Benjamin Kim", email: "bk@lawgoat.com", timezone: "America/Chicago" },
           status: "ready"
         }
       });
     });
-    expect(screen.getByText("CTO - Benjamin Kim (bk@lawgoat.com)")).toBeInTheDocument();
+    expect(
+      screen.getByText("CTO - Benjamin Kim (bk@lawgoat.com) · America/Chicago")
+    ).toBeInTheDocument();
   });
 
   it("shows unmark actions when application and email are already marked", async () => {

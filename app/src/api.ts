@@ -45,6 +45,14 @@ const extractDetailMessage = (payload: unknown): string | null => {
   return null;
 };
 
+/** Thrown on HTTP 409 when the API returns a structured `detail` object with a `code` field. */
+export class ApiConflictError extends Error {
+  constructor(public readonly detail: Record<string, unknown>) {
+    super("Conflict");
+    this.name = "ApiConflictError";
+  }
+}
+
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
@@ -65,6 +73,13 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
     if (response.status === 401) {
       unauthorizedHandler?.();
       throw new Error("Session expired. Please sign in again.");
+    }
+
+    if (response.status === 409 && payload && typeof payload === "object") {
+      const d = (payload as { detail?: unknown }).detail;
+      if (d && typeof d === "object" && d !== null && "code" in d) {
+        throw new ApiConflictError(d as Record<string, unknown>);
+      }
     }
 
     const detail = extractDetailMessage(payload);
@@ -110,15 +125,19 @@ export const api = {
   deleteIndustry: (id: string) => request<void>(`/api/v1/industries/${id}`, { method: "DELETE" }),
   listCompanies: (params?: URLSearchParams) =>
     request<Company[]>(`/api/v1/companies${params ? `?${params.toString()}` : ""}`),
-  createCompany: (payload: Partial<Company> & { name: string }) =>
-    request<Company>("/api/v1/companies", { method: "POST", body: JSON.stringify(payload) }),
+  createCompany: (
+    payload: Partial<Company> & { name: string; acknowledge_reuse_of_archived_company?: boolean }
+  ) => request<Company>("/api/v1/companies", { method: "POST", body: JSON.stringify(payload) }),
   getCompany: (id: string) => request<Company>(`/api/v1/companies/${id}`),
   updateCompany: (id: string, payload: Partial<Company>) =>
     request<Company>(`/api/v1/companies/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   getCompanyApplicationCount: (companyId: string) =>
     request<{ count: number }>(`/api/v1/companies/${companyId}/application-count`),
-  deleteCompany: (id: string) =>
-    request<{ applications_archived: number }>(`/api/v1/companies/${id}`, { method: "DELETE" }),
+  archiveCompany: (id: string, body: { archive_reason: string }) =>
+    request<{ applications_archived: number }>(`/api/v1/companies/${id}/archive`, {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   listProfiles: (params?: URLSearchParams) =>
     request<Profile[]>(`/api/v1/profiles${params ? `?${params.toString()}` : ""}`),
   /** Paginates summary until exhausted — for filters that need every profile name. */

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, setUnauthorizedHandler } from "./api";
+import { api, ApiConflictError, setUnauthorizedHandler } from "./api";
 
 const fetchMock = vi.fn();
 

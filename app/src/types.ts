@@ -22,6 +22,9 @@ export type Company = {
   enrichment_source_links?: string[];
   created_at: string;
   updated_at: string;
+  archived?: boolean;
+  archived_at?: string | null;
+  archive_reason?: string | null;
 };
 
 export type Industry = {
@@ -147,7 +150,7 @@ export type ApplicationDetailResponse = {
 export type ColdEmailPlan = {
   subjects: string[];
   selected_subject_index: number;
-  to?: { title: string; name: string; email?: string | null } | null;
+  to?: { title: string; name: string; email?: string | null; timezone?: string | null } | null;
   status: string;
 };
 
@@ -170,7 +173,7 @@ export type Email = {
   id: string;
   per_profile_application_id: string;
   kind: "cold" | "follow_up";
-  to?: { title?: string; name?: string; email?: string | null } | null;
+  to?: { title?: string; name?: string; email?: string | null; timezone?: string | null } | null;
   content: string;
   lifecycle_status: string;
   sent: boolean;

@@ -1,10 +1,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
+import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { Modal } from "../components/Modal";
-import { api } from "../api";
+import { api, ApiConflictError } from "../api";
 import { getCompanySummariesPage, invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Company, CompanyResearchStatus, WorkerStateResponse } from "../types";
 
@@ -78,6 +78,8 @@ export const CompaniesPage = () => {
     }
     return p;
   }, [sort, researchFilter, appliedColFilter]);
+  const [archiveTarget, setArchiveTarget] = useState<Company | null>(null);
+  const [awaitingArchivedRestore, setAwaitingArchivedRestore] = useState(false);
 
   const load = useCallback(
     async (targetPage = page, options?: { force?: boolean }) => {
@@ -123,13 +125,28 @@ export const CompaniesPage = () => {
     event.preventDefault();
     setError(null);
     try {
-      await api.createCompany({ name, website: website.trim() || null });
+      await api.createCompany({
+        name,
+        website: website.trim() || null,
+        acknowledge_reuse_of_archived_company: awaitingArchivedRestore
+      });
       invalidateCompanySummariesCache();
       setName("");
       setWebsite("");
+      setAwaitingArchivedRestore(false);
       setCreateOpen(false);
       await load(page, { force: true });
     } catch (err) {
+      if (err instanceof ApiConflictError) {
+        if (err.detail.code === "archived_company_name_exists") {
+          setAwaitingArchivedRestore(true);
+          return;
+        }
+        if (err.detail.code === "company_name_exists") {
+          setError("A company with this name already exists. Choose a different name.");
+          return;
+        }
+      }
       setError((err as Error).message);
     }
   };
@@ -159,6 +176,7 @@ export const CompaniesPage = () => {
               aria-label="New company"
               onClick={() => {
                 setError(null);
+                setAwaitingArchivedRestore(false);
                 setCreateOpen(true);
               }}
             >
@@ -268,10 +286,10 @@ export const CompaniesPage = () => {
                         onClick={(e) => {
                           e.stopPropagation();
                           setError(null);
-                          setDeleteTarget(company);
+                          setArchiveTarget(company);
                         }}
                       >
-                        Delete
+                        Archive
                       </button>
                     </div>
                   </td>
@@ -310,6 +328,7 @@ export const CompaniesPage = () => {
         onClose={() => {
           setCreateOpen(false);
           setError(null);
+          setAwaitingArchivedRestore(false);
         }}
         title="New company"
         size="md"
@@ -321,7 +340,10 @@ export const CompaniesPage = () => {
               className="input input-bordered w-full"
               placeholder="Name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setAwaitingArchivedRestore(false);
+              }}
               required
               autoFocus={createOpen}
             />
@@ -332,16 +354,25 @@ export const CompaniesPage = () => {
               className="input input-bordered w-full"
               placeholder="Website"
               value={website}
-              onChange={(e) => setWebsite(e.target.value)}
+              onChange={(e) => {
+                setWebsite(e.target.value);
+                setAwaitingArchivedRestore(false);
+              }}
             />
           </label>
+          {awaitingArchivedRestore && (
+            <div className="alert alert-warning text-sm">
+              A company with this name is already archived. Confirm below to restore it and use it in your list, or
+              change the name to create a different record.
+            </div>
+          )}
           {error && <p className="text-sm text-error">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn btn-ghost" onClick={() => setCreateOpen(false)}>
               Cancel
             </button>
             <button className="btn btn-primary" type="submit">
-              Create
+              {awaitingArchivedRestore ? "Confirm restore" : "Create"}
             </button>
           </div>
         </form>
@@ -364,14 +395,14 @@ export const CompaniesPage = () => {
         }}
       />
 
-      <DeleteCompanyModal
-        open={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
-        company={deleteTarget ? { id: deleteTarget.id, name: deleteTarget.name } : null}
-        onDeleted={async () => {
+      <ArchiveCompanyModal
+        open={archiveTarget !== null}
+        onClose={() => setArchiveTarget(null)}
+        company={archiveTarget ? { id: archiveTarget.id, name: archiveTarget.name } : null}
+        onArchived={async () => {
           invalidateCompanySummariesCache();
           await load(page, { force: true });
-          setDeleteTarget(null);
+          setArchiveTarget(null);
         }}
       />
     </div>
