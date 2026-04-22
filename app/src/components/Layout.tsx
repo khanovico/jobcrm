@@ -30,8 +30,8 @@ export const Layout = () => {
 
     const loadUnreadCount = async () => {
       try {
-        const unread = await api.listNotifications({ unreadOnly: true, skip: 0, limit: 100 });
-        if (!cancelled) setUnreadCount(unread.length);
+        const unread = await api.getUnreadNotificationsCount();
+        if (!cancelled) setUnreadCount(unread.count);
       } catch {
         if (!cancelled) setUnreadCount(0);
       }

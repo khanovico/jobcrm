@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 import { Modal } from "./Modal";
 import { api } from "../api";
-import type { ApplicationListItem } from "../types";
 
 type CompanyRef = {
   id: string;
@@ -17,32 +16,27 @@ type Props = {
 };
 
 export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }: Props) => {
-  const [relatedApps, setRelatedApps] = useState<ApplicationListItem[] | null>(null);
+  const [relatedApplicationCount, setRelatedApplicationCount] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !company) {
-      setRelatedApps(null);
+      setRelatedApplicationCount(null);
       setLoadError(null);
       setError(null);
       setSubmitting(false);
       return;
     }
     let cancelled = false;
-    setRelatedApps(null);
+    setRelatedApplicationCount(null);
     setLoadError(null);
     void (async () => {
       try {
-        const params = new URLSearchParams({
-          company_id: company.id,
-          skip: "0",
-          limit: "10000"
-        });
-        const list = await api.listApplications(params);
+        const result = await api.getCompanyApplicationCount(company.id);
         if (!cancelled) {
-          setRelatedApps(list);
+          setRelatedApplicationCount(result.count);
         }
       } catch (e) {
         if (!cancelled) {
@@ -60,8 +54,8 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
     onClose();
   };
 
-  const relatedReady = relatedApps !== null || loadError !== null;
-  const n = relatedApps?.length ?? 0;
+  const relatedReady = relatedApplicationCount !== null || loadError !== null;
+  const n = relatedApplicationCount ?? 0;
 
   const runClear = async (related_applications: "none" | "archive" | "reset") => {
     if (!company) return;
@@ -94,7 +88,7 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
                 Could not load related applications: {loadError}. You can still continue; choose an option below.
               </p>
             )}
-            {relatedApps === null && !loadError && (
+            {relatedApplicationCount === null && !loadError && (
               <p className="text-sm opacity-70">Loading related applications…</p>
             )}
             {relatedReady && (

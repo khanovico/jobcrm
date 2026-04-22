@@ -273,6 +273,9 @@ class BaseRepository:
     def list_notifications(self, user_id: str, q: NotificationListQuery) -> list[UserNotification]:
         raise NotImplementedError
 
+    def count_unread_notifications(self, user_id: str) -> int:
+        raise NotImplementedError
+
     def mark_notification_read(self, user_id: str, notification_id: str) -> UserNotification | None:
         raise NotImplementedError
 
@@ -1004,6 +1007,9 @@ class InMemoryRepository(BaseRepository):
             rows = [n for n in rows if n.read_at is None]
         rows.sort(key=lambda n: n.timestamp, reverse=True)
         return rows[q.skip : q.skip + q.limit]
+
+    def count_unread_notifications(self, user_id: str) -> int:
+        return sum(1 for note in self.notifications.values() if note.user_id == user_id and note.read_at is None)
 
     def mark_notification_read(self, user_id: str, notification_id: str) -> UserNotification | None:
         note = self.notifications.get(notification_id)

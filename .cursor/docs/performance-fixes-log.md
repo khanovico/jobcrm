@@ -7,3 +7,6 @@
 - `2026-04-21` `ApplicationDetailPage`: replaced full-page reload loops after mark/delete actions with targeted local state updates, and memoized email HTML sanitization so repeated renders do less work.
 - `2026-04-21` `industryCatalog` cache: added a shared full-taxonomy industry cache so company detail no longer refetches a huge industry list on every visit; industries page now invalidates it on create/update/delete.
 - `2026-04-21` `CompanyDetailPage`: paginated per-company applications and split static company/industry loading from application-page loading so the page handles larger company histories more predictably.
+- `2026-04-21` `AuditPage`: switched the UI onto the backend’s existing `skip`/`limit` pagination so the audit screen stops loading ever-growing event lists in one shot.
+- `2026-04-21` `GET /notifications/unread-count` + `Layout`: replaced unread badge polling via full notification list fetches with a lightweight count endpoint, keeping sidebar polling cheap as notifications scale up.
+- `2026-04-21` `ClearCompanyResearchModal`: replaced a huge related-application list fetch with the existing company application-count endpoint because the modal only needs the count to drive its choices.

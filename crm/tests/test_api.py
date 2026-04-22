@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.auth import hash_password
 from app.deps import get_repository
 from app.main import app
-from app.models import PerProfileApplication, UserCreate
+from app.models import NotificationKind, NotificationPayload, NotificationSeverity, PerProfileApplication, UserCreate
 from app.repository import (
     InMemoryRepository,
     RELATED_COMPANY_DELETED_ARCHIVE_REASON,
@@ -887,6 +887,41 @@ def test_company_profile_crud_happy_path() -> None:
 
     delete_profile = client.delete(f"/api/v1/profiles/{profile['id']}", headers=headers)
     assert delete_profile.status_code == 204
+
+
+def test_notifications_unread_count_endpoint_returns_only_unread_total() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    user = repo.get_user_by_email("test@example.com")
+    assert user is not None
+    unread_note = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a1", message="Ready"),
+    )
+    repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a2", message="Done"),
+        check=True,
+    )
+    repo.mark_notification_read(user.id, unread_note.id)
+    repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.FOLLOW_UP_DRAFT,
+        notification_type=NotificationSeverity.WARN,
+        payload=NotificationPayload(id="a3", message="Needs review"),
+    )
+
+    response = client.get("/api/v1/notifications/unread-count", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"count": 2}
 
 
 def test_company_update_accepts_legacy_full_overview_field() -> None:

@@ -947,6 +947,14 @@ def list_notifications_route(
     return [enrich_notification_link(repo, user.id, n) for n in rows]
 
 
+@app.get("/api/v1/notifications/unread-count")
+def unread_notifications_count(
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> dict[str, int]:
+    return {"count": repo.count_unread_notifications(user.id)}
+
+
 @app.post("/api/v1/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)
 def read_notification(
     notification_id: str,

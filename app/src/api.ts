@@ -216,6 +216,8 @@ export const api = {
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
     return request<UserNotification[]>(`/api/v1/notifications?${params.toString()}`);
   },
+  getUnreadNotificationsCount: () =>
+    request<{ count: number }>("/api/v1/notifications/unread-count"),
   markNotificationRead: (id: string) =>
     request<void>(`/api/v1/notifications/${id}/read`, { method: "POST" }),
   listAuditEvents: (params?: URLSearchParams) =>

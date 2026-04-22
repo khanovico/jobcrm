@@ -4,21 +4,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClearCompanyResearchModal } from "./ClearCompanyResearchModal";
 
-const { listApplications, clearCompanyResearchDetail } = vi.hoisted(() => ({
-  listApplications: vi.fn(),
+const { getCompanyApplicationCount, clearCompanyResearchDetail } = vi.hoisted(() => ({
+  getCompanyApplicationCount: vi.fn(),
   clearCompanyResearchDetail: vi.fn()
 }));
 
 vi.mock("../api", () => ({
   api: {
-    listApplications,
+    getCompanyApplicationCount,
     clearCompanyResearchDetail
   }
 }));
 
 describe("ClearCompanyResearchModal", () => {
   beforeEach(() => {
-    listApplications.mockReset();
+    getCompanyApplicationCount.mockReset();
     clearCompanyResearchDetail.mockReset();
     clearCompanyResearchDetail.mockResolvedValue({
       id: "c1",
@@ -34,18 +34,7 @@ describe("ClearCompanyResearchModal", () => {
   });
 
   it("shows Archive and Clear when applications exist", async () => {
-    listApplications.mockResolvedValue([
-      {
-        id: "a1",
-        company_id: "c1",
-        status: "application_ready",
-        applied: false,
-        email_sent: false,
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-        applied_profiles: []
-      }
-    ]);
+    getCompanyApplicationCount.mockResolvedValue({ count: 1 });
 
     const onCleared = vi.fn();
     render(
@@ -70,7 +59,7 @@ describe("ClearCompanyResearchModal", () => {
   });
 
   it("shows only Clear company when no applications", async () => {
-    listApplications.mockResolvedValue([]);
+    getCompanyApplicationCount.mockResolvedValue({ count: 0 });
 
     render(
       <ClearCompanyResearchModal
