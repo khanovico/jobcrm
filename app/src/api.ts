@@ -138,6 +138,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  deleteCompany: (id: string) =>
+    request<{ applications_archived: number }>(`/api/v1/companies/${id}`, { method: "DELETE" }),
   listProfiles: (params?: URLSearchParams) =>
     request<Profile[]>(`/api/v1/profiles${params ? `?${params.toString()}` : ""}`),
   /** Paginates summary until exhausted — for filters that need every profile name. */
