@@ -168,11 +168,12 @@ export const CompaniesPage = () => {
             </button>
           </div>
         </div>
-        <div className="mb-3 flex flex-wrap items-end gap-2">
-          <label className="form-control w-full min-w-[160px] max-w-xs">
-            <span className="label-text text-xs">Order</span>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="flex min-w-[200px] max-w-xs flex-nowrap items-center gap-2">
+            <span className="shrink-0 text-xs opacity-70">Order by</span>
             <select
-              className="select select-bordered select-sm w-full"
+              className="select select-bordered select-sm min-w-0 grow"
+              aria-label="Order companies by"
               value={sort}
               onChange={(e) => setSort(e.target.value as CompanySort)}
             >
@@ -181,7 +182,7 @@ export const CompaniesPage = () => {
               <option value="updated_at_asc">{companySortLabel("updated_at_asc")}</option>
               <option value="name_asc">{companySortLabel("name_asc")}</option>
             </select>
-          </label>
+          </div>
           <label className="form-control w-full min-w-[160px] max-w-xs">
             <span className="label-text text-xs">Research</span>
             <select

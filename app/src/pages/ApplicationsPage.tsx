@@ -212,10 +212,11 @@ export const ApplicationsPage = () => {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="form-control min-w-[180px]">
-              <span className="label-text text-xs">Order</span>
+            <div className="flex min-w-0 max-w-[280px] flex-nowrap items-center gap-2">
+              <span className="shrink-0 text-xs opacity-70">Order by</span>
               <select
-                className="select select-bordered select-sm w-full max-w-[220px]"
+                className="select select-bordered select-sm min-w-0 grow max-w-[220px]"
+                aria-label="Order applications by"
                 value={tableSort}
                 onChange={(e) => setTableSort(e.target.value as ApplicationTableSort)}
               >
@@ -224,7 +225,7 @@ export const ApplicationsPage = () => {
                 <option value="created_at_desc">{applicationSortLabel("created_at_desc")}</option>
                 <option value="created_at_asc">{applicationSortLabel("created_at_asc")}</option>
               </select>
-            </label>
+            </div>
             <div className="join join-horizontal border border-base-300">
               {(
                 [
