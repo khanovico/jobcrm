@@ -699,7 +699,7 @@ class InMemoryRepository(BaseRepository):
     def _batch_applied_profile_names_for_applications(
         self, application_ids: list[str]
     ) -> dict[str, list[AppliedProfileName]]:
-        """PPAs that have a tailored resume link or email (records or recipient on cold email plan)."""
+        """One display name per profile for each application (all PPA rows, not only those with resume/email)."""
         if not application_ids:
             return {}
 
@@ -709,30 +709,13 @@ class InMemoryRepository(BaseRepository):
             if ppa.application_id in app_set:
                 ppas_by_app[ppa.application_id].append(ppa)
 
-        ppa_ids_with_email_row = {
-            e.per_profile_application_id for e in self.emails.values()
-        }
-
-        def ppa_has_tailored_resume(ppa: PerProfileApplication) -> bool:
-            link = ppa.tailored_resume_link
-            return bool(link and str(link).strip())
-
-        def ppa_has_email_signal(ppa: PerProfileApplication) -> bool:
-            if ppa.id in ppa_ids_with_email_row:
-                return True
-            em = _recipient_email_from_cold_email_plan(ppa.cold_email_plan)
-            return bool(em)
-
-        def ppa_qualifies(ppa: PerProfileApplication) -> bool:
-            return ppa_has_tailored_resume(ppa) or ppa_has_email_signal(ppa)
-
         out: dict[str, list[AppliedProfileName]] = {}
         for aid in application_ids:
             rows = sorted(ppas_by_app[aid], key=lambda p: (p.order_index, p.created_at))
             seen: set[str] = set()
             names: list[AppliedProfileName] = []
             for ppa in rows:
-                if not ppa_qualifies(ppa) or ppa.profile_id in seen:
+                if ppa.profile_id in seen:
                     continue
                 seen.add(ppa.profile_id)
                 prof = self.get_profile(ppa.profile_id)

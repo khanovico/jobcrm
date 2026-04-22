@@ -603,13 +603,13 @@ class PerProfileApplication(PerProfileApplicationBase):
 
 
 class AppliedProfileName(BaseModel):
-    """Profile display for application list: PPAs with tailored resume or email attached."""
+    """Profile display for application list: one name per PPA / profile on the application."""
 
     profile_name: str
 
 
 class ApplicationListItem(Application):
-    """Application with resolved names for profiles marked applied on per-profile rows."""
+    """Application with resolved profile display names for each per-profile row."""
 
     company_name: str
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
