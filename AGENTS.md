@@ -14,20 +14,21 @@ For frontend change, `cd app && npm run build` should work.
 ## Always
 
 - **Memory first:** `.cursor/memory` — check before big decisions; add reusable lessons there.
+- **Performance first-class:** for any frontend or API-touching change, review scale cost across request count, payload size, refetch frequency, client/render work, and loading UX. Prefer bounded/paginated flows, summary payloads, and stable layout shells during lazy loading.
 - **No waiting on humans** (unless serious harm): workflows step-by-step; “confirm” = step done. Blocked unfixably → **stop + detailed report**. Unblocked → **end-to-end**. Ship as verified as practical.
 
 ## Subagents
 
 - Debug: `.cursor/agents/debug-specialist.md`
 - Review: `.cursor/agents/code-reviewer.md`  
-  Spawn when useful or instructed.
+Spawn when useful or instructed.
 
 ## Task intake
 
 - Branch / PR target from task.
 - Assets via URL → save under `.tmp/` (untracked).
 - Execution mode → 
-  Main: `.cursor/workflows/main-execution.md`
+Main: `.cursor/workflows/main-execution.md`
 - General Execution Rule: Plan first, Plan -> SubPlan -> Todos -> Step by Step
 
 ## Memory
@@ -35,14 +36,15 @@ For frontend change, `cd app && npm run build` should work.
 Reusable experience → write under `.cursor/memory/` with sensible category.
 
 ---
-Behavioral guidelines to reduce common LLM coding mistakes.
----
+
+## Behavioral guidelines to reduce common LLM coding mistakes.
 
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**
 
 Before implementing:
+
 - State your assumptions explicitly. If uncertain, ask.
 - If multiple interpretations exist, present them - don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
@@ -65,12 +67,14 @@ Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, sim
 **Touch only what you must. Clean up only your own mess.**
 
 When editing existing code:
+
 - Don't "improve" adjacent code, comments, or formatting.
 - Don't refactor things that aren't broken.
 - Match existing style, even if you'd do it differently.
 - If you notice unrelated dead code, mention it - don't delete it.
 
 When your changes create orphans:
+
 - Remove imports/variables/functions that YOUR changes made unused.
 - Don't remove pre-existing dead code unless asked.
 
@@ -90,11 +94,13 @@ So always make sure enough test coverage for the feature you are currently imple
 **Define success criteria. Loop until verified.**
 
 Transform tasks into verifiable goals:
+
 - "Add validation" → "Write tests for invalid inputs, then make them pass"
 - "Fix the bug" → "Write a test that reproduces it, then make it pass"
 - "Refactor X" → "Ensure tests pass before and after"
 
 For multi-step tasks, state a brief plan:
+
 ```
 1. [Step] → verify: [check]
 2. [Step] → verify: [check]
