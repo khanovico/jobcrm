@@ -4,17 +4,22 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../auth";
+import { NOTIFICATIONS_INBOX_CHANGED } from "../notificationSync";
 import { Layout } from "./Layout";
 
-const { getUnreadNotificationsCount, setUnauthorizedHandler, getMe } = vi.hoisted(() => ({
-  getUnreadNotificationsCount: vi.fn(),
-  setUnauthorizedHandler: vi.fn(),
-  getMe: vi.fn()
-}));
+const { getUnreadNotificationsCount, listNotifications, setUnauthorizedHandler, getMe } = vi.hoisted(
+  () => ({
+    getUnreadNotificationsCount: vi.fn(),
+    listNotifications: vi.fn(),
+    setUnauthorizedHandler: vi.fn(),
+    getMe: vi.fn()
+  })
+);
 
 vi.mock("../api", () => ({
   api: {
     getUnreadNotificationsCount,
+    listNotifications,
     getMe
   },
   setUnauthorizedHandler
@@ -27,7 +32,11 @@ afterEach(() => {
 
 beforeEach(() => {
   localStorage.setItem("jobcrm-token", "test-token");
+  sessionStorage.removeItem("jobcrm-notifications-initial-sync");
+  sessionStorage.removeItem("jobcrm-notifications-seen-ids");
   getUnreadNotificationsCount.mockReset();
+  listNotifications.mockReset();
+  listNotifications.mockResolvedValue([]);
   getMe.mockReset();
   getMe.mockResolvedValue({ id: "u1", name: "Admin", email: "admin@example.com", role: "admin", admin: true });
 });
@@ -75,8 +84,9 @@ describe("Layout", () => {
     expect(dashboardLink).toHaveClass("active");
   });
 
-  it("shows unread badge for notifications and polls every five minutes", async () => {
+  it("shows unread badge for notifications and polls notifications on an interval", async () => {
     getUnreadNotificationsCount.mockResolvedValueOnce({ count: 2 });
+    listNotifications.mockResolvedValue([]);
     const intervalSpy = vi.spyOn(window, "setInterval");
 
     render(
@@ -95,7 +105,81 @@ describe("Layout", () => {
       expect(screen.getByLabelText("Unread notifications: 2")).toBeInTheDocument();
     });
     expect(getUnreadNotificationsCount).toHaveBeenCalled();
-    expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 5 * 60 * 1000);
+    expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 25 });
+    expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 45_000);
+  });
+
+  it("refreshes sidebar unread badge when inbox changes without waiting for poll", async () => {
+    getUnreadNotificationsCount.mockResolvedValueOnce({ count: 3 }).mockResolvedValueOnce({ count: 0 });
+    listNotifications.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AuthProvider>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Placeholder title="Home" />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Unread notifications: 3")).toBeInTheDocument();
+    });
+
+    window.dispatchEvent(new CustomEvent(NOTIFICATIONS_INBOX_CHANGED));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Unread notifications:/)).not.toBeInTheDocument();
+    });
+    expect(getUnreadNotificationsCount).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a toast when a new unread notification appears after initial load", async () => {
+    const intervalSpy = vi.spyOn(window, "setInterval");
+    getUnreadNotificationsCount.mockResolvedValue({ count: 1 });
+    listNotifications
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "new-note",
+          user_id: "u1",
+          notification: "APPLICATION_UPDATE",
+          type: "SUCCESS",
+          timestamp: "2026-01-01T00:00:00Z",
+          check: false,
+          payload: { id: "a1", message: "Prep complete" },
+          created_at: "2026-01-01T00:00:00Z",
+          read_at: null,
+          link: "/applications/a1"
+        }
+      ]);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AuthProvider>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Placeholder title="Home" />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(1));
+
+    const pollCallback = intervalSpy.mock.calls.find((c) => c[1] === 45_000)?.[0] as () => void;
+    expect(pollCallback).toBeDefined();
+
+    await act(async () => {
+      pollCallback();
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Prep complete");
+    intervalSpy.mockRestore();
   });
 
   it("hides settings and audit links for user role", async () => {
