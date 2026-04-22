@@ -1,7 +1,9 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetIndustryCatalogCacheForTests } from "../state/industryCatalog";
 import { CompanyDetailPage } from "./CompanyDetailPage";
 import type { Company } from "../types";
 
@@ -59,6 +61,7 @@ describe("CompanyDetailPage", () => {
   });
 
   afterEach(() => {
+    resetIndustryCatalogCacheForTests();
     cleanup();
   });
 
@@ -166,5 +169,70 @@ describe("CompanyDetailPage", () => {
     });
     expect(screen.getByRole("heading", { name: "Enrichment sources" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "https://enrich.example/doc" })).toBeInTheDocument();
+  });
+
+  it("reuses cached industries when revisiting company detail", async () => {
+    getCompany.mockResolvedValue(baseCompany());
+    listIndustries.mockResolvedValue([
+      {
+        id: "ind-1",
+        name: "FinTech",
+        description: "Finance",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+
+    const firstMount = renderPage();
+    await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
+    firstMount.unmount();
+
+    renderPage();
+    await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
+
+    expect(listIndustries).toHaveBeenCalledTimes(1);
+  });
+
+  it("paginates company applications", async () => {
+    getCompany.mockResolvedValue(baseCompany());
+    const firstPageApplications = Array.from({ length: 20 }, (_, index) => ({
+      id: `a-${index + 1}`,
+      company_id: "co1",
+      status: "application_ready",
+      applied: false,
+      email_sent: false,
+      applied_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    }));
+    const secondPageApplications = [
+      {
+        id: "a-21",
+        company_id: "co1",
+        status: "archived",
+        applied: true,
+        email_sent: false,
+        applied_at: "2026-02-01T00:00:00Z",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-02-01T00:00:00Z"
+      }
+    ];
+    listApplications.mockImplementation((params?: URLSearchParams) => {
+      if (params?.get("skip") === "20") {
+        return Promise.resolve(secondPageApplications);
+      }
+      return Promise.resolve(firstPageApplications);
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Page 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(screen.getByText("archived")).toBeInTheDocument();
+    expect(screen.getByText("2026-02-01T00:00:00Z")).toBeInTheDocument();
   });
 });

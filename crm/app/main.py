@@ -31,6 +31,7 @@ from app.models import (
     Application,
     ApplicationBootstrapCreate,
     ApplicationCreate,
+    ApplicationDetailResponse,
     ApplicationListItem,
     ApplicationMarkApplied,
     ApplicationMarkEmailSent,
@@ -57,10 +58,12 @@ from app.models import (
     NotificationListQuery,
     PerProfileApplication,
     PerProfileApplicationCreate,
+    PerProfileApplicationDetail,
     PerProfileApplicationUpdate,
     Profile,
     ProfileCreate,
     ProfileIdList,
+    ProfileListItem,
     ProfileUpdate,
     TokenResponse,
     UserInDB,
@@ -455,6 +458,30 @@ def list_profiles(
     return repo.list_profiles(skip=skip, limit=limit, search=search)
 
 
+@app.get("/api/v1/profiles/summary", response_model=list[ProfileListItem])
+def list_profile_summaries(
+    skip: int = 0,
+    limit: int = 50,
+    search: str | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[ProfileListItem]:
+    profiles = repo.list_profiles(skip=skip, limit=limit, search=search)
+    return [
+        ProfileListItem(
+            id=profile.id,
+            name=profile.name,
+            frozen=profile.frozen,
+            location=profile.location,
+            email=profile.email,
+            phone=profile.phone,
+            created_at=profile.created_at,
+            updated_at=profile.updated_at,
+        )
+        for profile in profiles
+    ]
+
+
 @app.post("/api/v1/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)
 def create_profile(
     payload: ProfileCreate,
@@ -603,6 +630,36 @@ def get_application(
     if not application:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
     return application
+
+
+@app.get("/api/v1/applications/{application_id}/detail", response_model=ApplicationDetailResponse)
+def get_application_detail(
+    application_id: str,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> ApplicationDetailResponse:
+    application = repo.get_application(application_id)
+    if not application:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    company = repo.get_company(application.company_id)
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    ppas = repo.list_per_profile_for_application(application_id)
+    ppa_rows: list[PerProfileApplicationDetail] = []
+    for ppa in ppas:
+        profile = repo.get_profile(ppa.profile_id)
+        ppa_rows.append(
+            PerProfileApplicationDetail(
+                **ppa.model_dump(),
+                profile_name=profile.name if profile else "Unknown profile",
+                emails=repo.list_emails_for_ppa(ppa.id),
+            )
+        )
+    return ApplicationDetailResponse(
+        application=application,
+        company=company,
+        per_profile_applications=ppa_rows,
+    )
 
 
 @app.put("/api/v1/applications/{application_id}", response_model=Application)
@@ -913,6 +970,14 @@ def list_notifications_route(
         user.id, NotificationListQuery(skip=skip, limit=limit, unread_only=unread_only)
     )
     return [enrich_notification_link(repo, user.id, n) for n in rows]
+
+
+@app.get("/api/v1/notifications/unread-count")
+def unread_notifications_count(
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> dict[str, int]:
+    return {"count": repo.count_unread_notifications(user.id)}
 
 
 @app.post("/api/v1/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)

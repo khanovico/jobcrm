@@ -1,0 +1,17 @@
+# Performance Fixes Log
+
+- `2026-04-21` `ApplicationsPage`: stopped refetching the full companies list on every list-mode switch; company data is reused across pending/applied/archived/all toggles and only force-refetched on explicit refresh.
+- `2026-04-21` `GET /applications`: added `company_name` directly to each list row so the applications table can render names without a second company-directory fetch.
+- `2026-04-21` `companySummaries` cache: added a shared frontend cache for paged company lists and modal company options so revisiting company-driven screens can reuse recent company data instead of always hitting `/companies` again.
+- `2026-04-21` `GET /applications/{id}/detail`: added a purpose-built detail payload that batches application, company, per-profile rows, resolved profile names, and nested emails into one read for the detail screen.
+- `2026-04-21` `ApplicationDetailPage`: replaced full-page reload loops after mark/delete actions with targeted local state updates, and memoized email HTML sanitization so repeated renders do less work.
+- `2026-04-21` `industryCatalog` cache: added a shared full-taxonomy industry cache so company detail no longer refetches a huge industry list on every visit; industries page now invalidates it on create/update/delete.
+- `2026-04-21` `CompanyDetailPage`: paginated per-company applications and split static company/industry loading from application-page loading so the page handles larger company histories more predictably.
+- `2026-04-21` `AuditPage`: switched the UI onto the backend’s existing `skip`/`limit` pagination so the audit screen stops loading ever-growing event lists in one shot.
+- `2026-04-21` `GET /notifications/unread-count` + `Layout`: replaced unread badge polling via full notification list fetches with a lightweight count endpoint, keeping sidebar polling cheap as notifications scale up.
+- `2026-04-21` `ClearCompanyResearchModal`: replaced a huge related-application list fetch with the existing company application-count endpoint because the modal only needs the count to drive its choices.
+- `2026-04-21` `ApplicationsPage`: added explicit pagination so the UI no longer depends on backend default list caps, making large application sets navigable and predictable.
+- `2026-04-21` `GET /profiles/summary` + `ProfilesPage`: added a lightweight paginated profile-summary route so the profiles table stops loading full profile documents (bio/resume markdown) for list view.
+- `2026-04-21` `NewApplicationModal`: replaced the “load every company into a giant select” flow with bounded company search (`limit=20`) so application create/edit no longer pages through the full company catalog.
+- `2026-04-21` `App` routes: lazy-loaded page bundles with `React.lazy` + `Suspense` so the shell stops paying the up-front parse/download cost for every screen on first load.
+- `2026-04-21` `Layout` + `App`: moved lazy-route loading fallback into the main content outlet so first-time page navigations keep the side panel mounted and show loading state only in the content panel.

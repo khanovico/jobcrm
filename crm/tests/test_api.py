@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.auth import hash_password
 from app.deps import get_repository
 from app.main import app
-from app.models import PerProfileApplication, UserCreate
+from app.models import NotificationKind, NotificationPayload, NotificationSeverity, PerProfileApplication, UserCreate
 from app.repository import (
     InMemoryRepository,
     RELATED_COMPANY_DELETED_ARCHIVE_REASON,
@@ -305,6 +305,7 @@ def test_list_applications_includes_applied_profile_names() -> None:
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
+    assert listed[0]["company_name"] == company["name"]
     assert listed[0]["applied_profiles"] == [{"profile_name": "Alex Dev"}]
 
 
@@ -485,6 +486,73 @@ def test_clear_company_research_detail_reset_related_applications() -> None:
         headers=headers,
     ).json()
     assert ppas == []
+
+
+def test_application_detail_endpoint_batches_company_ppas_profiles_and_emails() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post(
+        "/api/v1/companies",
+        json={"name": "Detail Co", "research_status": "indexed"},
+        headers=headers,
+    ).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "strong fit",
+        },
+        headers=headers,
+    ).json()
+    email = client.post(
+        f"/api/v1/per-profile-applications/{ppa['id']}/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "content": "Hello there",
+        },
+        headers=headers,
+    ).json()
+
+    detail = client.get(f"/api/v1/applications/{application['id']}/detail", headers=headers)
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["application"]["id"] == application["id"]
+    assert payload["company"]["id"] == company["id"]
+    assert len(payload["per_profile_applications"]) == 1
+    assert payload["per_profile_applications"][0]["id"] == ppa["id"]
+    assert payload["per_profile_applications"][0]["profile_name"] == profile["name"]
+    assert payload["per_profile_applications"][0]["emails"] == [email]
+
+
+def test_profile_summary_endpoint_returns_only_list_fields() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers)
+
+    response = client.get("/api/v1/profiles/summary", headers=headers)
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["name"] == "General SWE"
+    assert "bio_md" not in rows[0]
+    assert "resume_md" not in rows[0]
 
 
 def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
@@ -698,6 +766,7 @@ def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume()
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
+    assert listed[0]["company_name"] == company["name"]
     assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
@@ -836,6 +905,41 @@ def test_company_profile_crud_happy_path() -> None:
 
     delete_profile = client.delete(f"/api/v1/profiles/{profile['id']}", headers=headers)
     assert delete_profile.status_code == 204
+
+
+def test_notifications_unread_count_endpoint_returns_only_unread_total() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    user = repo.get_user_by_email("test@example.com")
+    assert user is not None
+    unread_note = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a1", message="Ready"),
+    )
+    repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a2", message="Done"),
+        check=True,
+    )
+    repo.mark_notification_read(user.id, unread_note.id)
+    repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.FOLLOW_UP_DRAFT,
+        notification_type=NotificationSeverity.WARN,
+        payload=NotificationPayload(id="a3", message="Needs review"),
+    )
+
+    response = client.get("/api/v1/notifications/unread-count", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"count": 2}
 
 
 def test_company_update_accepts_legacy_full_overview_field() -> None:

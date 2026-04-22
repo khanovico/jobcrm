@@ -406,6 +406,17 @@ class Profile(ProfileBase):
     updated_at: datetime
 
 
+class ProfileListItem(BaseModel):
+    id: str
+    name: str
+    frozen: bool = False
+    location: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class JobPost(BaseModel):
     job_link: str | None = None
     job_description: str | None = None
@@ -591,7 +602,21 @@ class AppliedProfileName(BaseModel):
 class ApplicationListItem(Application):
     """Application with resolved names for profiles marked applied on per-profile rows."""
 
+    company_name: str
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
+
+
+class PerProfileApplicationDetail(PerProfileApplication):
+    """Per-profile row with resolved display name and nested emails for detail view."""
+
+    profile_name: str
+    emails: list["Email"] = Field(default_factory=list)
+
+
+class ApplicationDetailResponse(BaseModel):
+    application: Application
+    company: Company
+    per_profile_applications: list[PerProfileApplicationDetail] = Field(default_factory=list)
 
 
 class EmailBase(BaseModel):

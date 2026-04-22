@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { Modal } from "./Modal";
 import { api } from "../api";
+import { invalidateCompanySummariesCache } from "../state/companySummaries";
 
 type CompanyRef = {
   id: string;
@@ -63,6 +64,7 @@ export const DeleteCompanyModal = ({ open, onClose, company, onDeleted }: Props)
     setSubmitting(true);
     try {
       await api.deleteCompany(company.id);
+      invalidateCompanySummariesCache();
       close();
       await onDeleted();
     } catch (err) {

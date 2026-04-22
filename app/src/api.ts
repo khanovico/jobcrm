@@ -1,5 +1,6 @@
 import {
   Application,
+  ApplicationDetailResponse,
   AgentApiKeyCreated,
   ApplicationListItem,
   AuditEvent,
@@ -18,6 +19,7 @@ import {
   PerProfileApplication,
   Profile,
   ProfileCreatePayload,
+  ProfileListItem,
   UserNotification,
   UserPublic
 } from "./types";
@@ -118,6 +120,8 @@ export const api = {
   deleteCompany: (id: string) =>
     request<{ applications_archived: number }>(`/api/v1/companies/${id}`, { method: "DELETE" }),
   listProfiles: () => request<Profile[]>("/api/v1/profiles"),
+  listProfileSummaries: (params?: URLSearchParams) =>
+    request<ProfileListItem[]>(`/api/v1/profiles/summary${params ? `?${params.toString()}` : ""}`),
   getProfile: (id: string) => request<Profile>(`/api/v1/profiles/${id}`),
   createProfile: (payload: ProfileCreatePayload) =>
     request<Profile>("/api/v1/profiles", { method: "POST", body: JSON.stringify(payload) }),
@@ -138,6 +142,8 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   getApplication: (id: string) => request<Application>(`/api/v1/applications/${id}`),
+  getApplicationDetail: (id: string) =>
+    request<ApplicationDetailResponse>(`/api/v1/applications/${id}/detail`),
   updateApplication: (id: string, payload: Record<string, unknown>) =>
     request<Application>(`/api/v1/applications/${id}`, {
       method: "PUT",
@@ -213,6 +219,8 @@ export const api = {
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
     return request<UserNotification[]>(`/api/v1/notifications?${params.toString()}`);
   },
+  getUnreadNotificationsCount: () =>
+    request<{ count: number }>("/api/v1/notifications/unread-count"),
   markNotificationRead: (id: string) =>
     request<void>(`/api/v1/notifications/${id}/read`, { method: "POST" }),
   listAuditEvents: (params?: URLSearchParams) =>

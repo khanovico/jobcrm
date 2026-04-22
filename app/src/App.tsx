@@ -1,19 +1,25 @@
+import { Suspense, lazy } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
-import { ApplicationDetailPage } from "./pages/ApplicationDetailPage";
-import { ApplicationsPage } from "./pages/ApplicationsPage";
-import { AuditPage } from "./pages/AuditPage";
-import { CompaniesPage } from "./pages/CompaniesPage";
-import { CompanyDetailPage } from "./pages/CompanyDetailPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { IndustriesPage } from "./pages/IndustriesPage";
-import { LoginPage } from "./pages/LoginPage";
-import { NotificationsPage } from "./pages/NotificationsPage";
-import { ProfileDetailPage } from "./pages/ProfileDetailPage";
-import { ProfilesPage } from "./pages/ProfilesPage";
-import { SettingsPage } from "./pages/SettingsPage";
+
+const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
+const CompaniesPage = lazy(async () => ({ default: (await import("./pages/CompaniesPage")).CompaniesPage }));
+const CompanyDetailPage = lazy(async () => ({ default: (await import("./pages/CompanyDetailPage")).CompanyDetailPage }));
+const ProfilesPage = lazy(async () => ({ default: (await import("./pages/ProfilesPage")).ProfilesPage }));
+const ProfileDetailPage = lazy(async () => ({ default: (await import("./pages/ProfileDetailPage")).ProfileDetailPage }));
+const ApplicationsPage = lazy(async () => ({ default: (await import("./pages/ApplicationsPage")).ApplicationsPage }));
+const ApplicationDetailPage = lazy(
+  async () => ({ default: (await import("./pages/ApplicationDetailPage")).ApplicationDetailPage })
+);
+const IndustriesPage = lazy(async () => ({ default: (await import("./pages/IndustriesPage")).IndustriesPage }));
+const AuditPage = lazy(async () => ({ default: (await import("./pages/AuditPage")).AuditPage }));
+const SettingsPage = lazy(async () => ({ default: (await import("./pages/SettingsPage")).SettingsPage }));
+const NotificationsPage = lazy(async () => ({ default: (await import("./pages/NotificationsPage")).NotificationsPage }));
+const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
+
+const PageFallback = () => <div className="p-4 text-sm opacity-70">Loading page…</div>;
 
 const PrivateOutlet = () => {
   const { token, isUserLoading } = useAuth();
@@ -32,7 +38,14 @@ const AdminOnlyOutlet = () => {
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={<PageFallback />}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
       <Route element={<PrivateOutlet />}>
         <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />

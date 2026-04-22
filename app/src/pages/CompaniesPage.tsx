@@ -1,10 +1,11 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { Modal } from "../components/Modal";
 import { api } from "../api";
+import { getCompanySummariesPage, invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Company, CompanyResearchStatus, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 10;
@@ -38,31 +39,33 @@ export const CompaniesPage = () => {
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
 
-  const load = async (targetPage = page) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [response, workers] = await Promise.all([
-        api.listCompanies(
-          new URLSearchParams({
-            skip: String((targetPage - 1) * PAGE_SIZE),
-            limit: String(PAGE_SIZE)
-          })
-        ),
-        api.getWorkerState().catch(() => null)
-      ]);
-      setItems(response);
-      setHasNextPage(response.length === PAGE_SIZE);
-      setWorkerState(workers);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const load = useCallback(
+    async (targetPage = page, options?: { force?: boolean }) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [response, workers] = await Promise.all([
+          getCompanySummariesPage({
+            page: targetPage,
+            pageSize: PAGE_SIZE,
+            force: options?.force
+          }),
+          api.getWorkerState().catch(() => null)
+        ]);
+        setItems(response);
+        setHasNextPage(response.length === PAGE_SIZE);
+        setWorkerState(workers);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [page]
+  );
   useEffect(() => {
     void load(page);
-  }, [page]);
+  }, [load, page]);
 
   useEffect(() => {
     if (items.length === 0 && page > 1) {
@@ -75,10 +78,11 @@ export const CompaniesPage = () => {
     setError(null);
     try {
       await api.createCompany({ name, website: website.trim() || null });
+      invalidateCompanySummariesCache();
       setName("");
       setWebsite("");
       setCreateOpen(false);
-      await load();
+      await load(page, { force: true });
     } catch (err) {
       setError((err as Error).message);
     }
@@ -99,7 +103,7 @@ export const CompaniesPage = () => {
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page, { force: true })}>
               Refresh
             </button>
             <button
@@ -257,7 +261,7 @@ export const CompaniesPage = () => {
         editing={null}
         initialCompanyId={applyCompanyId}
         onSuccess={async () => {
-          await load();
+          await load(page, { force: true });
           setApplicationOpen(false);
           setApplyCompanyId(null);
           navigate("/applications");
@@ -269,7 +273,8 @@ export const CompaniesPage = () => {
         onClose={() => setDeleteTarget(null)}
         company={deleteTarget ? { id: deleteTarget.id, name: deleteTarget.name } : null}
         onDeleted={async () => {
-          await load();
+          invalidateCompanySummariesCache();
+          await load(page, { force: true });
           setDeleteTarget(null);
         }}
       />

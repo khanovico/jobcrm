@@ -1,5 +1,5 @@
+import { Suspense, useEffect, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { useEffect, useState } from "react";
 
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -30,8 +30,8 @@ export const Layout = () => {
 
     const loadUnreadCount = async () => {
       try {
-        const unread = await api.listNotifications({ unreadOnly: true, skip: 0, limit: 100 });
-        if (!cancelled) setUnreadCount(unread.length);
+        const unread = await api.getUnreadNotificationsCount();
+        if (!cancelled) setUnreadCount(unread.count);
       } catch {
         if (!cancelled) setUnreadCount(0);
       }
@@ -71,7 +71,9 @@ export const Layout = () => {
           </div>
         </header>
         <main className="flex-1 p-4">
-          <Outlet />
+          <Suspense fallback={<div className="p-4 text-sm opacity-70">Loading page...</div>}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
       <div className="drawer-side z-40">

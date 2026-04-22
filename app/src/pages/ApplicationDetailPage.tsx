@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import DOMPurify from "dompurify";
 
@@ -15,7 +15,7 @@ import type {
   Company,
   Email,
   PerProfileApplication,
-  Profile
+  PerProfileApplicationDetail
 } from "../types";
 
 /** Status after clear/reset for this company’s research state. */
@@ -39,6 +39,18 @@ const sanitizeEmailHtml = (content: string) =>
   DOMPurify.sanitize(decodeEscapedHtml(content), {
     USE_PROFILES: { html: true }
   });
+
+const EmailHtmlContent = memo(({ content }: { content: string }) => {
+  const sanitizedHtml = useMemo(() => sanitizeEmailHtml(content), [content]);
+
+  return (
+    <div
+      className="prose prose-sm mt-1 max-w-none rounded-lg border border-base-300 bg-base-100 p-3"
+      // Email bodies are generated as HTML; sanitize before rendering.
+      dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+    />
+  );
+});
 
 const formatRecipient = (
   recipient: { title?: string; name?: string; email?: string | null } | null | undefined
@@ -74,9 +86,7 @@ export const ApplicationDetailPage = () => {
   const focusEmailId = searchParams.get("emailId");
   const [application, setApplication] = useState<Application | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
-  const [ppas, setPpas] = useState<PerProfileApplication[]>([]);
-  const [profiles, setProfiles] = useState<Record<string, Profile>>({});
-  const [emailsByPpa, setEmailsByPpa] = useState<Record<string, Email[]>>({});
+  const [ppaDetails, setPpaDetails] = useState<PerProfileApplicationDetail[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [clearToPendingOpen, setClearToPendingOpen] = useState(false);
@@ -84,45 +94,35 @@ export const ApplicationDetailPage = () => {
   const [editingRecipientPpaId, setEditingRecipientPpaId] = useState<string | null>(null);
   const [recipientDraftByPpa, setRecipientDraftByPpa] = useState<Record<string, RecipientDraft>>({});
   const [recipientUpdateBusyPpaId, setRecipientUpdateBusyPpaId] = useState<string | null>(null);
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!applicationId) return;
     setError(null);
     try {
-      const app = await api.getApplication(applicationId);
-      setApplication(app);
-      const co = await api.getCompany(app.company_id);
-      setCompany(co);
-      const list = await api.listPerProfileApplications(applicationId);
-      setPpas(list);
-      const profs = await api.listProfiles();
-      const map: Record<string, Profile> = {};
-      profs.forEach((p) => {
-        map[p.id] = p;
-      });
-      setProfiles(map);
-      const emailEntries = await Promise.all(
-        list.map(async (p) => {
-          try {
-            const emails = await api.listEmailsForPpa(p.id);
-            return [p.id, emails] as const;
-          } catch {
-            return [p.id, [] as Email[]] as const;
-          }
-        })
-      );
-      const em: Record<string, Email[]> = {};
-      emailEntries.forEach(([ppaId, emails]) => {
-        em[ppaId] = emails;
-      });
-      setEmailsByPpa(em);
+      const detail = await api.getApplicationDetail(applicationId);
+      setApplication(detail.application);
+      setCompany(detail.company);
+      setPpaDetails(detail.per_profile_applications);
     } catch (e) {
       setError((e as Error).message);
     }
-  };
+  }, [applicationId]);
+
+  const mergeUpdatedPpa = useCallback((updatedPpa: PerProfileApplication) => {
+    setPpaDetails((prev) =>
+      prev.map((row) =>
+        row.id === updatedPpa.id
+          ? {
+              ...row,
+              ...updatedPpa
+            }
+          : row
+      )
+    );
+  }, []);
 
   useEffect(() => {
     void load();
-  }, [applicationId]);
+  }, [load]);
 
   useEffect(() => {
     if (!focusEmailId) return;
@@ -130,7 +130,7 @@ export const ApplicationDetailPage = () => {
     if (el) {
       el.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-  }, [focusEmailId, emailsByPpa, applicationId]);
+  }, [focusEmailId, ppaDetails, applicationId]);
 
   const updateActiveSubject = async (ppa: PerProfileApplication, nextIndex: number) => {
     const plan = ppa.cold_email_plan;
@@ -139,8 +139,8 @@ export const ApplicationDetailPage = () => {
     const busyKey = `${ppa.id}:${nextIndex}`;
     setSubjectUpdateBusyKey(busyKey);
     const nextPlan = { ...plan, selected_subject_index: nextIndex };
-    const prevPpas = ppas;
-    setPpas((prev) =>
+    const prevPpas = ppaDetails;
+    setPpaDetails((prev) =>
       prev.map((row) =>
         row.id === ppa.id
           ? {
@@ -152,9 +152,9 @@ export const ApplicationDetailPage = () => {
     );
     try {
       const updated = await api.updatePerProfileApplication(ppa.id, { cold_email_plan: nextPlan });
-      setPpas((prev) => prev.map((row) => (row.id === ppa.id ? updated : row)));
+      mergeUpdatedPpa(updated);
     } catch (e) {
-      setPpas(prevPpas);
+      setPpaDetails(prevPpas);
       setError((e as Error).message);
     } finally {
       setSubjectUpdateBusyKey(null);
@@ -199,8 +199,8 @@ export const ApplicationDetailPage = () => {
     };
 
     setRecipientUpdateBusyPpaId(ppa.id);
-    const prevPpas = ppas;
-    setPpas((prev) =>
+    const prevPpas = ppaDetails;
+    setPpaDetails((prev) =>
       prev.map((row) =>
         row.id === ppa.id
           ? {
@@ -212,10 +212,10 @@ export const ApplicationDetailPage = () => {
     );
     try {
       const updated = await api.updatePerProfileApplication(ppa.id, { cold_email_plan: nextPlan });
-      setPpas((prev) => prev.map((row) => (row.id === ppa.id ? updated : row)));
+      mergeUpdatedPpa(updated);
       setEditingRecipientPpaId(null);
     } catch (e) {
-      setPpas(prevPpas);
+      setPpaDetails(prevPpas);
       setError((e as Error).message);
     } finally {
       setRecipientUpdateBusyPpaId(null);
@@ -298,8 +298,8 @@ export const ApplicationDetailPage = () => {
                             : undefined
                         }
                         onClick={async () => {
-                          await api.markApplied(application.id, !application.applied);
-                          await load();
+                          const updated = await api.markApplied(application.id, !application.applied);
+                          setApplication(updated);
                         }}
                       >
                         {application.applied ? "Unmark applied" : "Mark applied"}
@@ -308,8 +308,8 @@ export const ApplicationDetailPage = () => {
                         type="button"
                         className={`btn btn-sm ${application.email_sent ? "btn-outline" : "btn-primary"}`}
                         onClick={async () => {
-                          await api.markApplicationEmailSent(application.id, !application.email_sent);
-                          await load();
+                          const updated = await api.markApplicationEmailSent(application.id, !application.email_sent);
+                          setApplication(updated);
                         }}
                       >
                         {application.email_sent ? "Unmark email sent" : "Mark email sent"}
@@ -334,14 +334,11 @@ export const ApplicationDetailPage = () => {
           <div className="card bg-base-100 p-4 shadow">
             <h3 className="mb-2 text-lg font-semibold">Per-profile analysis (ordered)</h3>
             <div className="space-y-4">
-              {ppas.map((ppa) => {
-                const ppaEmails = emailsByPpa[ppa.id] ?? [];
-
-                return (
+              {ppaDetails.map((ppa) => (
                   <div key={ppa.id} className="rounded-lg border border-base-300 p-3">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <span className="font-medium">
-                        #{ppa.order_index} — {profiles[ppa.profile_id]?.name ?? ppa.profile_id}
+                        #{ppa.order_index} — {ppa.profile_name}
                       </span>
                       {ppa.fit_score != null && (
                         <span className="badge badge-ghost">Fit {ppa.fit_score}</span>
@@ -361,7 +358,7 @@ export const ApplicationDetailPage = () => {
                     <div className="mt-2">
                       <h4 className="text-sm font-semibold">Emails</h4>
                       <ul className="space-y-2">
-                        {ppaEmails.map((em) => (
+                        {ppa.emails.map((em) => (
                           <li
                             key={em.id}
                             id={`email-${em.id}`}
@@ -383,8 +380,17 @@ export const ApplicationDetailPage = () => {
                                   type="button"
                                   className={`btn btn-xs ${em.sent ? "btn-outline" : "btn-primary"}`}
                                   onClick={async () => {
-                                    await api.markEmailSent(em.id, !em.sent);
-                                    await load();
+                                    const updated = await api.markEmailSent(em.id, !em.sent);
+                                    setPpaDetails((prev) =>
+                                      prev.map((row) =>
+                                        row.id === ppa.id
+                                          ? {
+                                              ...row,
+                                              emails: row.emails.map((email) => (email.id === updated.id ? updated : email))
+                                            }
+                                          : row
+                                      )
+                                    );
                                   }}
                                 >
                                   {em.sent ? "Unmark email sent" : "Mark email sent"}
@@ -396,7 +402,16 @@ export const ApplicationDetailPage = () => {
                                   onClick={async () => {
                                     if (!window.confirm("Delete this email?")) return;
                                     await api.deleteEmail(em.id);
-                                    await load();
+                                    setPpaDetails((prev) =>
+                                      prev.map((row) =>
+                                        row.id === ppa.id
+                                          ? {
+                                              ...row,
+                                              emails: row.emails.filter((email) => email.id !== em.id)
+                                            }
+                                          : row
+                                      )
+                                    );
                                   }}
                                 >
                                   Delete
@@ -537,14 +552,10 @@ export const ApplicationDetailPage = () => {
                               </p>
                             )}
 
-                            <div
-                              className="prose prose-sm mt-1 max-w-none rounded-lg border border-base-300 bg-base-100 p-3"
-                              // Email bodies are generated as HTML; sanitize before rendering.
-                              dangerouslySetInnerHTML={{ __html: sanitizeEmailHtml(em.content) }}
-                            />
+                            <EmailHtmlContent content={em.content} />
                           </li>
                         ))}
-                        {ppaEmails.length === 0 && (
+                        {ppa.emails.length === 0 && (
                           <li className="rounded-lg border border-dashed border-base-300 bg-base-100 p-4 text-sm opacity-70">
                             No emails yet.
                           </li>
@@ -552,9 +563,8 @@ export const ApplicationDetailPage = () => {
                       </ul>
                     </div>
                   </div>
-                );
-              })}
-              {ppas.length === 0 && <p className="text-sm opacity-70">No per-profile rows yet.</p>}
+                ))}
+              {ppaDetails.length === 0 && <p className="text-sm opacity-70">No per-profile rows yet.</p>}
             </div>
           </div>
 

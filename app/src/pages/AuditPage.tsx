@@ -1,27 +1,48 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api";
 import { AuditEvent } from "../types";
 
+const AUDIT_PAGE_SIZE = 50;
+
 export const AuditPage = () => {
   const [rows, setRows] = useState<AuditEvent[]>([]);
   const [actor, setActor] = useState<"" | "user" | "agent">("");
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (actor) params.set("actor_type", actor);
-      setRows(await api.listAuditEvents(params));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
+  const load = useCallback(
+    async (targetPage = page) => {
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        if (actor) params.set("actor_type", actor);
+        params.set("skip", String((targetPage - 1) * AUDIT_PAGE_SIZE));
+        params.set("limit", String(AUDIT_PAGE_SIZE));
+        const nextRows = await api.listAuditEvents(params);
+        setRows(nextRows);
+        setHasNextPage(nextRows.length === AUDIT_PAGE_SIZE);
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    },
+    [actor, page]
+  );
 
   useEffect(() => {
-    void load();
+    setPage(1);
   }, [actor]);
+
+  useEffect(() => {
+    void load(page);
+  }, [load, page]);
+
+  useEffect(() => {
+    if (rows.length === 0 && page > 1) {
+      setPage((current) => Math.max(1, current - 1));
+    }
+  }, [rows.length, page]);
 
   return (
     <div className="space-y-4">
@@ -38,7 +59,7 @@ export const AuditPage = () => {
           <option value="user">User</option>
           <option value="agent">Agent</option>
         </select>
-        <button type="button" className="btn btn-sm" onClick={() => void load()}>
+        <button type="button" className="btn btn-sm" onClick={() => void load(page)}>
           Refresh
         </button>
       </div>
@@ -69,6 +90,27 @@ export const AuditPage = () => {
           </tbody>
         </table>
         {rows.length === 0 && <p className="p-4 text-sm opacity-70">No events.</p>}
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="text-xs opacity-70">Page {page}</p>
+        <div className="join">
+          <button
+            type="button"
+            className="btn btn-xs join-item"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={page === 1}
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="btn btn-xs join-item"
+            onClick={() => setPage((current) => current + 1)}
+            disabled={!hasNextPage}
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

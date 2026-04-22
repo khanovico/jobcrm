@@ -65,6 +65,17 @@ export type Profile = {
   updated_at: string;
 };
 
+export type ProfileListItem = {
+  id: string;
+  name: string;
+  frozen?: boolean;
+  location?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 /** POST /api/v1/profiles — all required except resume_md */
 export type ProfileCreatePayload = {
   name: string;
@@ -116,7 +127,19 @@ export type AppliedProfileName = {
 };
 
 export type ApplicationListItem = Application & {
+  company_name: string;
   applied_profiles: AppliedProfileName[];
+};
+
+export type PerProfileApplicationDetail = PerProfileApplication & {
+  profile_name: string;
+  emails: Email[];
+};
+
+export type ApplicationDetailResponse = {
+  application: Application;
+  company: Company;
+  per_profile_applications: PerProfileApplicationDetail[];
 };
 
 export type ColdEmailPlan = {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
@@ -11,7 +11,9 @@ import {
   initializeSelectedAppliedProfileNames,
   setSelectedAppliedProfileNames
 } from "../state/applicationsFilters";
-import { ApplicationListItem, Company, WorkerStateResponse } from "../types";
+import { ApplicationListItem, WorkerStateResponse } from "../types";
+
+const PAGE_SIZE = 20;
 
 const PlusIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -24,7 +26,6 @@ export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
@@ -40,8 +41,8 @@ export const ApplicationsPage = () => {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
-
-  const companyNameById = (id: string) => companies.find((c) => c.id === id)?.name ?? id;
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
 
   const availableAppliedProfileNames = useMemo(
     () =>
@@ -103,25 +104,40 @@ export const ApplicationsPage = () => {
     return p;
   }, [listMode]);
 
-  const load = async () => {
-    setError(null);
-    try {
-      const [applicationItems, companyItems, workers] = await Promise.all([
-        api.listApplications(listParams),
-        api.listCompanies(),
-        api.getWorkerState().catch(() => null)
-      ]);
-      setItems(applicationItems);
-      setCompanies(companyItems);
-      setWorkerState(workers);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  };
+  const load = useCallback(
+    async (targetPage = page) => {
+      setError(null);
+      try {
+        const params = new URLSearchParams(listParams);
+        params.set("skip", String((targetPage - 1) * PAGE_SIZE));
+        params.set("limit", String(PAGE_SIZE));
+        const [applicationItems, workers] = await Promise.all([
+          api.listApplications(params),
+          api.getWorkerState().catch(() => null)
+        ]);
+        setItems(applicationItems);
+        setHasNextPage(applicationItems.length === PAGE_SIZE);
+        setWorkerState(workers);
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    },
+    [listParams, page]
+  );
 
   useEffect(() => {
-    void load();
-  }, [listParams]);
+    setPage(1);
+  }, [listMode]);
+
+  useEffect(() => {
+    void load(page);
+  }, [load, page]);
+
+  useEffect(() => {
+    if (items.length === 0 && page > 1) {
+      setPage((current) => Math.max(1, current - 1));
+    }
+  }, [items.length, page]);
 
   const openCreateModal = () => {
     setError(null);
@@ -203,7 +219,7 @@ export const ApplicationsPage = () => {
                 </button>
               ))}
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page)}>
               Refresh
             </button>
             <button
@@ -249,7 +265,7 @@ export const ApplicationsPage = () => {
                   className="cursor-pointer hover:bg-base-200"
                   onClick={() => navigate(`/applications/${application.id}`)}
                 >
-                  <td className="font-medium">{companyNameById(application.company_id)}</td>
+                  <td className="font-medium">{application.company_name}</td>
                   <td>
                     <span className={`${applicationStatusBadgeClass(application.status)} badge-sm`}>
                       {formatApplicationStatusLabel(application.status)}
@@ -290,7 +306,7 @@ export const ApplicationsPage = () => {
                               const nextApplied = !application.applied;
                               await api.markApplied(application.id, nextApplied);
                               if (listMode === "all" || listMode === "archived") {
-                                await load();
+                                await load(page);
                                 return;
                               }
                               setListMode(nextApplied ? "applied" : "pending");
@@ -318,6 +334,27 @@ export const ApplicationsPage = () => {
             </tbody>
           </table>
           {filteredItems.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs opacity-70">Page {page}</p>
+          <div className="join">
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => current + 1)}
+              disabled={!hasNextPage}
+            >
+              Next
+            </button>
+          </div>
         </div>
         {appliedProfileFilterOpen && appliedProfilesFilterPosition ? (
           <>
@@ -387,7 +424,7 @@ export const ApplicationsPage = () => {
       <NewApplicationModal
         open={createOpen}
         onClose={closeModal}
-        companies={companies}
+        companies={editing ? [{ id: editing.company_id, name: editing.company_name }] : []}
         editing={editing}
         onSuccess={load}
       />
@@ -399,7 +436,7 @@ export const ApplicationsPage = () => {
           setArchiveTarget(null);
         }}
         applicationId={archiveTarget?.id ?? ""}
-        companyLabel={archiveTarget ? companyNameById(archiveTarget.company_id) : ""}
+        companyLabel={archiveTarget ? archiveTarget.company_name ?? archiveTarget.company_id : ""}
         onArchived={load}
       />
     </div>

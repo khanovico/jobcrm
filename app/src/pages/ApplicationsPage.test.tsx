@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,6 +34,7 @@ describe("ApplicationsPage", () => {
   const applicationRow = {
     id: "a1",
     company_id: "c1",
+    company_name: "Acme",
     status: "application_ready",
     applied: false,
     created_at: "2026-01-01",
@@ -71,14 +72,20 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByTestId("app-detail")).toBeInTheDocument();
   });
 
-  it("opens new application modal with company select from + button", async () => {
+  it("opens new application modal with bounded company search", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
       if (isApplicationsListRequest(url)) {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
-      if (url.endsWith("/companies")) {
+      if (url.includes("/api/v1/companies")) {
+        const search = new URL(url).searchParams.get("search");
+        if (search === "Beta") {
+          return Promise.resolve(
+            new Response(JSON.stringify([{ ...companyRow, id: "c2", name: "Beta Labs" }]), { status: 200 })
+          );
+        }
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
       if (url.includes("/settings/workers")) {
@@ -96,7 +103,26 @@ describe("ApplicationsPage", () => {
     await screen.findByRole("heading", { name: "Applications" });
     await userEvent.click(screen.getByRole("button", { name: "New application" }));
     expect(await screen.findByRole("heading", { name: "New application", level: 3 })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search companies" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Company" })).toBeInTheDocument();
+
+    await waitFor(() => {
+      const companyCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.includes("/api/v1/companies"));
+      expect(companyCalls).toHaveLength(1);
+      expect(companyCalls[0]).toContain("limit=20");
+    });
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Search companies" }), "Beta");
+
+    await waitFor(() => {
+      const companyCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.includes("/api/v1/companies"));
+      expect(companyCalls.some((url) => url.includes("search=Beta"))).toBe(true);
+    });
+    expect(await screen.findByRole("option", { name: "Beta Labs" })).toBeInTheDocument();
   });
 
   it("shows mark applied button and marks as applied", async () => {
@@ -312,6 +338,87 @@ describe("ApplicationsPage", () => {
     expect(listCalls.some((url) => url.includes("applied=true"))).toBe(true);
   });
 
+  it("does not fetch companies when switching application list modes", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.endsWith("/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.endsWith("/companies"))
+    ).toHaveLength(0);
+
+    await userEvent.click(screen.getByRole("button", { name: "Applied" }));
+
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => isApplicationsListRequest(url));
+      expect(listCalls.some((url) => url.includes("applied=true"))).toBe(true);
+    });
+
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.endsWith("/companies"))
+    ).toHaveLength(0);
+  });
+
+  it("paginates application list requests", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const secondPageRow = { ...applicationRow, id: "a21", company_name: "Beta" };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        if (url.includes("skip=20")) {
+          return Promise.resolve(new Response(JSON.stringify([secondPageRow]), { status: 200 }));
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(Array.from({ length: 20 }, (_, index) => ({ ...applicationRow, id: `a${index + 1}` }))), {
+            status: 200
+          })
+        );
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Page 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
+  });
+
   it("uses highlighted badge style for *_ready statuses", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
@@ -365,18 +472,21 @@ describe("ApplicationsPage", () => {
                 ...applicationRow,
                 id: "a1",
                 company_id: "c1",
+                company_name: "Acme",
                 applied_profiles: [{ profile_name: "Alice Park" }, { profile_name: "Bob Stone" }]
               },
               {
                 ...applicationRow,
                 id: "a2",
                 company_id: "c2",
+                company_name: "Beta",
                 applied_profiles: [{ profile_name: "Bob Stone" }]
               },
               {
                 ...applicationRow,
                 id: "a3",
                 company_id: "c3",
+                company_name: "Core",
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
             ]),
@@ -433,12 +543,14 @@ describe("ApplicationsPage", () => {
                 ...applicationRow,
                 id: "a1",
                 company_id: "c1",
+                company_name: "Acme",
                 applied_profiles: [{ profile_name: "Alice Park" }]
               },
               {
                 ...applicationRow,
                 id: "a2",
                 company_id: "c2",
+                company_name: "Beta",
                 applied_profiles: []
               }
             ]),
@@ -499,12 +611,14 @@ describe("ApplicationsPage", () => {
                 ...applicationRow,
                 id: "a1",
                 company_id: "c1",
+                company_name: "Acme",
                 applied_profiles: [{ profile_name: "Alice Park" }]
               },
               {
                 ...applicationRow,
                 id: "a2",
                 company_id: "c2",
+                company_name: "Core",
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
             ]),

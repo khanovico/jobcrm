@@ -1,11 +1,15 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ClearCompanyResearchModal } from "../components/ClearCompanyResearchModal";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
+import { getAllIndustries } from "../state/industryCatalog";
+import { invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Application, Company, CompanyResearchStatus, Industry } from "../types";
+
+const COMPANY_APPLICATIONS_PAGE_SIZE = 20;
 
 const dash = (value: string | null | undefined) => (value && String(value).trim() !== "" ? value : "—");
 
@@ -39,6 +43,8 @@ export const CompanyDetailPage = () => {
   const navigate = useNavigate();
   const [company, setCompany] = useState<Company | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [applicationsPage, setApplicationsPage] = useState(1);
+  const [hasNextApplicationsPage, setHasNextApplicationsPage] = useState(false);
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
@@ -66,22 +72,12 @@ export const CompanyDetailPage = () => {
     return m;
   }, [industries]);
 
-  const load = async () => {
+  const loadCompanyContext = useCallback(async () => {
     if (!companyId) return;
     setError(null);
     try {
-      const industryParams = new URLSearchParams();
-      industryParams.set("skip", "0");
-      // API default limit is 100; companies may reference any industry ID — load full taxonomy.
-      industryParams.set("limit", "10000");
-
-      const [co, apps, inds] = await Promise.all([
-        api.getCompany(companyId),
-        api.listApplications(new URLSearchParams({ company_id: companyId })),
-        api.listIndustries(industryParams)
-      ]);
+      const [co, inds] = await Promise.all([api.getCompany(companyId), getAllIndustries()]);
       setCompany(co);
-      setApplications(apps);
       setIndustries(inds);
       setName(co.name);
       setWebsite(co.website ?? "");
@@ -99,11 +95,45 @@ export const CompanyDetailPage = () => {
     } catch (e) {
       setError((e as Error).message);
     }
-  };
+  }, [companyId]);
+
+  const loadApplicationsPage = useCallback(
+    async (targetPage = applicationsPage) => {
+      if (!companyId) return;
+      setError(null);
+      try {
+        const params = new URLSearchParams({
+          company_id: companyId,
+          skip: String((targetPage - 1) * COMPANY_APPLICATIONS_PAGE_SIZE),
+          limit: String(COMPANY_APPLICATIONS_PAGE_SIZE)
+        });
+        const apps = await api.listApplications(params);
+        setApplications(apps);
+        setHasNextApplicationsPage(apps.length === COMPANY_APPLICATIONS_PAGE_SIZE);
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    },
+    [applicationsPage, companyId]
+  );
 
   useEffect(() => {
-    void load();
+    void loadCompanyContext();
+  }, [loadCompanyContext]);
+
+  useEffect(() => {
+    setApplicationsPage(1);
   }, [companyId]);
+
+  useEffect(() => {
+    void loadApplicationsPage(applicationsPage);
+  }, [applicationsPage, loadApplicationsPage]);
+
+  useEffect(() => {
+    if (applications.length === 0 && applicationsPage > 1) {
+      setApplicationsPage((current) => Math.max(1, current - 1));
+    }
+  }, [applications.length, applicationsPage]);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -130,6 +160,7 @@ export const CompanyDetailPage = () => {
         industry_ids: selectedIndustryIds
       };
       const updated = await api.updateCompany(companyId, payload);
+      invalidateCompanySummariesCache();
       setCompany(updated);
     } catch (err) {
       setError((err as Error).message);
@@ -326,30 +357,53 @@ export const CompanyDetailPage = () => {
             {applications.length === 0 ? (
               <p className="text-sm opacity-70">No applications for this company yet.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-base-300">
-                <table className="table table-sm">
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Applied</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {applications.map((a) => (
-                      <tr key={a.id}>
-                        <td>{a.status}</td>
-                        <td className="whitespace-nowrap text-xs">{a.applied_at ?? "—"}</td>
-                        <td>
-                          <Link to={`/applications/${a.id}`} className="btn btn-ghost btn-xs">
-                            Open
-                          </Link>
-                        </td>
+              <>
+                <div className="overflow-x-auto rounded-lg border border-base-300">
+                  <table className="table table-sm">
+                    <thead>
+                      <tr>
+                        <th>Status</th>
+                        <th>Applied</th>
+                        <th></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {applications.map((a) => (
+                        <tr key={a.id}>
+                          <td>{a.status}</td>
+                          <td className="whitespace-nowrap text-xs">{a.applied_at ?? "—"}</td>
+                          <td>
+                            <Link to={`/applications/${a.id}`} className="btn btn-ghost btn-xs">
+                              Open
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-xs opacity-70">Page {applicationsPage}</p>
+                  <div className="join">
+                    <button
+                      type="button"
+                      className="btn btn-xs join-item"
+                      onClick={() => setApplicationsPage((current) => Math.max(1, current - 1))}
+                      disabled={applicationsPage === 1}
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-xs join-item"
+                      onClick={() => setApplicationsPage((current) => current + 1)}
+                      disabled={!hasNextApplicationsPage}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
 
@@ -508,7 +562,8 @@ export const CompanyDetailPage = () => {
             onCleared={async () => {
               setError(null);
               try {
-                await load();
+                setApplicationsPage(1);
+                await Promise.all([loadCompanyContext(), loadApplicationsPage(1)]);
               } catch (e) {
                 setError((e as Error).message);
               }
