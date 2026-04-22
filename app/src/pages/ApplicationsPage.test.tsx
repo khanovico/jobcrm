@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetCompanySummariesCacheForTests } from "../state/companySummaries";
 import { resetAppliedProfilesFilterSelectionForTests } from "../state/applicationsFilters";
 import { ApplicationsPage } from "./ApplicationsPage";
 
@@ -18,6 +19,7 @@ describe("ApplicationsPage", () => {
   });
   afterEach(() => {
     cleanup();
+    resetCompanySummariesCacheForTests();
     resetAppliedProfilesFilterSelectionForTests();
     vi.unstubAllGlobals();
   });
@@ -34,6 +36,7 @@ describe("ApplicationsPage", () => {
   const applicationRow = {
     id: "a1",
     company_id: "c1",
+    company_name: "Acme",
     status: "application_ready",
     applied: false,
     created_at: "2026-01-01",
@@ -78,7 +81,7 @@ describe("ApplicationsPage", () => {
       if (isApplicationsListRequest(url)) {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
-      if (url.endsWith("/companies")) {
+      if (url.includes("/api/v1/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
       if (url.includes("/settings/workers")) {
@@ -312,7 +315,7 @@ describe("ApplicationsPage", () => {
     expect(listCalls.some((url) => url.includes("applied=true"))).toBe(true);
   });
 
-  it("does not refetch companies when switching application list modes", async () => {
+  it("does not fetch companies when switching application list modes", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -339,7 +342,7 @@ describe("ApplicationsPage", () => {
       fetchMock.mock.calls
         .map(([input]) => (typeof input === "string" ? input : input.toString()))
         .filter((url) => url.endsWith("/companies"))
-    ).toHaveLength(1);
+    ).toHaveLength(0);
 
     await userEvent.click(screen.getByRole("button", { name: "Applied" }));
 
@@ -354,7 +357,7 @@ describe("ApplicationsPage", () => {
       fetchMock.mock.calls
         .map(([input]) => (typeof input === "string" ? input : input.toString()))
         .filter((url) => url.endsWith("/companies"))
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 
   it("uses highlighted badge style for *_ready statuses", async () => {
@@ -410,18 +413,21 @@ describe("ApplicationsPage", () => {
                 ...applicationRow,
                 id: "a1",
                 company_id: "c1",
+                company_name: "Acme",
                 applied_profiles: [{ profile_name: "Alice Park" }, { profile_name: "Bob Stone" }]
               },
               {
                 ...applicationRow,
                 id: "a2",
                 company_id: "c2",
+                company_name: "Beta",
                 applied_profiles: [{ profile_name: "Bob Stone" }]
               },
               {
                 ...applicationRow,
                 id: "a3",
                 company_id: "c3",
+                company_name: "Core",
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
             ]),
@@ -478,12 +484,14 @@ describe("ApplicationsPage", () => {
                 ...applicationRow,
                 id: "a1",
                 company_id: "c1",
+                company_name: "Acme",
                 applied_profiles: [{ profile_name: "Alice Park" }]
               },
               {
                 ...applicationRow,
                 id: "a2",
                 company_id: "c2",
+                company_name: "Beta",
                 applied_profiles: []
               }
             ]),
@@ -544,12 +552,14 @@ describe("ApplicationsPage", () => {
                 ...applicationRow,
                 id: "a1",
                 company_id: "c1",
+                company_name: "Acme",
                 applied_profiles: [{ profile_name: "Alice Park" }]
               },
               {
                 ...applicationRow,
                 id: "a2",
                 company_id: "c2",
+                company_name: "Core",
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
             ]),

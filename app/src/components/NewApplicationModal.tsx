@@ -9,6 +9,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   companies: Company[];
+  loadingCompanies?: boolean;
   editing: ApplicationListItem | null;
   /** When creating from Companies "Apply", preselect this company */
   initialCompanyId?: string | null;
@@ -19,6 +20,7 @@ export const NewApplicationModal = ({
   open,
   onClose,
   companies,
+  loadingCompanies = false,
   editing,
   initialCompanyId,
   onSuccess
@@ -105,7 +107,9 @@ export const NewApplicationModal = ({
   return (
     <Modal open={open} onClose={closeModal} title={modalTitle} size="lg">
       <form className="space-y-3" onSubmit={onSubmit} aria-label={modalTitle}>
-        {companies.length === 0 ? (
+        {loadingCompanies ? (
+          <div className="rounded-lg border border-base-300 bg-base-200 p-3 text-sm">Loading companies...</div>
+        ) : companies.length === 0 ? (
           <div className="rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
             <p className="mb-2">Add at least one company before creating an application.</p>
             <Link to="/companies" className="link link-primary">
@@ -157,7 +161,7 @@ export const NewApplicationModal = ({
           <button type="button" className="btn btn-ghost" onClick={closeModal}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={companies.length === 0}>
+          <button type="submit" className="btn btn-primary" disabled={companies.length === 0 || loadingCompanies}>
             {editing ? "Save" : "Create"}
           </button>
         </div>

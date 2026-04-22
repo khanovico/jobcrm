@@ -6,6 +6,7 @@ import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
 import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "../applicationStatus";
+import { getAllCompanySummaries } from "../state/companySummaries";
 import {
   getSelectedAppliedProfileNames,
   initializeSelectedAppliedProfileNames,
@@ -24,7 +25,8 @@ export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyOptions, setCompanyOptions] = useState<Company[]>([]);
+  const [companyOptionsLoading, setCompanyOptionsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
@@ -40,9 +42,6 @@ export const ApplicationsPage = () => {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
-  const hasLoadedCompaniesRef = useRef(false);
-
-  const companyNameById = useMemo(() => new Map(companies.map((company) => [company.id, company.name])), [companies]);
 
   const availableAppliedProfileNames = useMemo(
     () =>
@@ -105,21 +104,15 @@ export const ApplicationsPage = () => {
   }, [listMode]);
 
   const load = useCallback(
-    async (options?: { includeCompanies?: boolean }) => {
+    async () => {
       setError(null);
-      const shouldLoadCompanies = options?.includeCompanies ?? !hasLoadedCompaniesRef.current;
       try {
-        const [applicationItems, workers, companyItems] = await Promise.all([
+        const [applicationItems, workers] = await Promise.all([
           api.listApplications(listParams),
-          api.getWorkerState().catch(() => null),
-          shouldLoadCompanies ? api.listCompanies() : Promise.resolve(null)
+          api.getWorkerState().catch(() => null)
         ]);
         setItems(applicationItems);
         setWorkerState(workers);
-        if (companyItems) {
-          setCompanies(companyItems);
-          hasLoadedCompaniesRef.current = true;
-        }
       } catch (e) {
         setError((e as Error).message);
       }
@@ -127,20 +120,34 @@ export const ApplicationsPage = () => {
     [listParams]
   );
 
+  const loadCompanyOptions = useCallback(async () => {
+    setCompanyOptionsLoading(true);
+    try {
+      const companies = await getAllCompanySummaries();
+      setCompanyOptions(companies);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCompanyOptionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [listParams]);
+  }, [load]);
 
   const openCreateModal = () => {
     setError(null);
     setEditing(null);
     setCreateOpen(true);
+    void loadCompanyOptions();
   };
 
   const openEditModal = (application: ApplicationListItem) => {
     setError(null);
     setEditing(application);
     setCreateOpen(true);
+    void loadCompanyOptions();
   };
 
   const closeModal = () => {
@@ -211,7 +218,7 @@ export const ApplicationsPage = () => {
                 </button>
               ))}
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load({ includeCompanies: true })}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
               Refresh
             </button>
             <button
@@ -257,7 +264,7 @@ export const ApplicationsPage = () => {
                   className="cursor-pointer hover:bg-base-200"
                   onClick={() => navigate(`/applications/${application.id}`)}
                 >
-                  <td className="font-medium">{companyNameById.get(application.company_id) ?? application.company_id}</td>
+                  <td className="font-medium">{application.company_name}</td>
                   <td>
                     <span className={`${applicationStatusBadgeClass(application.status)} badge-sm`}>
                       {formatApplicationStatusLabel(application.status)}
@@ -395,7 +402,8 @@ export const ApplicationsPage = () => {
       <NewApplicationModal
         open={createOpen}
         onClose={closeModal}
-        companies={companies}
+        companies={companyOptions}
+        loadingCompanies={companyOptionsLoading}
         editing={editing}
         onSuccess={load}
       />
@@ -407,7 +415,7 @@ export const ApplicationsPage = () => {
           setArchiveTarget(null);
         }}
         applicationId={archiveTarget?.id ?? ""}
-        companyLabel={archiveTarget ? companyNameById.get(archiveTarget.company_id) ?? archiveTarget.company_id : ""}
+        companyLabel={archiveTarget ? archiveTarget.company_name ?? archiveTarget.company_id : ""}
         onArchived={load}
       />
     </div>

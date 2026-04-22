@@ -116,6 +116,7 @@ export type AppliedProfileName = {
 };
 
 export type ApplicationListItem = Application & {
+  company_name: string;
   applied_profiles: AppliedProfileName[];
 };
 

@@ -5,6 +5,7 @@ import { ClearCompanyResearchModal } from "../components/ClearCompanyResearchMod
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
+import { invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Application, Company, CompanyResearchStatus, Industry } from "../types";
 
 const dash = (value: string | null | undefined) => (value && String(value).trim() !== "" ? value : "—");
@@ -130,6 +131,7 @@ export const CompanyDetailPage = () => {
         industry_ids: selectedIndustryIds
       };
       const updated = await api.updateCompany(companyId, payload);
+      invalidateCompanySummariesCache();
       setCompany(updated);
     } catch (err) {
       setError((err as Error).message);
