@@ -6,13 +6,12 @@ import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
 import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "../applicationStatus";
-import { getAllCompanySummaries } from "../state/companySummaries";
 import {
   getSelectedAppliedProfileNames,
   initializeSelectedAppliedProfileNames,
   setSelectedAppliedProfileNames
 } from "../state/applicationsFilters";
-import { ApplicationListItem, Company, WorkerStateResponse } from "../types";
+import { ApplicationListItem, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 20;
 
@@ -27,8 +26,6 @@ export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
-  const [companyOptions, setCompanyOptions] = useState<Company[]>([]);
-  const [companyOptionsLoading, setCompanyOptionsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
@@ -128,18 +125,6 @@ export const ApplicationsPage = () => {
     [listParams, page]
   );
 
-  const loadCompanyOptions = useCallback(async () => {
-    setCompanyOptionsLoading(true);
-    try {
-      const companies = await getAllCompanySummaries();
-      setCompanyOptions(companies);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setCompanyOptionsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     setPage(1);
   }, [listMode]);
@@ -158,14 +143,12 @@ export const ApplicationsPage = () => {
     setError(null);
     setEditing(null);
     setCreateOpen(true);
-    void loadCompanyOptions();
   };
 
   const openEditModal = (application: ApplicationListItem) => {
     setError(null);
     setEditing(application);
     setCreateOpen(true);
-    void loadCompanyOptions();
   };
 
   const closeModal = () => {
@@ -441,8 +424,7 @@ export const ApplicationsPage = () => {
       <NewApplicationModal
         open={createOpen}
         onClose={closeModal}
-        companies={companyOptions}
-        loadingCompanies={companyOptionsLoading}
+        companies={editing ? [{ id: editing.company_id, name: editing.company_name }] : []}
         editing={editing}
         onSuccess={load}
       />

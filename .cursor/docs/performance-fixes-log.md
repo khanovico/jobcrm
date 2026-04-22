@@ -12,3 +12,5 @@
 - `2026-04-21` `ClearCompanyResearchModal`: replaced a huge related-application list fetch with the existing company application-count endpoint because the modal only needs the count to drive its choices.
 - `2026-04-21` `ApplicationsPage`: added explicit pagination so the UI no longer depends on backend default list caps, making large application sets navigable and predictable.
 - `2026-04-21` `GET /profiles/summary` + `ProfilesPage`: added a lightweight paginated profile-summary route so the profiles table stops loading full profile documents (bio/resume markdown) for list view.
+- `2026-04-21` `NewApplicationModal`: replaced the “load every company into a giant select” flow with bounded company search (`limit=20`) so application create/edit no longer pages through the full company catalog.
+- `2026-04-21` `App` routes: lazy-loaded page bundles with `React.lazy` + `Suspense` so the shell stops paying the up-front parse/download cost for every screen on first load.

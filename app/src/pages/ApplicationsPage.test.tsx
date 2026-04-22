@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resetCompanySummariesCacheForTests } from "../state/companySummaries";
 import { resetAppliedProfilesFilterSelectionForTests } from "../state/applicationsFilters";
 import { ApplicationsPage } from "./ApplicationsPage";
 
@@ -19,7 +18,6 @@ describe("ApplicationsPage", () => {
   });
   afterEach(() => {
     cleanup();
-    resetCompanySummariesCacheForTests();
     resetAppliedProfilesFilterSelectionForTests();
     vi.unstubAllGlobals();
   });
@@ -74,7 +72,7 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByTestId("app-detail")).toBeInTheDocument();
   });
 
-  it("opens new application modal with company select from + button", async () => {
+  it("opens new application modal with bounded company search", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -82,6 +80,12 @@ describe("ApplicationsPage", () => {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
       if (url.includes("/api/v1/companies")) {
+        const search = new URL(url).searchParams.get("search");
+        if (search === "Beta") {
+          return Promise.resolve(
+            new Response(JSON.stringify([{ ...companyRow, id: "c2", name: "Beta Labs" }]), { status: 200 })
+          );
+        }
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
       if (url.includes("/settings/workers")) {
@@ -99,7 +103,26 @@ describe("ApplicationsPage", () => {
     await screen.findByRole("heading", { name: "Applications" });
     await userEvent.click(screen.getByRole("button", { name: "New application" }));
     expect(await screen.findByRole("heading", { name: "New application", level: 3 })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search companies" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Company" })).toBeInTheDocument();
+
+    await waitFor(() => {
+      const companyCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.includes("/api/v1/companies"));
+      expect(companyCalls).toHaveLength(1);
+      expect(companyCalls[0]).toContain("limit=20");
+    });
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Search companies" }), "Beta");
+
+    await waitFor(() => {
+      const companyCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.includes("/api/v1/companies"));
+      expect(companyCalls.some((url) => url.includes("search=Beta"))).toBe(true);
+    });
+    expect(await screen.findByRole("option", { name: "Beta Labs" })).toBeInTheDocument();
   });
 
   it("shows mark applied button and marks as applied", async () => {

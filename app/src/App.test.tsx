@@ -6,7 +6,7 @@ import App from "./App";
 import { AuthProvider } from "./auth";
 
 describe("App", () => {
-  it("routes unauthenticated user to login", () => {
+  it("routes unauthenticated user to login", async () => {
     localStorage.removeItem("jobcrm-token");
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -15,6 +15,6 @@ describe("App", () => {
         </AuthProvider>
       </MemoryRouter>
     );
-    expect(screen.getByText("Login")).toBeInTheDocument();
+    expect(await screen.findByText("Login")).toBeInTheDocument();
   });
 });
