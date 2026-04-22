@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { NOTIFICATIONS_INBOX_CHANGED } from "../notificationSync";
 import { NotificationKind, UserNotification } from "../types";
 
 const TOAST_POLL_MS = 45_000;
@@ -143,6 +144,27 @@ export const Layout = () => {
       toastDismissTimersRef.current.clear();
     };
   }, [showToastForNote]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshUnreadBadge = () => {
+      void (async () => {
+        try {
+          const unread = await api.getUnreadNotificationsCount();
+          if (!cancelled) setUnreadCount(unread.count);
+        } catch {
+          if (!cancelled) setUnreadCount(0);
+        }
+      })();
+    };
+
+    window.addEventListener(NOTIFICATIONS_INBOX_CHANGED, refreshUnreadBadge);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(NOTIFICATIONS_INBOX_CHANGED, refreshUnreadBadge);
+    };
+  }, []);
 
   return (
     <div className="drawer lg:drawer-open">

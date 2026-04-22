@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api";
+import { dispatchNotificationsInboxChanged } from "../notificationSync";
 import { NotificationKind, NotificationSeverity, UserNotification } from "../types";
 
 const kindLabel: Record<NotificationKind, string> = {
@@ -44,6 +45,7 @@ export const NotificationsPage = () => {
       });
       setItems(response);
       setHasNextPage(response.length === PAGE_SIZE);
+      dispatchNotificationsInboxChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -98,6 +100,7 @@ export const NotificationsPage = () => {
         n.id === id ? { ...n, read_at: ts } : n
       )
     );
+    dispatchNotificationsInboxChanged();
     void api.markNotificationRead(id).catch(() => {
       void load(page, showOnlyActive);
     });
@@ -108,6 +111,7 @@ export const NotificationsPage = () => {
     if (ids.length === 0) return;
     setItems((prev) => prev.filter((n) => !selectedIds.has(n.id)));
     setSelectedIds(new Set());
+    dispatchNotificationsInboxChanged();
     void api.deleteNotificationsBulk(ids).catch(() => {
       void load(page, showOnlyActive);
     });
@@ -122,6 +126,7 @@ export const NotificationsPage = () => {
         selectedIds.has(n.id) && !n.read_at ? { ...n, read_at: ts } : n
       )
     );
+    dispatchNotificationsInboxChanged();
     void Promise.all(unreadSelected.map((n) => api.markNotificationRead(n.id))).catch(() => {
       void load(page, showOnlyActive);
     });

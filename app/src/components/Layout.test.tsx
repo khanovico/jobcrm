@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider } from "../auth";
+import { NOTIFICATIONS_INBOX_CHANGED } from "../notificationSync";
 import { Layout } from "./Layout";
 
 const { getUnreadNotificationsCount, listNotifications, setUnauthorizedHandler, getMe } = vi.hoisted(
@@ -106,6 +107,34 @@ describe("Layout", () => {
     expect(getUnreadNotificationsCount).toHaveBeenCalled();
     expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 25 });
     expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 45_000);
+  });
+
+  it("refreshes sidebar unread badge when inbox changes without waiting for poll", async () => {
+    getUnreadNotificationsCount.mockResolvedValueOnce({ count: 3 }).mockResolvedValueOnce({ count: 0 });
+    listNotifications.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AuthProvider>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Placeholder title="Home" />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Unread notifications: 3")).toBeInTheDocument();
+    });
+
+    window.dispatchEvent(new CustomEvent(NOTIFICATIONS_INBOX_CHANGED));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Unread notifications:/)).not.toBeInTheDocument();
+    });
+    expect(getUnreadNotificationsCount).toHaveBeenCalledTimes(2);
   });
 
   it("shows a toast when a new unread notification appears after initial load", async () => {
