@@ -43,10 +43,11 @@ from app.models import (
     Company,
     CompanyApplicationCountResponse,
     ClearCompanyResearchDetailRequest,
+    CompanyArchiveRequest,
+    CompanyArchiveResponse,
     CompanyCreate,
     CompanyResearchStatus,
     CompanyUpdate,
-    DeleteCompanyResponse,
     DashboardMetrics,
     Email,
     EmailCreate,
@@ -86,6 +87,39 @@ from app.models import (
 from app.repository import BaseRepository
 
 app = FastAPI(title=settings.app_name)
+
+
+def _resolve_company_create(repo: BaseRepository, payload: CompanyCreate) -> Company:
+    existing = repo.find_company_by_normalized_name(payload.name)
+    if existing and not existing.archived:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "company_name_exists",
+                "company_id": existing.id,
+                "name": existing.name,
+            },
+        )
+    if existing and existing.archived:
+        if not payload.acknowledge_reuse_of_archived_company:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "archived_company_name_exists",
+                    "company_id": existing.id,
+                    "name": existing.name,
+                    "archive_reason": existing.archive_reason,
+                },
+            )
+        unarchived = repo.unarchive_company(existing.id, payload)
+        if not unarchived:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to restore company",
+            )
+        return unarchived
+    return repo.create_company(payload)
+
 
 _cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
@@ -361,7 +395,7 @@ def create_company(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Company:
-    company = repo.create_company(payload)
+    company = _resolve_company_create(repo, payload)
     _audit(
         repo,
         actor_type=ActorType.user,
@@ -420,25 +454,30 @@ def company_application_count(
     return CompanyApplicationCountResponse(count=repo.count_applications_for_company(company_id))
 
 
-@app.delete("/api/v1/companies/{company_id}", response_model=DeleteCompanyResponse)
-def delete_company(
+@app.post(
+    "/api/v1/companies/{company_id}/archive",
+    response_model=CompanyArchiveResponse,
+    status_code=status.HTTP_200_OK,
+)
+def archive_company(
     company_id: str,
+    body: CompanyArchiveRequest,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
-) -> DeleteCompanyResponse:
-    deleted, applications_archived = repo.delete_company(company_id)
-    if not deleted:
+) -> CompanyArchiveResponse:
+    ok, applications_archived = repo.archive_company(company_id, body.archive_reason)
+    if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
     _audit(
         repo,
         actor_type=ActorType.user,
         actor_id=user.id,
-        action="delete",
+        action="archive",
         entity_type="company",
         entity_id=company_id,
         metadata={"applications_archived": applications_archived},
     )
-    return DeleteCompanyResponse(applications_archived=applications_archived)
+    return CompanyArchiveResponse(applications_archived=applications_archived)
 
 
 @app.post(
@@ -635,7 +674,13 @@ def bootstrap_application(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> Application:
-    _, application = repo.bootstrap_application(payload, created_by_user_id=user.id)
+    cc = CompanyCreate(
+        name=payload.company_name,
+        website=payload.company_website,
+        acknowledge_reuse_of_archived_company=payload.acknowledge_reuse_of_archived_company,
+    )
+    company = _resolve_company_create(repo, cc)
+    _, application = repo.bootstrap_application(company, payload, created_by_user_id=user.id)
     _audit(
         repo,
         actor_type=ActorType.user,

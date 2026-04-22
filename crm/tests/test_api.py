@@ -544,6 +544,42 @@ def test_application_detail_endpoint_batches_company_ppas_profiles_and_emails() 
     assert payload["per_profile_applications"][0]["emails"] == [email]
 
 
+def test_ppa_cold_email_recipient_timezone_round_trips_in_application_detail() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "TZ Co"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={"application_id": application["id"], "profile_id": profile["id"], "order_index": 0},
+        headers=headers,
+    ).json()
+    plan = {
+        "subjects": ["Hello"],
+        "selected_subject_index": 0,
+        "to": {
+            "title": "Eng",
+            "name": "Pat",
+            "email": "pat@corp.com",
+            "timezone": "Europe/Berlin",
+        },
+        "status": "none",
+    }
+    client.put(f"/api/v1/per-profile-applications/{ppa['id']}", json={"cold_email_plan": plan}, headers=headers)
+
+    detail = client.get(f"/api/v1/applications/{application['id']}/detail", headers=headers).json()
+    assert detail["per_profile_applications"][0]["cold_email_plan"]["to"]["timezone"] == "Europe/Berlin"
+
+
 def test_profile_summary_endpoint_returns_only_list_fields() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
@@ -698,7 +734,7 @@ def test_company_application_count_matches_tied_applications() -> None:
     assert r2.json()["count"] == 2
 
 
-def test_delete_company_archives_all_tied_applications_then_removes_company() -> None:
+def test_archive_company_archives_all_tied_applications_and_keeps_company() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -722,19 +758,85 @@ def test_delete_company_archives_all_tied_applications_then_removes_company() ->
         headers=headers,
     )
 
-    r = client.delete(f"/api/v1/companies/{company['id']}", headers=headers)
+    reason = "no longer tracking"
+    r = client.post(
+        f"/api/v1/companies/{company['id']}/archive", json={"archive_reason": reason}, headers=headers
+    )
     assert r.status_code == 200
     assert r.json()["applications_archived"] == 2
 
-    assert client.get(f"/api/v1/companies/{company['id']}", headers=headers).status_code == 404
+    comp_get = client.get(f"/api/v1/companies/{company['id']}", headers=headers)
+    assert comp_get.status_code == 200
+    assert comp_get.json()["archived"] is True
+    assert comp_get.json()["archive_reason"] == reason
+
+    assert client.get("/api/v1/companies", headers=headers).json() == []
 
     got1 = client.get(f"/api/v1/applications/{a1['id']}", headers=headers).json()
     assert got1["status"] == "archived"
-    assert got1["archive_reason"] == RELATED_COMPANY_DELETED_ARCHIVE_REASON
+    assert got1["archive_reason"] == reason
 
     got2 = client.get(f"/api/v1/applications/{a2['id']}", headers=headers).json()
     assert got2["status"] == "archived"
-    assert got2["archive_reason"] == RELATED_COMPANY_DELETED_ARCHIVE_REASON
+    assert got2["archive_reason"] == reason
+
+
+def test_create_company_409_when_name_matches_active_company() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    client.post("/api/v1/companies", json={"name": "Dup Co"}, headers=headers)
+    conflict = client.post("/api/v1/companies", json={"name": "dup co"}, headers=headers)
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "company_name_exists"
+
+
+def test_create_company_409_when_name_matches_archived_without_ack() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    c = client.post("/api/v1/companies", json={"name": "Once Co"}, headers=headers).json()
+    client.post(f"/api/v1/companies/{c['id']}/archive", json={"archive_reason": "gone"}, headers=headers)
+    hit = client.post("/api/v1/companies", json={"name": "Once Co"}, headers=headers)
+    assert hit.status_code == 409
+    d = hit.json()["detail"]
+    assert d["code"] == "archived_company_name_exists"
+    assert d["archive_reason"] == "gone"
+
+
+def test_create_company_unarchives_archived_name_when_acknowledged() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    r0 = client.post(
+        "/api/v1/companies", json={"name": "Return Co", "website": "https://old.example"}, headers=headers
+    )
+    assert r0.status_code == 201, r0.text
+    c = r0.json()
+    client.post(
+        f"/api/v1/companies/{c['id']}/archive", json={"archive_reason": "temp"}, headers=headers
+    )
+    restored = client.post(
+        "/api/v1/companies",
+        json={"name": "return co", "website": "https://new.example", "acknowledge_reuse_of_archived_company": True},
+        headers=headers,
+    )
+    assert restored.status_code == 201
+    body = restored.json()
+    assert body["id"] == c["id"]
+    assert body["archived"] is False
+    assert body["website"] == "https://new.example"
+    listed = client.get("/api/v1/companies", headers=headers).json()
+    assert len(listed) == 1
 
 
 def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume() -> None:

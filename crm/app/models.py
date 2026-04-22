@@ -280,6 +280,10 @@ class CompanyBase(BaseModel):
 
 
 class CompanyCreate(CompanyBase):
+    """`acknowledge_reuse_of_archived_company` is API-only (not stored on Company)."""
+
+    acknowledge_reuse_of_archived_company: bool = False
+
     @model_validator(mode="before")
     @classmethod
     def _legacy_indexed_create(cls, data: Any) -> Any:
@@ -333,8 +337,12 @@ class CompanyApplicationCountResponse(BaseModel):
     count: int
 
 
-class DeleteCompanyResponse(BaseModel):
+class CompanyArchiveResponse(BaseModel):
     applications_archived: int
+
+
+class CompanyArchiveRequest(BaseModel):
+    archive_reason: str = Field(min_length=1, max_length=2000)
 
 
 class ClearCompanyResearchDetailRequest(BaseModel):
@@ -351,6 +359,9 @@ class Company(CompanyBase):
         default=False,
         description="True when at least one application exists for this company (set by API when listing/reading).",
     )
+    archived: bool = False
+    archived_at: datetime | None = None
+    archive_reason: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -441,6 +452,7 @@ class ApplicationBootstrapCreate(BaseModel):
     company_name: str = Field(min_length=1, max_length=200)
     company_website: str | None = None
     job_post: JobPost | None = None
+    acknowledge_reuse_of_archived_company: bool = False
 
 
 class ApplicationUpdate(BaseModel):
@@ -560,6 +572,7 @@ class ColdEmailRecipient(BaseModel):
     title: str
     name: str
     email: str | None = None
+    timezone: str | None = None
 
 
 class ColdEmailPlan(BaseModel):

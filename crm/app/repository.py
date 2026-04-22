@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from pymongo import MongoClient
 
+from app.company_name import normalize_company_name
 from app.config import settings
 from app.models import (
     AgentApiKeyCreate,
@@ -54,8 +55,6 @@ from app.models import (
     validate_application_transition,
 )
 
-# Archived for every application tied to a company when that company is deleted (user UI + API).
-RELATED_COMPANY_DELETED_ARCHIVE_REASON = "Related company is deleted"
 # When company research is cleared and the user chooses to archive related applications.
 RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON = "Related company research cleared"
 
@@ -126,6 +125,12 @@ class BaseRepository:
     def create_company(self, payload: CompanyCreate) -> Company:
         raise NotImplementedError
 
+    def find_company_by_normalized_name(self, name: str) -> Company | None:
+        raise NotImplementedError
+
+    def unarchive_company(self, company_id: str, payload: CompanyCreate) -> Company | None:
+        raise NotImplementedError
+
     def get_company(self, company_id: str) -> Company | None:
         raise NotImplementedError
 
@@ -135,8 +140,8 @@ class BaseRepository:
     def count_applications_for_company(self, company_id: str) -> int:
         raise NotImplementedError
 
-    def delete_company(self, company_id: str) -> tuple[bool, int]:
-        """Delete company after archiving tied applications. Returns (deleted, applications_archived_count)."""
+    def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        """Mark company archived and archive tied applications. Returns (ok, applications_archived_count)."""
         raise NotImplementedError
 
     def list_profiles(
@@ -208,7 +213,10 @@ class BaseRepository:
         raise NotImplementedError
 
     def bootstrap_application(
-        self, payload: ApplicationBootstrapCreate, created_by_user_id: str | None
+        self,
+        company: Company,
+        payload: ApplicationBootstrapCreate,
+        created_by_user_id: str | None,
     ) -> tuple[Company, Application]:
         raise NotImplementedError
 
@@ -468,7 +476,7 @@ class InMemoryRepository(BaseRepository):
         research_status: CompanyResearchStatus | None = None,
         has_application: bool | None = None,
     ) -> list[Company]:
-        values = list(self.companies.values())
+        values = [c for c in self.companies.values() if not c.archived]
         if search:
             needle = search.lower()
             values = [c for c in values if needle in c.name.lower()]
@@ -482,7 +490,11 @@ class InMemoryRepository(BaseRepository):
         return self._annotate_companies_has_application(sliced)
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
-        values = [c for c in self.companies.values() if c.research_status == CompanyResearchStatus.pending]
+        values = [
+            c
+            for c in self.companies.values()
+            if c.research_status == CompanyResearchStatus.pending and not c.archived
+        ]
         values.sort(key=lambda c: c.created_at)
         return values[:limit]
 
@@ -554,9 +566,37 @@ class InMemoryRepository(BaseRepository):
 
     def create_company(self, payload: CompanyCreate) -> Company:
         now = utcnow()
-        company = Company(id=self._new_id(), created_at=now, updated_at=now, **_as_dict(payload))
+        data = _as_dict(payload)
+        data.pop("acknowledge_reuse_of_archived_company", None)
+        company = Company(id=self._new_id(), created_at=now, updated_at=now, **data)
         self.companies[company.id] = company
         return company
+
+    def find_company_by_normalized_name(self, name: str) -> Company | None:
+        target = normalize_company_name(name)
+        for c in self.companies.values():
+            if normalize_company_name(c.name) == target:
+                return c
+        return None
+
+    def unarchive_company(self, company_id: str, payload: CompanyCreate) -> Company | None:
+        company = self.get_company(company_id)
+        if not company or not company.archived:
+            return None
+        dump = payload.model_dump(
+            exclude_none=True, exclude={"acknowledge_reuse_of_archived_company"}
+        )
+        merged = company.model_copy(
+            update={
+                **dump,
+                "archived": False,
+                "archived_at": None,
+                "archive_reason": None,
+                "updated_at": utcnow(),
+            }
+        )
+        self.companies[company_id] = merged
+        return merged
 
     def get_company(self, company_id: str) -> Company | None:
         co = self.companies.get(company_id)
@@ -647,14 +687,30 @@ class InMemoryRepository(BaseRepository):
             n += 1
         return n
 
-    def delete_company(self, company_id: str) -> tuple[bool, int]:
-        if not self.get_company(company_id):
+    def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        company = self.get_company(company_id)
+        if not company:
             return (False, 0)
-        archived = self._archive_all_company_applications(
-            company_id, RELATED_COMPANY_DELETED_ARCHIVE_REASON
-        )
-        self.companies.pop(company_id, None)
-        return (True, archived)
+        if not company.archived:
+            merged = company.model_copy(
+                update={
+                    "archived": True,
+                    "archived_at": utcnow(),
+                    "archive_reason": archive_reason,
+                    "updated_at": utcnow(),
+                }
+            )
+            self.companies[company_id] = merged
+        else:
+            merged = company.model_copy(
+                update={
+                    "archive_reason": archive_reason,
+                    "updated_at": utcnow(),
+                }
+            )
+            self.companies[company_id] = merged
+        n = self._archive_all_company_applications(company_id, archive_reason)
+        return (True, n)
 
     def list_profiles(
         self, skip: int, limit: int, search: str | None, include_frozen: bool = True
@@ -792,11 +848,11 @@ class InMemoryRepository(BaseRepository):
         return application
 
     def bootstrap_application(
-        self, payload: ApplicationBootstrapCreate, created_by_user_id: str | None
+        self,
+        company: Company,
+        payload: ApplicationBootstrapCreate,
+        created_by_user_id: str | None,
     ) -> tuple[Company, Application]:
-        company = self.create_company(
-            CompanyCreate(name=payload.company_name, website=payload.company_website)
-        )
         app_payload = ApplicationCreate(
             company_id=company.id,
             job_post=payload.job_post,
@@ -969,7 +1025,8 @@ class InMemoryRepository(BaseRepository):
         companies = [
             c
             for c in self.companies.values()
-            if q in c.name.lower() or (c.overview and q in c.overview.lower())
+            if not c.archived
+            and (q in c.name.lower() or (c.overview and q in c.overview.lower()))
         ][:limit]
         profiles = [
             p
@@ -1349,8 +1406,14 @@ class MongoRepository(InMemoryRepository):
         self._sync()
         return company
 
-    def delete_company(self, company_id: str) -> tuple[bool, int]:
-        ok, n = super().delete_company(company_id)
+    def unarchive_company(self, company_id: str, payload: CompanyCreate) -> Company | None:
+        company = super().unarchive_company(company_id, payload)
+        if company:
+            self._sync()
+        return company
+
+    def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        ok, n = super().archive_company(company_id, archive_reason)
         if ok:
             self._sync()
         return (ok, n)
@@ -1389,9 +1452,12 @@ class MongoRepository(InMemoryRepository):
         return application
 
     def bootstrap_application(
-        self, payload: ApplicationBootstrapCreate, created_by_user_id: str | None
+        self,
+        company: Company,
+        payload: ApplicationBootstrapCreate,
+        created_by_user_id: str | None,
     ) -> tuple[Company, Application]:
-        result = super().bootstrap_application(payload, created_by_user_id)
+        result = super().bootstrap_application(company, payload, created_by_user_id)
         self._sync()
         return result
 
