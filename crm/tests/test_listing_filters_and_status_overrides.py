@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from app.auth import hash_password
 from app.deps import get_repository
 from app.main import app
-from app.models import ApplicationStatus, CompanyResearchStatus, UserCreate
+from app.models import ApplicationStatus, UserCreate
 from app.repository import InMemoryRepository
 
 
@@ -165,28 +165,3 @@ def test_force_transition_and_force_mark_applied() -> None:
     assert ok_force_mark.status_code == 200
     assert ok_force_mark.json()["applied"] is True
 
-
-def test_update_company_research_status_skip_side_effects() -> None:
-    repo = InMemoryRepository()
-    app.dependency_overrides[get_repository] = lambda: repo
-    client = TestClient(app)
-    token = _register_and_login(client)
-    headers = _auth_headers(token)
-
-    company = client.post("/api/v1/companies", json={"name": "R Co"}, headers=headers).json()
-    app_row = client.post(
-        "/api/v1/applications",
-        json={"company_id": company["id"], "status": "company_research_pending"},
-        headers=headers,
-    ).json()
-
-    updated = client.put(
-        f"/api/v1/companies/{company['id']}",
-        json={
-            "research_status": CompanyResearchStatus.indexed.value,
-            "skip_research_side_effects": True,
-        },
-        headers=headers,
-    )
-    assert updated.status_code == 200
-    assert repo.get_application(app_row["id"]).status == ApplicationStatus.company_research_pending

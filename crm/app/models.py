@@ -298,10 +298,6 @@ class CompanyCreate(CompanyBase):
 class CompanyUpdate(BaseModel):
     name: str | None = None
     research_status: CompanyResearchStatus | None = None
-    skip_research_side_effects: bool | None = Field(
-        default=None,
-        description="When true with research_status, apply the status without promoting or invalidating tied applications.",
-    )
     website: str | None = None
     linkedin: str | None = None
     industry_ids: list[str] | None = None

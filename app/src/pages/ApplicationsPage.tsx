@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
+import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
@@ -44,6 +45,7 @@ export const ApplicationsPage = () => {
 
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
+  const [statusOverrideApplication, setStatusOverrideApplication] = useState<ApplicationListItem | null>(null);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
@@ -308,6 +310,16 @@ export const ApplicationsPage = () => {
                         className="btn btn-xs btn-ghost"
                         onClick={(e) => {
                           e.stopPropagation();
+                          setStatusOverrideApplication(application);
+                        }}
+                      >
+                        Set status…
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           openEditModal(application);
                         }}
                       >
@@ -450,6 +462,16 @@ export const ApplicationsPage = () => {
         companies={editing ? [{ id: editing.company_id, name: editing.company_name }] : []}
         editing={editing}
         onSuccess={load}
+      />
+
+      <ApplicationWorkflowOverrideModal
+        open={statusOverrideApplication !== null}
+        onClose={() => setStatusOverrideApplication(null)}
+        application={statusOverrideApplication}
+        onSaved={async () => {
+          setStatusOverrideApplication(null);
+          await load(page);
+        }}
       />
 
       <ArchiveApplicationModal

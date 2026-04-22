@@ -21,10 +21,6 @@ vi.mock("../components/ClearCompanyResearchModal", () => ({
   ClearCompanyResearchModal: () => null
 }));
 
-vi.mock("../components/CompanyResearchOverrideModal", () => ({
-  CompanyResearchOverrideModal: () => null
-}));
-
 vi.mock("../components/ApplicationWorkflowOverrideModal", () => ({
   ApplicationWorkflowOverrideModal: () => null
 }));

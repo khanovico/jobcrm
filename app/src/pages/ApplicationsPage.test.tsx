@@ -96,6 +96,30 @@ describe("ApplicationsPage", () => {
     await screen.findByRole("cell", { name: "Acme" });
   });
 
+  it("opens Set application status from the actions column", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("cell", { name: "Acme" });
+    await userEvent.click(screen.getByRole("button", { name: "Set status…" }));
+    expect(screen.getByRole("heading", { name: "Set application status" })).toBeInTheDocument();
+  });
+
   it("opens new application modal with bounded company search", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {

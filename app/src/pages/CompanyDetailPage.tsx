@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
 import { ClearCompanyResearchModal } from "../components/ClearCompanyResearchModal";
-import { CompanyResearchOverrideModal } from "../components/CompanyResearchOverrideModal";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
 import { api } from "../api";
@@ -69,7 +68,6 @@ export const CompanyDetailPage = () => {
   const [saving, setSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [clearResearchOpen, setClearResearchOpen] = useState(false);
-  const [researchOverrideOpen, setResearchOverrideOpen] = useState(false);
   const [statusOverrideApplication, setStatusOverrideApplication] = useState<Application | null>(null);
 
   const industryNameById = useMemo(() => {
@@ -246,13 +244,6 @@ export const CompanyDetailPage = () => {
               <span className={`badge badge-sm ${researchBadgeClass(company.research_status)}`}>
                 {researchLabel(company.research_status)}
               </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs"
-                onClick={() => setResearchOverrideOpen(true)}
-              >
-                Set status…
-              </button>
             </p>
             <p className="text-sm opacity-70">
               Updated {new Date(company.updated_at).toLocaleString()} · ID{" "}
@@ -622,17 +613,6 @@ export const CompanyDetailPage = () => {
             onClose={() => setDeleteOpen(false)}
             company={company ? { id: company.id, name: company.name } : null}
             onDeleted={() => navigate("/companies")}
-          />
-
-          <CompanyResearchOverrideModal
-            open={researchOverrideOpen}
-            onClose={() => setResearchOverrideOpen(false)}
-            company={company ? { id: company.id, research_status: company.research_status } : null}
-            onSaved={async (updated) => {
-              invalidateCompanySummariesCache();
-              setCompany(updated);
-              await loadApplicationsPage(applicationsPage);
-            }}
           />
 
           <ApplicationWorkflowOverrideModal
