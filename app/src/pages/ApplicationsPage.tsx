@@ -16,7 +16,7 @@ import {
   initializeSelectedAppliedProfileNames,
   setSelectedAppliedProfileNames
 } from "../state/applicationsFilters";
-import { ApplicationListItem, WorkerStateResponse } from "../types";
+import { ApplicationListItem, ProfileListItem, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 20;
 
@@ -31,6 +31,7 @@ export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
 export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
+  const [allProfiles, setAllProfiles] = useState<ProfileListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
@@ -55,14 +56,10 @@ export const ApplicationsPage = () => {
     () =>
       Array.from(
         new Set(
-          items.flatMap((application) =>
-            (application.applied_profiles ?? [])
-              .map((profile) => profile.profile_name?.trim())
-              .filter((profileName): profileName is string => Boolean(profileName))
-          )
+          allProfiles.map((profile) => profile.name?.trim()).filter((profileName): profileName is string => Boolean(profileName))
         )
       ).sort((a, b) => a.localeCompare(b)),
-    [items]
+    [allProfiles]
   );
 
   useEffect(() => {
@@ -119,11 +116,13 @@ export const ApplicationsPage = () => {
         const params = new URLSearchParams(listParams);
         params.set("skip", String((targetPage - 1) * PAGE_SIZE));
         params.set("limit", String(PAGE_SIZE));
-        const [applicationItems, workers] = await Promise.all([
+        const [applicationItems, workers, profiles] = await Promise.all([
           api.listApplications(params),
-          api.getWorkerState().catch(() => null)
+          api.getWorkerState().catch(() => null),
+          api.listProfileSummaries()
         ]);
         setItems(applicationItems);
+        setAllProfiles(profiles);
         setHasNextPage(applicationItems.length === PAGE_SIZE);
         setWorkerState(workers);
       } catch (e) {

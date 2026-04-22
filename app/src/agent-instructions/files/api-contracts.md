@@ -277,7 +277,12 @@ Paths use **kebab-case** worker kinds (no JSON `worker_type` on assign):
   "cold_email_plan": {
     "subjects": ["Subject A"],
     "selected_subject_index": 0,
-    "to": { "title": "Hiring Manager", "name": "Jane", "email": "j@co.com" },
+    "to": {
+      "title": "Hiring Manager",
+      "name": "Jane",
+      "email": "j@co.com",
+      "timezone": "America/New_York"
+    },
     "status": "none"
   },
   "applied": false

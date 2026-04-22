@@ -508,7 +508,7 @@ describe("ApplicationsPage", () => {
     expect(statusBadge?.className).toContain("badge-success");
   });
 
-  it("filters applications by selected applied profiles from header dropdown", async () => {
+  it("shows all profile names in filter dropdown from global profiles list", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -537,6 +537,19 @@ describe("ApplicationsPage", () => {
                 company_name: "Core",
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/profiles")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "p1", name: "Alice Park", created_at: "", updated_at: "" },
+              { id: "p2", name: "Bob Stone", created_at: "", updated_at: "" },
+              { id: "p3", name: "Carla Kim", created_at: "", updated_at: "" },
+              { id: "p4", name: "Dana Zee", created_at: "", updated_at: "" }
             ]),
             { status: 200 }
           )
@@ -571,15 +584,14 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
-    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "Bob Stone" }));
-
-    expect(screen.getByRole("cell", { name: "Acme" })).toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
-    expect(screen.queryByRole("cell", { name: "Core" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Alice Park" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Bob Stone" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Carla Kim" })).toBeInTheDocument();
+    // Dana is not present in applied_profiles, but should still be listed now.
+    expect(screen.getByRole("checkbox", { name: "Dana Zee" })).toBeInTheDocument();
   });
 
-  it("shows applications without applied profiles when all or none are selected", async () => {
+  it("keeps all rows visible after profile selections in filter dropdown", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -606,6 +618,17 @@ describe("ApplicationsPage", () => {
           )
         );
       }
+      if (url.includes("/profiles/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "p1", name: "Alice Park", created_at: "", updated_at: "" },
+              { id: "p2", name: "Bob Stone", created_at: "", updated_at: "" }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
       if (url.endsWith("/companies")) {
         return Promise.resolve(
           new Response(
@@ -613,14 +636,6 @@ describe("ApplicationsPage", () => {
               { ...companyRow, id: "c1", name: "Acme" },
               { ...companyRow, id: "c2", name: "Beta" }
             ]),
-            { status: 200 }
-          )
-        );
-      }
-      if (url.endsWith("/profiles")) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify([{ id: "p1", name: "Alice Park", created_at: "", updated_at: "" }]),
             { status: 200 }
           )
         );
@@ -642,12 +657,11 @@ describe("ApplicationsPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
     await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
-
     expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
     expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
   });
 
-  it("preserves applied profile filter selection when page is revisited", async () => {
+  it("preserves profile filter checkbox selection when page is revisited", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -669,6 +683,17 @@ describe("ApplicationsPage", () => {
                 company_name: "Core",
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/profiles/summary")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              { id: "p1", name: "Alice Park", created_at: "", updated_at: "" },
+              { id: "p2", name: "Carla Kim", created_at: "", updated_at: "" }
             ]),
             { status: 200 }
           )
@@ -701,9 +726,12 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
-    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
+    expect(screen.getByRole("checkbox", { name: "Carla Kim" })).toBeChecked();
     await userEvent.click(screen.getByRole("checkbox", { name: "Carla Kim" }));
-    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Carla Kim" })).not.toBeChecked();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Carla Kim" }));
+    expect(screen.getByRole("checkbox", { name: "Carla Kim" })).toBeChecked();
+    expect(screen.getByRole("cell", { name: "Acme" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
     firstMount.unmount();
@@ -714,7 +742,9 @@ describe("ApplicationsPage", () => {
       </MemoryRouter>
     );
 
+    await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    expect(await screen.findByRole("checkbox", { name: "Carla Kim" })).toBeChecked();
     expect(await screen.findByRole("cell", { name: "Core" })).toBeInTheDocument();
-    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Acme" })).toBeInTheDocument();
   });
 });

@@ -53,22 +53,27 @@ const EmailHtmlContent = memo(({ content }: { content: string }) => {
 });
 
 const formatRecipient = (
-  recipient: { title?: string; name?: string; email?: string | null } | null | undefined
+  recipient: { title?: string; name?: string; email?: string | null; timezone?: string | null } | null | undefined
 ) => {
   if (!recipient) return null;
   const title = recipient.title?.trim() ?? "";
   const fullName = recipient.name?.trim() ?? "";
   const email = recipient.email?.trim() ?? "";
-  if (title && fullName && email) return `${title} - ${fullName} (${email})`;
-  if (fullName && email) return `${fullName} (${email})`;
-  if (title && fullName) return `${title} - ${fullName}`;
-  return fullName || email || title || null;
+  const timezone = recipient.timezone?.trim() ?? "";
+  let base = "";
+  if (title && fullName && email) base = `${title} - ${fullName} (${email})`;
+  else if (fullName && email) base = `${fullName} (${email})`;
+  else if (title && fullName) base = `${title} - ${fullName}`;
+  else base = fullName || email || title || "";
+  if (!base) return null;
+  return timezone ? `${base} [${timezone}]` : base;
 };
 
 type RecipientDraft = {
   title: string;
   name: string;
   email: string;
+  timezone: string;
 };
 
 const getActiveSubject = (
@@ -171,7 +176,8 @@ export const ApplicationDetailPage = () => {
       [ppa.id]: {
         title: current?.title ?? "",
         name: current?.name ?? "",
-        email: current?.email ?? ""
+        email: current?.email ?? "",
+        timezone: current?.timezone ?? ""
       }
     }));
   };
@@ -191,7 +197,8 @@ export const ApplicationDetailPage = () => {
     const normalizedTo = {
       title: draft.title.trim(),
       name: draft.name.trim(),
-      email: draft.email.trim() || null
+      email: draft.email.trim() || null,
+      timezone: draft.timezone.trim() || null
     };
     const nextPlan = {
       ...basePlan,
@@ -479,7 +486,7 @@ export const ApplicationDetailPage = () => {
                                       setRecipientDraftByPpa((prev) => ({
                                         ...prev,
                                         [ppa.id]: {
-                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "" }),
+                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "", timezone: "" }),
                                           name: e.target.value
                                         }
                                       }))
@@ -495,8 +502,24 @@ export const ApplicationDetailPage = () => {
                                       setRecipientDraftByPpa((prev) => ({
                                         ...prev,
                                         [ppa.id]: {
-                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "" }),
+                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "", timezone: "" }),
                                           email: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    type="text"
+                                    className="input input-sm input-bordered w-full"
+                                    placeholder="Timezone (e.g. America/New_York)"
+                                    aria-label="Recipient timezone"
+                                    value={recipientDraftByPpa[ppa.id]?.timezone ?? ""}
+                                    onChange={(e) =>
+                                      setRecipientDraftByPpa((prev) => ({
+                                        ...prev,
+                                        [ppa.id]: {
+                                          ...(prev[ppa.id] ?? { title: "", name: "", email: "", timezone: "" }),
+                                          timezone: e.target.value
                                         }
                                       }))
                                     }
