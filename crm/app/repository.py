@@ -108,7 +108,15 @@ class BaseRepository:
     def delete_industry(self, industry_id: str) -> bool:
         raise NotImplementedError
 
-    def list_companies(self, skip: int, limit: int, search: str | None) -> list[Company]:
+    def list_companies(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        sort: str = "updated_at_desc",
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> list[Company]:
         raise NotImplementedError
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
@@ -165,7 +173,7 @@ class BaseRepository:
         company_id: str | None = None,
         applied: bool | None = None,
         email_sent: bool | None = None,
-        sort: str = "created_at_desc",
+        sort: str = "updated_at_desc",
         exclude_status: ApplicationStatus | None = None,
     ) -> list[ApplicationListItem]:
         raise NotImplementedError
@@ -212,7 +220,7 @@ class BaseRepository:
         raise NotImplementedError
 
     def mark_application_applied(
-        self, application_id: str, applied: bool
+        self, application_id: str, applied: bool, *, force: bool = False
     ) -> Application | None:
         raise NotImplementedError
 
@@ -335,9 +343,29 @@ def _as_dict(model) -> dict:
 def _sort_applications(items: list[Application], sort: str) -> list[Application]:
     if sort == "created_at_asc":
         return sorted(items, key=lambda a: a.created_at)
+    if sort == "created_at_desc":
+        return sorted(items, key=lambda a: a.created_at, reverse=True)
     if sort == "updated_at_desc":
         return sorted(items, key=lambda a: a.updated_at, reverse=True)
-    return sorted(items, key=lambda a: a.created_at, reverse=True)
+    if sort == "updated_at_asc":
+        return sorted(items, key=lambda a: a.updated_at)
+    return sorted(items, key=lambda a: a.updated_at, reverse=True)
+
+
+def _sort_companies(items: list[Company], sort: str) -> list[Company]:
+    if sort == "created_at_desc":
+        return sorted(items, key=lambda c: c.created_at, reverse=True)
+    if sort == "created_at_asc":
+        return sorted(items, key=lambda c: c.created_at)
+    if sort == "updated_at_asc":
+        return sorted(items, key=lambda c: c.updated_at)
+    if sort == "name_asc":
+        return sorted(items, key=lambda c: c.name.lower())
+    return sorted(items, key=lambda c: c.updated_at, reverse=True)
+
+
+def _company_ids_with_applications(applications: dict[str, Application]) -> set[str]:
+    return {a.company_id for a in applications.values()}
 
 
 class InMemoryRepository(BaseRepository):
@@ -354,6 +382,12 @@ class InMemoryRepository(BaseRepository):
         self.emails: dict[str, Email] = {}
         self._worker_settings = WorkerSettings()
         self._worker_leases: dict[str, WorkerLease] = {}
+
+    def _annotate_companies_has_application(self, rows: list[Company]) -> list[Company]:
+        app_company_ids = _company_ids_with_applications(self.applications)
+        return [
+            c.model_copy(update={"has_application": c.id in app_company_ids}) for c in rows
+        ]
 
     def _new_id(self) -> str:
         return str(uuid4())
@@ -418,13 +452,27 @@ class InMemoryRepository(BaseRepository):
     def delete_industry(self, industry_id: str) -> bool:
         return self.industries.pop(industry_id, None) is not None
 
-    def list_companies(self, skip: int, limit: int, search: str | None) -> list[Company]:
+    def list_companies(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        sort: str = "updated_at_desc",
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> list[Company]:
         values = list(self.companies.values())
         if search:
             needle = search.lower()
             values = [c for c in values if needle in c.name.lower()]
-        values.sort(key=lambda c: c.name.lower())
-        return values[skip : skip + limit]
+        if research_status is not None:
+            values = [c for c in values if c.research_status == research_status]
+        if has_application is not None:
+            app_ids = _company_ids_with_applications(self.applications)
+            values = [c for c in values if (c.id in app_ids) == has_application]
+        values = _sort_companies(values, sort)
+        sliced = values[skip : skip + limit]
+        return self._annotate_companies_has_application(sliced)
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
         values = [c for c in self.companies.values() if c.research_status == CompanyResearchStatus.pending]
@@ -504,7 +552,10 @@ class InMemoryRepository(BaseRepository):
         return company
 
     def get_company(self, company_id: str) -> Company | None:
-        return self.companies.get(company_id)
+        co = self.companies.get(company_id)
+        if not co:
+            return None
+        return self._annotate_companies_has_application([co])[0]
 
     def _promote_company_research_pending_to_ppa_for_company(self, company_id: str) -> None:
         """When company becomes indexed, move tied applications from company_research_pending → ppa_pending."""
@@ -691,7 +742,7 @@ class InMemoryRepository(BaseRepository):
         company_id: str | None = None,
         applied: bool | None = None,
         email_sent: bool | None = None,
-        sort: str = "created_at_desc",
+        sort: str = "updated_at_desc",
         exclude_status: ApplicationStatus | None = None,
     ) -> list[ApplicationListItem]:
         values = list(self.applications.values())
@@ -771,15 +822,20 @@ class InMemoryRepository(BaseRepository):
         if not application:
             return None
         updates = payload.model_dump(exclude_none=True)
+        force_transition = bool(updates.pop("force_transition", False))
         next_status = updates.get("status")
-        if next_status and not validate_application_transition(application.status, next_status):
+        if (
+            next_status
+            and not force_transition
+            and not validate_application_transition(application.status, next_status)
+        ):
             raise ValueError("Invalid status transition")
         merged = application.model_copy(update={**updates, "updated_at": utcnow()})
         self.applications[application_id] = merged
         return merged
 
     def mark_application_applied(
-        self, application_id: str, applied: bool
+        self, application_id: str, applied: bool, *, force: bool = False
     ) -> Application | None:
         application = self.get_application(application_id)
         if not application:
@@ -789,7 +845,7 @@ class InMemoryRepository(BaseRepository):
                 raise ValueError("Archived application cannot be applied")
             if application.status == ApplicationStatus.invalid:
                 raise ValueError("Invalid application cannot be marked applied")
-            if application.status != ApplicationStatus.application_ready:
+            if not force and application.status != ApplicationStatus.application_ready:
                 raise ValueError("Mark applied is only valid when status is application_ready")
             stamp = application.applied_at or utcnow()
             updated = application.model_copy(
@@ -1338,9 +1394,9 @@ class MongoRepository(InMemoryRepository):
         return application
 
     def mark_application_applied(
-        self, application_id: str, applied: bool
+        self, application_id: str, applied: bool, *, force: bool = False
     ) -> Application | None:
-        application = super().mark_application_applied(application_id, applied)
+        application = super().mark_application_applied(application_id, applied, force=force)
         self._sync()
         return application
 

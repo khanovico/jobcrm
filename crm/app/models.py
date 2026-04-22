@@ -347,6 +347,10 @@ class Company(CompanyBase):
     id: str
     created_at: datetime
     updated_at: datetime
+    has_application: bool = Field(
+        default=False,
+        description="True when at least one application exists for this company (set by API when listing/reading).",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -447,10 +451,15 @@ class ApplicationUpdate(BaseModel):
     archive_reason: str | None = Field(
         default=None, description="Optional when setting status to archived (why removed)."
     )
+    force_transition: bool | None = Field(
+        default=None,
+        description="When true, set status without validating the normal workflow transition graph.",
+    )
 
 
 class ApplicationMarkApplied(BaseModel):
     applied: bool
+    force: bool = False
 
 
 class ApplicationMarkEmailSent(BaseModel):
