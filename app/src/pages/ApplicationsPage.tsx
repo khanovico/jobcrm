@@ -7,6 +7,10 @@ import { ProfileNameChips } from "../components/ProfileNameChips";
 import { api } from "../api";
 import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "../applicationStatus";
 import {
+  applicationSortLabel,
+  type ApplicationTableSort
+} from "../applicationTableSort";
+import {
   getSelectedAppliedProfileNames,
   initializeSelectedAppliedProfileNames,
   setSelectedAppliedProfileNames
@@ -43,6 +47,7 @@ export const ApplicationsPage = () => {
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [tableSort, setTableSort] = useState<ApplicationTableSort>("updated_at_desc");
 
   const availableAppliedProfileNames = useMemo(
     () =>
@@ -101,8 +106,9 @@ export const ApplicationsPage = () => {
     } else if (listMode === "archived") {
       p.set("status_filter", "archived");
     }
+    p.set("sort", tableSort);
     return p;
-  }, [listMode]);
+  }, [listMode, tableSort]);
 
   const load = useCallback(
     async (targetPage = page) => {
@@ -128,6 +134,10 @@ export const ApplicationsPage = () => {
   useEffect(() => {
     setPage(1);
   }, [listMode]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [tableSort]);
 
   useEffect(() => {
     void load(page);
@@ -200,6 +210,19 @@ export const ApplicationsPage = () => {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <label className="form-control min-w-[180px]">
+              <span className="label-text text-xs">Order</span>
+              <select
+                className="select select-bordered select-sm w-full max-w-[220px]"
+                value={tableSort}
+                onChange={(e) => setTableSort(e.target.value as ApplicationTableSort)}
+              >
+                <option value="updated_at_desc">{applicationSortLabel("updated_at_desc")}</option>
+                <option value="updated_at_asc">{applicationSortLabel("updated_at_asc")}</option>
+                <option value="created_at_desc">{applicationSortLabel("created_at_desc")}</option>
+                <option value="created_at_asc">{applicationSortLabel("created_at_asc")}</option>
+              </select>
+            </label>
             <div className="join join-horizontal border border-base-300">
               {(
                 [

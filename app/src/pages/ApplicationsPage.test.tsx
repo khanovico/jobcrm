@@ -72,6 +72,30 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByTestId("app-detail")).toBeInTheDocument();
   });
 
+  it("requests applications with sort=updated_at_desc by default", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        const parsed = new URL(url, "http://localhost");
+        expect(parsed.searchParams.get("sort")).toBe("updated_at_desc");
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("cell", { name: "Acme" });
+  });
+
   it("opens new application modal with bounded company search", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
@@ -162,7 +186,7 @@ describe("ApplicationsPage", () => {
       expect.stringContaining("/applications/a1/mark-applied"),
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ applied: true })
+        body: JSON.stringify({ applied: true, force: false })
       })
     );
   });
@@ -219,7 +243,7 @@ describe("ApplicationsPage", () => {
       expect.stringContaining("/applications/a1/mark-applied"),
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ applied: false })
+        body: JSON.stringify({ applied: false, force: false })
       })
     );
   });

@@ -15,7 +15,8 @@ let allCompaniesPromise: Promise<Company[]> | null = null;
 
 const isFresh = (fetchedAt: number) => Date.now() - fetchedAt < CACHE_TTL_MS;
 
-const pageKey = (page: number, pageSize: number) => `${page}:${pageSize}`;
+const pageKey = (page: number, pageSize: number, queryFingerprint: string) =>
+  `${page}:${pageSize}:${queryFingerprint}`;
 
 export const invalidateCompanySummariesCache = () => {
   companyPages.clear();
@@ -31,8 +32,11 @@ export const getCompanySummariesPage = async (options: {
   page: number;
   pageSize: number;
   force?: boolean;
+  /** Extra query params (sort, filters); included in cache key */
+  extraParams?: URLSearchParams;
 }): Promise<Company[]> => {
-  const key = pageKey(options.page, options.pageSize);
+  const fingerprint = options.extraParams?.toString() ?? "";
+  const key = pageKey(options.page, options.pageSize, fingerprint);
   const cached = companyPages.get(key);
   if (!options.force && cached && isFresh(cached.fetchedAt)) {
     return cached.items;
@@ -42,6 +46,11 @@ export const getCompanySummariesPage = async (options: {
     skip: String((options.page - 1) * options.pageSize),
     limit: String(options.pageSize)
   });
+  if (options.extraParams) {
+    options.extraParams.forEach((value, name) => {
+      params.set(name, value);
+    });
+  }
   const items = await api.listCompanies(params);
   companyPages.set(key, { items, fetchedAt: Date.now() });
   return items;

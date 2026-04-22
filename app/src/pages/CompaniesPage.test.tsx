@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,6 +26,7 @@ describe("CompaniesPage", () => {
     const companyRow = {
       id: "c1",
       name: "Acme Corp",
+      has_application: true,
       research_status: "indexed",
       website: "https://acme.example",
       created_at: "2026-01-01T00:00:00Z",
@@ -52,7 +53,8 @@ describe("CompaniesPage", () => {
     );
 
     expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
-    expect(screen.getByText("Indexed")).toBeInTheDocument();
+    expect(screen.getAllByText("Indexed").some((el) => el.tagName === "SPAN")).toBe(true);
+    expect(screen.getAllByText("Has applications").some((el) => el.classList.contains("badge"))).toBe(true);
     expect(screen.getByText("Page 1")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("row", { name: /Acme Corp/i }));
     expect(await screen.findByTestId("company-detail")).toBeInTheDocument();
@@ -63,6 +65,7 @@ describe("CompaniesPage", () => {
     const companyRow = {
       id: "c1",
       name: "Acme Corp",
+      has_application: true,
       research_status: "indexed",
       website: "https://acme.example",
       created_at: "2026-01-01T00:00:00Z",
@@ -100,5 +103,43 @@ describe("CompaniesPage", () => {
       .map(([input]) => (typeof input === "string" ? input : input.toString()))
       .filter((url) => url.includes("/api/v1/companies"));
     expect(companyCalls).toHaveLength(1);
+  });
+
+  it("requests companies with default sort and filters in query string", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const companyRow = {
+      id: "c1",
+      name: "Acme Corp",
+      has_application: false,
+      research_status: "indexed",
+      website: "https://acme.example",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/companies")) {
+        const u = new URL(url);
+        expect(u.searchParams.get("sort")).toBe("updated_at_desc");
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.includes("/api/v1/companies"));
+      expect(calls.some((url) => new URL(url).searchParams.get("sort") === "updated_at_desc")).toBe(true);
+    });
   });
 });

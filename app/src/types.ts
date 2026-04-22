@@ -3,6 +3,8 @@ export type CompanyResearchStatus = "pending" | "indexing" | "indexed" | "invali
 export type Company = {
   id: string;
   name: string;
+  /** True when the company has at least one application (from API). */
+  has_application?: boolean;
   research_status: CompanyResearchStatus;
   website?: string | null;
   linkedin?: string | null;

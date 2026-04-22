@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
@@ -9,6 +9,29 @@ import { getCompanySummariesPage, invalidateCompanySummariesCache } from "../sta
 import { Company, CompanyResearchStatus, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 10;
+
+type CompanySort =
+  | "updated_at_desc"
+  | "created_at_desc"
+  | "updated_at_asc"
+  | "name_asc";
+
+type AppliedColFilter = "all" | "never" | "once";
+
+const companySortLabel = (s: CompanySort): string => {
+  switch (s) {
+    case "updated_at_desc":
+      return "Recently updated";
+    case "created_at_desc":
+      return "Newest companies";
+    case "updated_at_asc":
+      return "Oldest companies";
+    case "name_asc":
+      return "Name A–Z";
+    default:
+      return s;
+  }
+};
 
 const researchLabel = (s: CompanyResearchStatus | undefined) => {
   if (s === "indexed") return "Indexed";
@@ -38,6 +61,23 @@ export const CompaniesPage = () => {
   const [loading, setLoading] = useState(false);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
+  const [sort, setSort] = useState<CompanySort>("updated_at_desc");
+  const [researchFilter, setResearchFilter] = useState<CompanyResearchStatus | "all">("all");
+  const [appliedColFilter, setAppliedColFilter] = useState<AppliedColFilter>("all");
+
+  const listExtraParams = useMemo(() => {
+    const p = new URLSearchParams();
+    p.set("sort", sort);
+    if (researchFilter !== "all") {
+      p.set("research_status", researchFilter);
+    }
+    if (appliedColFilter === "never") {
+      p.set("has_application", "false");
+    } else if (appliedColFilter === "once") {
+      p.set("has_application", "true");
+    }
+    return p;
+  }, [sort, researchFilter, appliedColFilter]);
 
   const load = useCallback(
     async (targetPage = page, options?: { force?: boolean }) => {
@@ -48,7 +88,8 @@ export const CompaniesPage = () => {
           getCompanySummariesPage({
             page: targetPage,
             pageSize: PAGE_SIZE,
-            force: options?.force
+            force: options?.force,
+            extraParams: listExtraParams
           }),
           api.getWorkerState().catch(() => null)
         ]);
@@ -61,8 +102,13 @@ export const CompaniesPage = () => {
         setLoading(false);
       }
     },
-    [page]
+    [page, listExtraParams]
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [sort, researchFilter, appliedColFilter]);
+
   useEffect(() => {
     void load(page);
   }, [load, page]);
@@ -122,12 +168,54 @@ export const CompaniesPage = () => {
             </button>
           </div>
         </div>
+        <div className="mb-3 flex flex-wrap items-end gap-2">
+          <label className="form-control w-full min-w-[160px] max-w-xs">
+            <span className="label-text text-xs">Order</span>
+            <select
+              className="select select-bordered select-sm w-full"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as CompanySort)}
+            >
+              <option value="updated_at_desc">{companySortLabel("updated_at_desc")}</option>
+              <option value="created_at_desc">{companySortLabel("created_at_desc")}</option>
+              <option value="updated_at_asc">{companySortLabel("updated_at_asc")}</option>
+              <option value="name_asc">{companySortLabel("name_asc")}</option>
+            </select>
+          </label>
+          <label className="form-control w-full min-w-[160px] max-w-xs">
+            <span className="label-text text-xs">Research</span>
+            <select
+              className="select select-bordered select-sm w-full"
+              value={researchFilter}
+              onChange={(e) => setResearchFilter(e.target.value as CompanyResearchStatus | "all")}
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="indexing">Indexing</option>
+              <option value="indexed">Indexed</option>
+              <option value="invalid">Invalid</option>
+            </select>
+          </label>
+          <label className="form-control w-full min-w-[160px] max-w-xs">
+            <span className="label-text text-xs">Applied</span>
+            <select
+              className="select select-bordered select-sm w-full"
+              value={appliedColFilter}
+              onChange={(e) => setAppliedColFilter(e.target.value as AppliedColFilter)}
+            >
+              <option value="all">All</option>
+              <option value="never">None (no applications)</option>
+              <option value="once">Has applications</option>
+            </select>
+          </label>
+        </div>
         <div className="overflow-x-auto rounded-lg border border-base-300">
           <table className="table table-sm">
             <thead>
               <tr>
                 <th>Name</th>
                 <th className="whitespace-nowrap">Research</th>
+                <th className="whitespace-nowrap">Applied</th>
                 <th>Website</th>
                 <th className="whitespace-nowrap">Updated</th>
                 <th className="min-w-[140px] text-right">Actions</th>
@@ -145,6 +233,13 @@ export const CompaniesPage = () => {
                     <span className={`badge badge-sm ${researchBadgeClass(company.research_status)}`}>
                       {researchLabel(company.research_status)}
                     </span>
+                  </td>
+                  <td className="whitespace-nowrap text-xs">
+                    {company.has_application ? (
+                      <span className="badge badge-sm badge-success badge-outline">Has applications</span>
+                    ) : (
+                      <span className="opacity-50">—</span>
+                    )}
                   </td>
                   <td className="max-w-[200px] truncate text-xs opacity-80" title={company.website ?? undefined}>
                     {company.website ?? "—"}
@@ -261,10 +356,10 @@ export const CompaniesPage = () => {
         editing={null}
         initialCompanyId={applyCompanyId}
         onSuccess={async () => {
+          invalidateCompanySummariesCache();
           await load(page, { force: true });
           setApplicationOpen(false);
           setApplyCompanyId(null);
-          navigate("/applications");
         }}
       />
 
