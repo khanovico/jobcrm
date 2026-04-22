@@ -595,6 +595,19 @@ class ApplicationListItem(Application):
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
 
 
+class PerProfileApplicationDetail(PerProfileApplication):
+    """Per-profile row with resolved display name and nested emails for detail view."""
+
+    profile_name: str
+    emails: list["Email"] = Field(default_factory=list)
+
+
+class ApplicationDetailResponse(BaseModel):
+    application: Application
+    company: Company
+    per_profile_applications: list[PerProfileApplicationDetail] = Field(default_factory=list)
+
+
 class EmailBase(BaseModel):
     per_profile_application_id: str
     kind: EmailKind

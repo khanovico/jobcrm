@@ -31,6 +31,7 @@ from app.models import (
     Application,
     ApplicationBootstrapCreate,
     ApplicationCreate,
+    ApplicationDetailResponse,
     ApplicationListItem,
     ApplicationMarkApplied,
     ApplicationMarkEmailSent,
@@ -57,6 +58,7 @@ from app.models import (
     NotificationListQuery,
     PerProfileApplication,
     PerProfileApplicationCreate,
+    PerProfileApplicationDetail,
     PerProfileApplicationUpdate,
     Profile,
     ProfileCreate,
@@ -603,6 +605,36 @@ def get_application(
     if not application:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
     return application
+
+
+@app.get("/api/v1/applications/{application_id}/detail", response_model=ApplicationDetailResponse)
+def get_application_detail(
+    application_id: str,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> ApplicationDetailResponse:
+    application = repo.get_application(application_id)
+    if not application:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    company = repo.get_company(application.company_id)
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    ppas = repo.list_per_profile_for_application(application_id)
+    ppa_rows: list[PerProfileApplicationDetail] = []
+    for ppa in ppas:
+        profile = repo.get_profile(ppa.profile_id)
+        ppa_rows.append(
+            PerProfileApplicationDetail(
+                **ppa.model_dump(),
+                profile_name=profile.name if profile else "Unknown profile",
+                emails=repo.list_emails_for_ppa(ppa.id),
+            )
+        )
+    return ApplicationDetailResponse(
+        application=application,
+        company=company,
+        per_profile_applications=ppa_rows,
+    )
 
 
 @app.put("/api/v1/applications/{application_id}", response_model=Application)

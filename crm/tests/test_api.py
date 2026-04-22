@@ -488,6 +488,55 @@ def test_clear_company_research_detail_reset_related_applications() -> None:
     assert ppas == []
 
 
+def test_application_detail_endpoint_batches_company_ppas_profiles_and_emails() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post(
+        "/api/v1/companies",
+        json={"name": "Detail Co", "research_status": "indexed"},
+        headers=headers,
+    ).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "strong fit",
+        },
+        headers=headers,
+    ).json()
+    email = client.post(
+        f"/api/v1/per-profile-applications/{ppa['id']}/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "content": "Hello there",
+        },
+        headers=headers,
+    ).json()
+
+    detail = client.get(f"/api/v1/applications/{application['id']}/detail", headers=headers)
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["application"]["id"] == application["id"]
+    assert payload["company"]["id"] == company["id"]
+    assert len(payload["per_profile_applications"]) == 1
+    assert payload["per_profile_applications"][0]["id"] == ppa["id"]
+    assert payload["per_profile_applications"][0]["profile_name"] == profile["name"]
+    assert payload["per_profile_applications"][0]["emails"] == [email]
+
+
 def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

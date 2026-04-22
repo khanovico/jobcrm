@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApplicationDetailPage } from "./ApplicationDetailPage";
 
 const {
+  getApplicationDetail,
   getApplication,
   getCompany,
   listPerProfileApplications,
@@ -19,6 +20,7 @@ const {
   deleteEmail,
   clearApplicationToCompanyResearchPending
 } = vi.hoisted(() => ({
+  getApplicationDetail: vi.fn(),
   getApplication: vi.fn(),
   getCompany: vi.fn(),
   listPerProfileApplications: vi.fn(),
@@ -35,6 +37,7 @@ const {
 
 vi.mock("../api", () => ({
   api: {
+    getApplicationDetail,
     getApplication,
     getCompany,
     listPerProfileApplications,
@@ -62,6 +65,7 @@ describe("ApplicationDetailPage", () => {
   const scrollIntoViewMock = vi.fn();
 
   beforeEach(() => {
+    getApplicationDetail.mockReset();
     getApplication.mockReset();
     getCompany.mockReset();
     listPerProfileApplications.mockReset();
@@ -74,6 +78,36 @@ describe("ApplicationDetailPage", () => {
     markEmailSent.mockReset();
     deleteEmail.mockReset();
     clearApplicationToCompanyResearchPending.mockReset();
+    getApplicationDetail.mockImplementation(async (applicationId: string) => {
+      const application = await getApplication(applicationId);
+      const company = await getCompany(application.company_id);
+      const ppas = await listPerProfileApplications(applicationId);
+      const profiles = await listProfiles();
+      const profileNameById = new Map(profiles.map((profile: { id: string; name: string }) => [profile.id, profile.name]));
+      const perProfileApplications = await Promise.all(
+        ppas.map(async (ppa: { id: string; profile_id: string }) => {
+          try {
+            const emails = await listEmailsForPpa(ppa.id);
+            return {
+              ...ppa,
+              profile_name: profileNameById.get(ppa.profile_id) ?? ppa.profile_id,
+              emails
+            };
+          } catch {
+            return {
+              ...ppa,
+              profile_name: profileNameById.get(ppa.profile_id) ?? ppa.profile_id,
+              emails: []
+            };
+          }
+        })
+      );
+      return {
+        application,
+        company,
+        per_profile_applications: perProfileApplications
+      };
+    });
     scrollIntoViewMock.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -675,9 +709,39 @@ describe("ApplicationDetailPage", () => {
         updated_at: "2026-01-01T00:00:00Z"
       }
     ]);
-    markApplied.mockResolvedValue({});
-    markApplicationEmailSent.mockResolvedValue({});
-    markEmailSent.mockResolvedValue({});
+    markApplied.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "application_ready",
+      applied: false,
+      applied_at: null,
+      email_sent: true,
+      email_sent_at: "2026-01-02T00:00:00Z",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    });
+    markApplicationEmailSent.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "application_ready",
+      applied: false,
+      applied_at: null,
+      email_sent: false,
+      email_sent_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    });
+    markEmailSent.mockResolvedValue({
+      id: "e1",
+      per_profile_application_id: "ppa1",
+      kind: "follow_up",
+      content: "Sent email",
+      lifecycle_status: "sent",
+      sent: false,
+      sent_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    });
 
     render(
       <MemoryRouter initialEntries={["/applications/a1"]}>
@@ -696,6 +760,85 @@ describe("ApplicationDetailPage", () => {
 
     await userEvent.click(unmarkEmailButtons[1]);
     expect(markEmailSent).toHaveBeenCalledWith("e1", false);
+  });
+
+  it("marks per-profile email sent without refetching the full detail payload", async () => {
+    getApplication.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "application_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValue({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValue([
+      {
+        id: "ppa1",
+        application_id: "a1",
+        profile_id: "p1",
+        order_index: 1,
+        analysis: "Strong fit",
+        applied: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listProfiles.mockResolvedValue([
+      {
+        id: "p1",
+        name: "Profile One",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listEmailsForPpa.mockResolvedValue([
+      {
+        id: "e1",
+        per_profile_application_id: "ppa1",
+        kind: "follow_up",
+        content: "Draft email",
+        lifecycle_status: "drafted",
+        sent: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    markEmailSent.mockResolvedValue({
+      id: "e1",
+      per_profile_application_id: "ppa1",
+      kind: "follow_up",
+      content: "Draft email",
+      lifecycle_status: "drafted",
+      sent: true,
+      sent_at: "2026-01-02T00:00:00Z",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Draft email");
+    expect(getApplicationDetail).toHaveBeenCalledTimes(1);
+
+    const markEmailButtons = screen.getAllByRole("button", { name: "Mark email sent" });
+    await userEvent.click(markEmailButtons[1]);
+
+    expect(markEmailSent).toHaveBeenCalledWith("e1", true);
+    expect(getApplicationDetail).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Sent: 2026-01-02T00:00:00Z")).toBeInTheDocument();
   });
 
   it("hides default not-sent text and keeps subjects collapsible", async () => {

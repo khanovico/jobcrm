@@ -1,5 +1,6 @@
 import {
   Application,
+  ApplicationDetailResponse,
   AgentApiKeyCreated,
   ApplicationListItem,
   AuditEvent,
@@ -138,6 +139,8 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   getApplication: (id: string) => request<Application>(`/api/v1/applications/${id}`),
+  getApplicationDetail: (id: string) =>
+    request<ApplicationDetailResponse>(`/api/v1/applications/${id}/detail`),
   updateApplication: (id: string, payload: Record<string, unknown>) =>
     request<Application>(`/api/v1/applications/${id}`, {
       method: "PUT",

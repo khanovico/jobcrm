@@ -120,6 +120,17 @@ export type ApplicationListItem = Application & {
   applied_profiles: AppliedProfileName[];
 };
 
+export type PerProfileApplicationDetail = PerProfileApplication & {
+  profile_name: string;
+  emails: Email[];
+};
+
+export type ApplicationDetailResponse = {
+  application: Application;
+  company: Company;
+  per_profile_applications: PerProfileApplicationDetail[];
+};
+
 export type ColdEmailPlan = {
   subjects: string[];
   selected_subject_index: number;
