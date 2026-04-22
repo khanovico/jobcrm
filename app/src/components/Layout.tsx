@@ -8,6 +8,29 @@ import { NotificationKind, UserNotification } from "../types";
 const TOAST_POLL_MS = 45_000;
 const TOAST_AUTO_DISMISS_MS = 10_000;
 
+const SESSION_INITIAL_KEY = "jobcrm-notifications-initial-sync";
+const SESSION_SEEN_IDS_KEY = "jobcrm-notifications-seen-ids";
+
+function loadSeenNotificationIds(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_SEEN_IDS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((id): id is string => typeof id === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeenNotificationIds(ids: Set<string>) {
+  try {
+    sessionStorage.setItem(SESSION_SEEN_IDS_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const kindLabel: Record<NotificationKind, string> = {
   APPLICATION_UPDATE: "Application",
   COMPANY_UPDATE: "Company",
@@ -32,9 +55,10 @@ export const Layout = () => {
   const { logout, user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
-  const isFirstNotificationPollRef = useRef(true);
+  const seenNotificationIdsRef = useRef<Set<string>>(loadSeenNotificationIds());
   const toastDismissTimersRef = useRef<Map<string, number>>(new Map());
+  /** Avoid overlapping polls (slow network + tight interval leaves two runs both in the "seed" branch). */
+  const pollInFlightRef = useRef(false);
   const visibleLinks = links.filter((link) => !link.adminOnly || user?.role === "admin");
 
   const dismissToast = useCallback((toastKey: string) => {
@@ -66,6 +90,8 @@ export const Layout = () => {
     let cancelled = false;
 
     const poll = async () => {
+      if (pollInFlightRef.current) return;
+      pollInFlightRef.current = true;
       try {
         const unread = await api.getUnreadNotificationsCount();
         if (!cancelled) setUnreadCount(unread.count);
@@ -73,19 +99,34 @@ export const Layout = () => {
         const rows = await api.listNotifications({ unreadOnly: true, skip: 0, limit: 25 });
         if (cancelled) return;
 
-        if (isFirstNotificationPollRef.current) {
+        let initialDone = false;
+        try {
+          initialDone = sessionStorage.getItem(SESSION_INITIAL_KEY) === "1";
+        } catch {
+          initialDone = false;
+        }
+
+        if (!initialDone) {
           rows.forEach((n) => seenNotificationIdsRef.current.add(n.id));
-          isFirstNotificationPollRef.current = false;
+          saveSeenNotificationIds(seenNotificationIdsRef.current);
+          try {
+            sessionStorage.setItem(SESSION_INITIAL_KEY, "1");
+          } catch {
+            /* ignore */
+          }
         } else {
           for (const n of rows) {
             if (!seenNotificationIdsRef.current.has(n.id)) {
               seenNotificationIdsRef.current.add(n.id);
+              saveSeenNotificationIds(seenNotificationIdsRef.current);
               showToastForNote(n);
             }
           }
         }
       } catch {
         if (!cancelled) setUnreadCount(0);
+      } finally {
+        pollInFlightRef.current = false;
       }
     };
 
@@ -96,6 +137,7 @@ export const Layout = () => {
 
     return () => {
       cancelled = true;
+      pollInFlightRef.current = false;
       window.clearInterval(timer);
       toastDismissTimersRef.current.forEach((tid) => window.clearTimeout(tid));
       toastDismissTimersRef.current.clear();

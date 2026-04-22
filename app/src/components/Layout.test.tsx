@@ -31,6 +31,8 @@ afterEach(() => {
 
 beforeEach(() => {
   localStorage.setItem("jobcrm-token", "test-token");
+  sessionStorage.removeItem("jobcrm-notifications-initial-sync");
+  sessionStorage.removeItem("jobcrm-notifications-seen-ids");
   getUnreadNotificationsCount.mockReset();
   listNotifications.mockReset();
   listNotifications.mockResolvedValue([]);
