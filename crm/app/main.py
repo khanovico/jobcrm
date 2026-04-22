@@ -63,6 +63,7 @@ from app.models import (
     Profile,
     ProfileCreate,
     ProfileIdList,
+    ProfileListItem,
     ProfileUpdate,
     TokenResponse,
     UserInDB,
@@ -455,6 +456,30 @@ def list_profiles(
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Profile]:
     return repo.list_profiles(skip=skip, limit=limit, search=search)
+
+
+@app.get("/api/v1/profiles/summary", response_model=list[ProfileListItem])
+def list_profile_summaries(
+    skip: int = 0,
+    limit: int = 50,
+    search: str | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[ProfileListItem]:
+    profiles = repo.list_profiles(skip=skip, limit=limit, search=search)
+    return [
+        ProfileListItem(
+            id=profile.id,
+            name=profile.name,
+            frozen=profile.frozen,
+            location=profile.location,
+            email=profile.email,
+            phone=profile.phone,
+            created_at=profile.created_at,
+            updated_at=profile.updated_at,
+        )
+        for profile in profiles
+    ]
 
 
 @app.post("/api/v1/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)

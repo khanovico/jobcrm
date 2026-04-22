@@ -10,3 +10,5 @@
 - `2026-04-21` `AuditPage`: switched the UI onto the backend’s existing `skip`/`limit` pagination so the audit screen stops loading ever-growing event lists in one shot.
 - `2026-04-21` `GET /notifications/unread-count` + `Layout`: replaced unread badge polling via full notification list fetches with a lightweight count endpoint, keeping sidebar polling cheap as notifications scale up.
 - `2026-04-21` `ClearCompanyResearchModal`: replaced a huge related-application list fetch with the existing company application-count endpoint because the modal only needs the count to drive its choices.
+- `2026-04-21` `ApplicationsPage`: added explicit pagination so the UI no longer depends on backend default list caps, making large application sets navigable and predictable.
+- `2026-04-21` `GET /profiles/summary` + `ProfilesPage`: added a lightweight paginated profile-summary route so the profiles table stops loading full profile documents (bio/resume markdown) for list view.

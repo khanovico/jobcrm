@@ -406,6 +406,17 @@ class Profile(ProfileBase):
     updated_at: datetime
 
 
+class ProfileListItem(BaseModel):
+    id: str
+    name: str
+    frozen: bool = False
+    location: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class JobPost(BaseModel):
     job_link: str | None = None
     job_description: str | None = None

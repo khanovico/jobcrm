@@ -360,6 +360,42 @@ describe("ApplicationsPage", () => {
     ).toHaveLength(0);
   });
 
+  it("paginates application list requests", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const secondPageRow = { ...applicationRow, id: "a21", company_name: "Beta" };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        if (url.includes("skip=20")) {
+          return Promise.resolve(new Response(JSON.stringify([secondPageRow]), { status: 200 }));
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(Array.from({ length: 20 }, (_, index) => ({ ...applicationRow, id: `a${index + 1}` }))), {
+            status: 200
+          })
+        );
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Page 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
+  });
+
   it("uses highlighted badge style for *_ready statuses", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {

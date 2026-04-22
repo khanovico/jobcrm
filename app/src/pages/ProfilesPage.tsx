@@ -1,28 +1,49 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { Profile } from "../types";
+import { ProfileListItem } from "../types";
+
+const PAGE_SIZE = 20;
 
 export const ProfilesPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [items, setItems] = useState<Profile[]>([]);
+  const [items, setItems] = useState<ProfileListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const canEditProfiles = user?.role === "admin";
 
-  const load = async () => {
-    try {
-      setError(null);
-      setItems(await api.listProfiles());
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
+  const load = useCallback(
+    async (targetPage = page) => {
+      try {
+        setError(null);
+        const response = await api.listProfileSummaries(
+          new URLSearchParams({
+            skip: String((targetPage - 1) * PAGE_SIZE),
+            limit: String(PAGE_SIZE)
+          })
+        );
+        setItems(response);
+        setHasNextPage(response.length === PAGE_SIZE);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+    [page]
+  );
+
   useEffect(() => {
-    void load();
-  }, []);
+    void load(page);
+  }, [load, page]);
+
+  useEffect(() => {
+    if (items.length === 0 && page > 1) {
+      setPage((current) => Math.max(1, current - 1));
+    }
+  }, [items.length, page]);
 
   return (
     <div className="space-y-4">
@@ -30,7 +51,7 @@ export const ProfilesPage = () => {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xl font-semibold">Profiles</h2>
           <div className="flex items-center gap-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page)}>
               Refresh
             </button>
             {canEditProfiles && (
@@ -131,6 +152,27 @@ export const ProfilesPage = () => {
             </tbody>
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No profiles yet.</p>}
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs opacity-70">Page {page}</p>
+          <div className="join">
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => current + 1)}
+              disabled={!hasNextPage}
+            >
+              Next
+            </button>
+          </div>
         </div>
         <p className="mt-2 text-xs opacity-60">
           {canEditProfiles

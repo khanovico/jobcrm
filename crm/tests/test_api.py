@@ -537,6 +537,24 @@ def test_application_detail_endpoint_batches_company_ppas_profiles_and_emails() 
     assert payload["per_profile_applications"][0]["emails"] == [email]
 
 
+def test_profile_summary_endpoint_returns_only_list_fields() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers)
+
+    response = client.get("/api/v1/profiles/summary", headers=headers)
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["name"] == "General SWE"
+    assert "bio_md" not in rows[0]
+    assert "resume_md" not in rows[0]
+
+
 def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

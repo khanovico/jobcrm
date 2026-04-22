@@ -65,6 +65,17 @@ export type Profile = {
   updated_at: string;
 };
 
+export type ProfileListItem = {
+  id: string;
+  name: string;
+  frozen?: boolean;
+  location?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 /** POST /api/v1/profiles — all required except resume_md */
 export type ProfileCreatePayload = {
   name: string;

@@ -19,6 +19,7 @@ import {
   PerProfileApplication,
   Profile,
   ProfileCreatePayload,
+  ProfileListItem,
   UserNotification,
   UserPublic
 } from "./types";
@@ -119,6 +120,8 @@ export const api = {
   deleteCompany: (id: string) =>
     request<{ applications_archived: number }>(`/api/v1/companies/${id}`, { method: "DELETE" }),
   listProfiles: () => request<Profile[]>("/api/v1/profiles"),
+  listProfileSummaries: (params?: URLSearchParams) =>
+    request<ProfileListItem[]>(`/api/v1/profiles/summary${params ? `?${params.toString()}` : ""}`),
   getProfile: (id: string) => request<Profile>(`/api/v1/profiles/${id}`),
   createProfile: (payload: ProfileCreatePayload) =>
     request<Profile>("/api/v1/profiles", { method: "POST", body: JSON.stringify(payload) }),

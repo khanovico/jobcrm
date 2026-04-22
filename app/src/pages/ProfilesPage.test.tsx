@@ -122,4 +122,55 @@ describe("ProfilesPage", () => {
     expect(screen.queryByRole("button", { name: "Freeze" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
+
+  it("uses profile summaries endpoint with pagination", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const firstPageRows = Array.from({ length: 20 }, (_, index) => ({
+      id: `p${index + 1}`,
+      name: `Profile ${index + 1}`,
+      location: "Remote",
+      email: `profile${index + 1}@example.com`,
+      phone: "123",
+      frozen: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    }));
+    const secondPageRows = [
+      {
+        id: "p21",
+        name: "Profile 21",
+        location: "Berlin",
+        email: "profile21@example.com",
+        phone: "456",
+        frozen: true,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z"
+      }
+    ];
+
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/v1/profiles/summary") && method === "GET") {
+        if (url.includes("skip=20")) {
+          return Promise.resolve(new Response(JSON.stringify(secondPageRows), { status: 200 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify(firstPageRows), { status: 200 }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ProfilesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Profile 1")).toBeInTheDocument();
+    expect(screen.getByText("Page 1")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(screen.getByText("Profile 21")).toBeInTheDocument();
+  });
 });

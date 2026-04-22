@@ -14,6 +14,8 @@ import {
 } from "../state/applicationsFilters";
 import { ApplicationListItem, Company, WorkerStateResponse } from "../types";
 
+const PAGE_SIZE = 20;
+
 const PlusIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -42,6 +44,8 @@ export const ApplicationsPage = () => {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ApplicationListItem | null>(null);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
 
   const availableAppliedProfileNames = useMemo(
     () =>
@@ -104,20 +108,24 @@ export const ApplicationsPage = () => {
   }, [listMode]);
 
   const load = useCallback(
-    async () => {
+    async (targetPage = page) => {
       setError(null);
       try {
+        const params = new URLSearchParams(listParams);
+        params.set("skip", String((targetPage - 1) * PAGE_SIZE));
+        params.set("limit", String(PAGE_SIZE));
         const [applicationItems, workers] = await Promise.all([
-          api.listApplications(listParams),
+          api.listApplications(params),
           api.getWorkerState().catch(() => null)
         ]);
         setItems(applicationItems);
+        setHasNextPage(applicationItems.length === PAGE_SIZE);
         setWorkerState(workers);
       } catch (e) {
         setError((e as Error).message);
       }
     },
-    [listParams]
+    [listParams, page]
   );
 
   const loadCompanyOptions = useCallback(async () => {
@@ -133,8 +141,18 @@ export const ApplicationsPage = () => {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setPage(1);
+  }, [listMode]);
+
+  useEffect(() => {
+    void load(page);
+  }, [load, page]);
+
+  useEffect(() => {
+    if (items.length === 0 && page > 1) {
+      setPage((current) => Math.max(1, current - 1));
+    }
+  }, [items.length, page]);
 
   const openCreateModal = () => {
     setError(null);
@@ -218,7 +236,7 @@ export const ApplicationsPage = () => {
                 </button>
               ))}
             </div>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load()}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page)}>
               Refresh
             </button>
             <button
@@ -305,7 +323,7 @@ export const ApplicationsPage = () => {
                               const nextApplied = !application.applied;
                               await api.markApplied(application.id, nextApplied);
                               if (listMode === "all" || listMode === "archived") {
-                                await load();
+                                await load(page);
                                 return;
                               }
                               setListMode(nextApplied ? "applied" : "pending");
@@ -333,6 +351,27 @@ export const ApplicationsPage = () => {
             </tbody>
           </table>
           {filteredItems.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs opacity-70">Page {page}</p>
+          <div className="join">
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn btn-xs join-item"
+              onClick={() => setPage((current) => current + 1)}
+              disabled={!hasNextPage}
+            >
+              Next
+            </button>
+          </div>
         </div>
         {appliedProfileFilterOpen && appliedProfilesFilterPosition ? (
           <>
