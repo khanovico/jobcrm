@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api";
+import { dispatchNotificationsInboxChanged } from "../notificationSync";
 import { NotificationKind, NotificationSeverity, UserNotification } from "../types";
 
 const kindLabel: Record<NotificationKind, string> = {
@@ -19,6 +20,11 @@ const severityClass = (t: NotificationSeverity) => {
 
 const PAGE_SIZE = 10;
 
+/** ISO timestamp string for optimistic read rows */
+function nowIso() {
+  return new Date().toISOString();
+}
+
 export const NotificationsPage = () => {
   const [items, setItems] = useState<UserNotification[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +32,7 @@ export const NotificationsPage = () => {
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const load = async (targetPage = page, unreadOnly = showOnlyActive) => {
     setLoading(true);
@@ -38,6 +45,7 @@ export const NotificationsPage = () => {
       });
       setItems(response);
       setHasNextPage(response.length === PAGE_SIZE);
+      dispatchNotificationsInboxChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -55,6 +63,75 @@ export const NotificationsPage = () => {
     }
   }, [items.length, page]);
 
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [items, page, showOnlyActive]);
+
+  const selectableIds = useMemo(
+    () => new Set(items.map((n) => n.id)),
+    [items]
+  );
+
+  const allOnPageSelected =
+    selectableIds.size > 0 &&
+    [...selectableIds].every((id) => selectedIds.has(id));
+
+  const toggleSelectAllOnPage = () => {
+    if (allOnPageSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(selectableIds));
+  };
+
+  const toggleRowSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const markReadOptimistic = (id: string) => {
+    const ts = nowIso();
+    setItems((prev) =>
+      prev.map((n) =>
+        n.id === id ? { ...n, read_at: ts } : n
+      )
+    );
+    dispatchNotificationsInboxChanged();
+    void api.markNotificationRead(id).catch(() => {
+      void load(page, showOnlyActive);
+    });
+  };
+
+  const deleteSelected = () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setItems((prev) => prev.filter((n) => !selectedIds.has(n.id)));
+    setSelectedIds(new Set());
+    dispatchNotificationsInboxChanged();
+    void api.deleteNotificationsBulk(ids).catch(() => {
+      void load(page, showOnlyActive);
+    });
+  };
+
+  const handleBulkMarkRead = () => {
+    const unreadSelected = items.filter((n) => selectedIds.has(n.id) && !n.read_at);
+    if (unreadSelected.length === 0) return;
+    const ts = nowIso();
+    setItems((prev) =>
+      prev.map((n) =>
+        selectedIds.has(n.id) && !n.read_at ? { ...n, read_at: ts } : n
+      )
+    );
+    dispatchNotificationsInboxChanged();
+    void Promise.all(unreadSelected.map((n) => api.markNotificationRead(n.id))).catch(() => {
+      void load(page, showOnlyActive);
+    });
+  };
+
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Notifications</h2>
@@ -71,10 +148,41 @@ export const NotificationsPage = () => {
         />
         <span className="label-text">Show only active notifications</span>
       </label>
+
+      {items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn btn-sm btn-outline" onClick={toggleSelectAllOnPage}>
+            {allOnPageSelected ? "Unselect all" : "Select all"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-error btn-outline"
+            disabled={selectedIds.size === 0}
+            onClick={deleteSelected}
+          >
+            Delete selected ({selectedIds.size})
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline"
+            disabled={
+              selectedIds.size === 0 ||
+              !items.some((n) => selectedIds.has(n.id) && !n.read_at)
+            }
+            onClick={handleBulkMarkRead}
+          >
+            Mark selected read
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border border-base-300 bg-base-100 shadow">
         <table className="table table-zebra table-sm">
           <thead>
             <tr>
+              <th className="w-10 py-2">
+                <span className="sr-only">Select</span>
+              </th>
               <th className="py-2">Notification</th>
               <th className="py-2">Type</th>
               <th className="py-2">Time</th>
@@ -86,6 +194,15 @@ export const NotificationsPage = () => {
           <tbody>
             {items.map((n) => (
               <tr key={n.id} className={n.read_at ? "opacity-75" : ""}>
+                <td className="py-2 align-middle">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm"
+                    checked={selectedIds.has(n.id)}
+                    onChange={() => toggleRowSelected(n.id)}
+                    aria-label={`Select notification ${n.id}`}
+                  />
+                </td>
                 <td className="py-2">
                   <span className="font-medium">{kindLabel[n.notification]}</span>
                   {n.check && (
@@ -125,10 +242,7 @@ export const NotificationsPage = () => {
                     <button
                       type="button"
                       className="btn btn-xs"
-                      onClick={async () => {
-                        await api.markNotificationRead(n.id);
-                        await load(page, showOnlyActive);
-                      }}
+                      onClick={() => markReadOptimistic(n.id)}
                     >
                       Mark read
                     </button>

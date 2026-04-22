@@ -175,6 +175,7 @@ class BaseRepository:
         email_sent: bool | None = None,
         sort: str = "updated_at_desc",
         exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
     ) -> list[ApplicationListItem]:
         raise NotImplementedError
 
@@ -285,6 +286,12 @@ class BaseRepository:
         raise NotImplementedError
 
     def mark_notification_read(self, user_id: str, notification_id: str) -> UserNotification | None:
+        raise NotImplementedError
+
+    def delete_notification(self, user_id: str, notification_id: str) -> bool:
+        raise NotImplementedError
+
+    def delete_notifications_bulk(self, user_id: str, notification_ids: list[str]) -> int:
         raise NotImplementedError
 
     def create_agent_api_key(self, payload: AgentApiKeyCreate, key_hash: str) -> AgentApiKeyInDB:
@@ -744,6 +751,7 @@ class InMemoryRepository(BaseRepository):
         email_sent: bool | None = None,
         sort: str = "updated_at_desc",
         exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
     ) -> list[ApplicationListItem]:
         values = list(self.applications.values())
         if status:
@@ -752,6 +760,8 @@ class InMemoryRepository(BaseRepository):
             values = [a for a in values if a.status != exclude_status]
         if company_id:
             values = [a for a in values if a.company_id == company_id]
+        if created_by_user_id is not None:
+            values = [a for a in values if a.created_by_user_id == created_by_user_id]
         if applied is not None:
             values = [a for a in values if a.applied is applied]
         if email_sent is not None:
@@ -1074,6 +1084,22 @@ class InMemoryRepository(BaseRepository):
         updated = note.model_copy(update={"read_at": utcnow()})
         self.notifications[notification_id] = updated
         return updated
+
+    def delete_notification(self, user_id: str, notification_id: str) -> bool:
+        note = self.notifications.get(notification_id)
+        if not note or note.user_id != user_id:
+            return False
+        del self.notifications[notification_id]
+        return True
+
+    def delete_notifications_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        removed = 0
+        for nid in notification_ids:
+            note = self.notifications.get(nid)
+            if note and note.user_id == user_id:
+                del self.notifications[nid]
+                removed += 1
+        return removed
 
     def create_agent_api_key(self, payload: AgentApiKeyCreate, key_hash: str) -> AgentApiKeyInDB:
         now = utcnow()
@@ -1463,6 +1489,18 @@ class MongoRepository(InMemoryRepository):
         note = super().mark_notification_read(user_id, notification_id)
         self._sync()
         return note
+
+    def delete_notification(self, user_id: str, notification_id: str) -> bool:
+        ok = super().delete_notification(user_id, notification_id)
+        if ok:
+            self._sync()
+        return ok
+
+    def delete_notifications_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        n = super().delete_notifications_bulk(user_id, notification_ids)
+        if n:
+            self._sync()
+        return n
 
     def create_agent_api_key(self, payload: AgentApiKeyCreate, key_hash: str) -> AgentApiKeyInDB:
         rec = super().create_agent_api_key(payload, key_hash)

@@ -223,6 +223,13 @@ export const api = {
     request<{ count: number }>("/api/v1/notifications/unread-count"),
   markNotificationRead: (id: string) =>
     request<void>(`/api/v1/notifications/${id}/read`, { method: "POST" }),
+  deleteNotification: (id: string) =>
+    request<void>(`/api/v1/notifications/${id}`, { method: "DELETE" }),
+  deleteNotificationsBulk: (ids: string[]) =>
+    request<{ deleted: number }>("/api/v1/notifications", {
+      method: "DELETE",
+      body: JSON.stringify({ ids })
+    }),
   listAuditEvents: (params?: URLSearchParams) =>
     request<AuditEvent[]>(`/api/v1/audit-events${params ? `?${params.toString()}` : ""}`)
 };

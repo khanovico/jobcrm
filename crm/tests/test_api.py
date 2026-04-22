@@ -3,7 +3,14 @@ from fastapi.testclient import TestClient
 from app.auth import hash_password
 from app.deps import get_repository
 from app.main import app
-from app.models import NotificationKind, NotificationPayload, NotificationSeverity, PerProfileApplication, UserCreate
+from app.models import (
+    ApplicationStatus,
+    NotificationKind,
+    NotificationPayload,
+    NotificationSeverity,
+    PerProfileApplication,
+    UserCreate,
+)
 from app.repository import (
     InMemoryRepository,
     RELATED_COMPANY_DELETED_ARCHIVE_REASON,
@@ -940,6 +947,89 @@ def test_notifications_unread_count_endpoint_returns_only_unread_total() -> None
     response = client.get("/api/v1/notifications/unread-count", headers=headers)
     assert response.status_code == 200
     assert response.json() == {"count": 2}
+
+
+def test_dashboard_metrics_counts_only_own_applications_for_regular_user() -> None:
+    """Non-admin dashboard pipeline/ready/action metrics use applications created_by_user_id == user."""
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+
+    token_admin = _register_and_login(client)
+    headers_admin = _auth_headers(token_admin)
+
+    token_user = _create_user_and_login(
+        client, name="Jane", email="worker@example.com", password="secret1234", role="user"
+    )
+    headers_user = _auth_headers(token_user)
+    worker = repo.get_user_by_email("worker@example.com")
+    assert worker is not None
+
+    company = client.post("/api/v1/companies", json={"name": "Scoped Co"}, headers=headers_admin).json()
+
+    mine = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": ApplicationStatus.company_research_pending.value},
+        headers=headers_user,
+    ).json()
+
+    admin_app = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": ApplicationStatus.company_research_pending.value},
+        headers=headers_admin,
+    ).json()
+
+    assert mine["created_by_user_id"] == worker.id
+
+    dash_user = client.get("/api/v1/metrics/dashboard", headers=headers_user).json()
+    dash_admin = client.get("/api/v1/metrics/dashboard", headers=headers_admin).json()
+
+    assert dash_user["company_research_pipeline"] == 1
+    assert dash_admin["company_research_pipeline"] >= 2
+
+
+def test_notifications_bulk_delete_returns_deleted_count() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    user = repo.get_user_by_email("test@example.com")
+    assert user is not None
+
+    n1 = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a1", message="One"),
+    )
+    n2 = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a2", message="Two"),
+    )
+
+    bulk = client.request(
+        "DELETE",
+        "/api/v1/notifications",
+        json={"ids": [n1.id, n2.id, "missing-id"]},
+        headers=headers,
+    )
+    assert bulk.status_code == 200
+    assert bulk.json() == {"deleted": 2}
+
+    listed = client.get("/api/v1/notifications", headers=headers).json()
+    assert listed == []
+
+    solo = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.SYSTEM_ERROR,
+        notification_type=NotificationSeverity.FAILED,
+        payload=NotificationPayload(id=None, message="Err"),
+    )
+    del_one = client.delete(f"/api/v1/notifications/{solo.id}", headers=headers)
+    assert del_one.status_code == 204
 
 
 def test_company_update_accepts_legacy_full_overview_field() -> None:

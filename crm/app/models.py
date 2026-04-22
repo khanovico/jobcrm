@@ -685,6 +685,10 @@ class NotificationPayload(BaseModel):
     message: str = Field(min_length=1)
 
 
+class NotificationBulkDelete(BaseModel):
+    ids: list[str] = Field(min_length=1)
+
+
 class UserNotification(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

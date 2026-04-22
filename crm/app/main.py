@@ -57,6 +57,7 @@ from app.models import (
     IndustryBulkCreateRequest,
     IndustryCreate,
     IndustryUpdate,
+    NotificationBulkDelete,
     NotificationListQuery,
     PerProfileApplication,
     PerProfileApplicationCreate,
@@ -72,6 +73,7 @@ from app.models import (
     UserLogin,
     UserNotification,
     UserPublic,
+    UserRole,
     WorkerAssignResponse,
     WorkerCountResponse,
     WorkerReleaseAllRequest,
@@ -164,11 +166,13 @@ def dashboard_metrics(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> DashboardMetrics:
+    scope_user_id = user.id if user.role != UserRole.admin else None
     apps = repo.list_applications(
         skip=0,
         limit=10_000,
         status=None,
         exclude_status=ApplicationStatus.archived,
+        created_by_user_id=scope_user_id,
     )
     pipeline = sum(
         1
@@ -1015,6 +1019,28 @@ def read_notification(
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.delete("/api/v1/notifications/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_notification_route(
+    notification_id: str,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> Response:
+    deleted = repo.delete_notification(user.id, notification_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.delete("/api/v1/notifications", status_code=status.HTTP_200_OK)
+def delete_notifications_bulk_route(
+    body: NotificationBulkDelete,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> dict[str, int]:
+    removed = repo.delete_notifications_bulk(user.id, body.ids)
+    return {"deleted": removed}
 
 
 @app.get("/api/v1/audit-events", response_model=list[AuditEvent])
