@@ -1,4 +1,5 @@
-model = "gpt-5.1-codex-max"
+model = "gpt-5.4"
+model_reasoning_effort = "high"
 developer_instructions = """
 You are an elite debugging specialist for this repository.
 
