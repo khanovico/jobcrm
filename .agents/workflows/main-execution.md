@@ -1,96 +1,99 @@
 ## Execution Workflow for Agents
 
-Follow this workflow for all non-trivial implementation tasks.
-**NOTE**: In this main execution mode, do not wait for human's commit request. Commit yourself. Frequently, making sure meaningful/small commits.
+Follow for all non-trivial implementation tasks.
+**NOTE**: Do not wait for human commit request. Commit yourself. Prefer meaningful small commits.
 
 ### 1) Plan first
-Before writing code, create a written implementation plan in Markdown. Do not keep the plan only in memory.
+Write a Markdown implementation plan before coding.
+Save under `.agents/docs/plans/`.
 
-- Use Plan Mode first whenever the task is more than a tiny edit.
-- Save the plan as a workspace file under `.cursor/docs/plans/`.
-- The plan must include:
-  - goal and scope
-  - relevant files and code references
-  - ordered task groups
-  - a step-by-step TODO checklist
-  - which tasks are safe to run in parallel
-  - dependencies and merge/conflict risks
-  - As progress goes, TODO list or task list can also be updated accordingly.
+Plan must include:
+- goal and scope
+- relevant files and code references
+- ordered task groups
+- step-by-step TODO checklist
+- parallel-safe tasks
+- dependencies and merge/conflict risks
 
-If the task is large, break it into small task chunks. Each chunk should have its own checklist and clear completion criteria.
+Update plan and TODOs as work evolves.
+Large task -> split into small chunks with clear completion criteria.
 
-### 2) Execute from the plan, not from improvisation
-Execution must follow the plan and TODO checklist step by step.
+### 2) Execute from plan
+Work from plan and checklist step by step.
 
-- Keep the main agent tied to the checklist at all times.
-- Update the checklist as work progresses.
-- Do not jump ahead to unrelated work.
-- If the implementation changes materially from the original plan, update the plan file first, then continue.
+- keep main agent tied to checklist
+- update checklist during progress
+- do not jump to unrelated work
+- if implementation changes materially, update plan first
 
-### 3) Use isolated worktrees for parallelizable tasks
-If tasks are independent and can be done safely in parallel, delegate them to subagents using `/worktree`.
+### 3) Parallel only when isolated
+Use subagents/worktrees only for independent tasks.
 
-- Only parallelize tasks that do not depend on each other.
-- Split work to minimize file overlap and merge conflicts.
-- Prefer one subagent per clearly bounded chunk.
-- Give each subagent a narrow scope, clear file targets, and explicit acceptance criteria.
-- If two tasks are likely to touch the same files or logic, do not run them in parallel.
+- parallelize only non-dependent work
+- minimize file overlap and merge conflicts
+- prefer one subagent per bounded chunk
+- give narrow scope, target files, and acceptance criteria
+- if same files or logic likely touched, do not parallelize
 
-Main executor should have to be remaining in main branch.
-And rebase from subagents' working branch with properly addressed rebase conflicts (if there is any)
+Main executor stays on main branch.
+Rebase/integrate subagent branches carefully. Resolve conflicts properly.
 
-### 4) Require structured subagent reports
-Every subagent must return a detailed written report before handoff.
+### 4) Require subagent reports
+Every subagent must write a detailed report before handoff.
 
-Store reports under:
-
+Store under:
 `memory/work-report/<YYYY-MM-DD>-<subagent-tag>-report/<task-name>.md`
 
 Each report must include:
 - task summary
 - files changed
-- key decisions made
+- key decisions
 - tests run and results
 - unresolved issues or risks
 - branch/worktree name
 - commit hash(es)
-- exact next-step handoff notes for the main agent
+- exact next-step handoff notes for main agent
 
-After finishing, the subagent must give the main agent the report file path.
+Subagent must return report file path to main agent.
 
 ### 5) Test before handoff
-Before a subagent marks work complete, it must validate its changes.
+Before marking work complete, validate changes.
 
 At minimum:
-- run the most relevant tests for the changed area
-- run lint/typecheck/build checks if applicable (you have rules for testing)
-- verify no obvious regressions were introduced
-- summarize results in the report file
+- run most relevant tests for changed area
+- run lint/typecheck/build if applicable
+- verify no obvious regressions
+- summarize results in report
 
-Do not mark work complete if validation was skipped. If something could not be tested, state that explicitly and explain why.
+If anything was not tested, say so and explain why.
 
 ### 6) Commit cleanly
-Before handoff, each subagent should leave work in a clean git state.
+Leave work in clean git state before handoff.
 
-- Create focused, readable commits
-- Keep commits scoped to the task
-- Avoid mixing unrelated changes
-- Include the final commit hash in the report
-(you have rules for commit convention)
+- create focused readable commits
+- keep commits scoped to task
+- avoid unrelated changes
+- include final commit hash in report
 
-### 7) Main agent integration rules
-The main agent is responsible for final integration.
+### 8) Review thoroughly
+Whenever a big chunk of task/feature is done, bug was fixed, or any changes commited and before PR-ready:
+- Spawn @code-reverwer and @scalability-reviewer agents simultaneously.
+- Wait for both of them finish reviews.
+- Address the issues they report back by going back to step 3) with new requests.
 
-- Read every subagent report before merging or continuing
-- Reconcile changes against the master plan and checklist
-- Resolve cross-task inconsistencies
-- Re-run final validation after integrating parallel work
-- Do not mark the overall task complete until every checklist item is verified
+### 7) Main agent owns integration
+Main agent is responsible for final integration.
+
+- read every subagent report before merge/continue
+- reconcile against master plan and checklist
+- resolve cross-task inconsistencies
+- rerun final validation after integration
+- do not mark task complete until every checklist item is verified
 
 ### 8) Safety and shell discipline
-Prefer safe, minimal, sandbox-friendly commands.
+Prefer safe minimal commands.
 
-- Avoid destructive shell commands unless explicitly required
-- Avoid broad filesystem operations outside the task scope
-- Escalate only when necessary
-- Prefer targeted test/build commands over expensive full-project commands when a narrow check is enough
+- avoid destructive shell commands unless explicitly required
+- avoid broad filesystem operations outside task scope
+- escalate only when necessary
+- prefer targeted test/build commands over expensive full-project runs
