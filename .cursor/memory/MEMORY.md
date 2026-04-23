@@ -2,6 +2,7 @@
 
 ## Topics
 - `bootstrap/` - first-time project initialization and baseline architecture decisions (includes JobCRM MVP runbook notes).
+- `bootstrap/backend-env-file-paths.md` - backend settings should resolve `crm/.env` by absolute path so local scripts work from any launch directory.
 - `auth/` - login/account provisioning and role-based access rules (admin-only settings/audit, profile read-only for user role).
 - `performance/` - always-on scale discipline for fetch/render work (payload size, request frequency, pagination, bounded pickers, stable layout shells during lazy loading).
 - `ui/` - frontend UX conventions and review workflow (**no committed screenshots** unless requested; in **cloud/remote** mode, **show chat screenshots** for UI validation after feature work).

@@ -4,6 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from pymongo.errors import PyMongoError
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -65,6 +67,9 @@ def main() -> int:
         )
     except ValueError as exc:
         print(f"Failed to create account: {exc}")
+        return 1
+    except PyMongoError as exc:
+        print(f"Failed to connect to MongoDB: {exc}")
         return 1
 
     print("Account created successfully.")
