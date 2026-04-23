@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal
 
 from app.models import (
     ApplicationCreate,
@@ -33,6 +34,147 @@ class SeedRichDummyResult:
     per_profile_application_ids: list[str]
     email_ids: list[str]
     company_name: str
+
+
+@dataclass(frozen=True)
+class SeedMultiPpaSingleReadyResult:
+    """One application with 3 PPAs; only `ready_profile_name` should appear in `applied_profiles` on the list API."""
+
+    company_id: str
+    application_id: str
+    company_name: str
+    not_ready_profile_names: tuple[str, ...]
+    ready_profile_name: str
+    ready_artifact: Literal["resume", "email"]
+    per_profile_application_ids: tuple[str, ...]
+    email_id_if_any: str | None
+
+
+def seed_multi_ppa_single_ready_profile_demo(
+    repo: BaseRepository,
+    *,
+    label: str = "applied-col-demo",
+    ready_artifact: Literal["resume", "email"] = "resume",
+) -> SeedMultiPpaSingleReadyResult:
+    """
+    For manual QA of the Applications table **Applied profiles** column.
+
+    Inserts one company, one application, three profiles, and three PPAs. Two PPAs are
+    analysis-only (not listable). Exactly one PPA has either a tailored resume link or a
+    substantive email draft—so the list API should return a single `applied_profiles` chip.
+    """
+    ts = _now().strftime("%Y%m%d-%H%M%S")
+    suffix = f"[{label}] {ts}"
+    company_name = f"Applied col demo {suffix}"
+    company = repo.create_company(CompanyCreate(name=company_name, research_status=CompanyResearchStatus.indexed))
+
+    application = repo.create_application(
+        ApplicationCreate(
+            company_id=company.id,
+            status=ApplicationStatus.application_ready,
+            notes="QA: 3 PPAs; only the third has resume or email prep.",
+        ),
+        created_by_user_id=None,
+    )
+
+    names = (
+        f"Alpha Stub Only {suffix}",
+        f"Beta Stub Only {suffix}",
+        f"Gamma Ready {suffix}",
+    )
+    profile_payloads = [
+        ProfileCreate(
+            name=names[0],
+            location="Austin, TX",
+            email="alpha.stub@example.com",
+            phone="+1-512-555-0001",
+            educations=[{"university_name": "UT", "from_year": 2015, "to_year": 2019}],
+            bio_md="Stub profile for QA.",
+            niche_info_md="N/A",
+        ),
+        ProfileCreate(
+            name=names[1],
+            location="Austin, TX",
+            email="beta.stub@example.com",
+            phone="+1-512-555-0002",
+            educations=[{"university_name": "UT", "from_year": 2015, "to_year": 2019}],
+            bio_md="Stub profile for QA.",
+            niche_info_md="N/A",
+        ),
+        ProfileCreate(
+            name=names[2],
+            location="Austin, TX",
+            email="gamma.ready@example.com",
+            phone="+1-512-555-0003",
+            educations=[{"university_name": "UT", "from_year": 2015, "to_year": 2019}],
+            bio_md="This row should be the only applied-profile chip.",
+            niche_info_md="N/A",
+        ),
+    ]
+    profiles = [repo.create_profile(p) for p in profile_payloads]
+
+    ppa0 = repo.create_per_profile_application(
+        PerProfileApplicationCreate(
+            application_id=application.id,
+            profile_id=profiles[0].id,
+            order_index=0,
+            fit_score=70.0,
+            analysis="PPA 0: analysis only (no resume, no email plan, no email draft).",
+        )
+    )
+    ppa1 = repo.create_per_profile_application(
+        PerProfileApplicationCreate(
+            application_id=application.id,
+            profile_id=profiles[1].id,
+            order_index=1,
+            fit_score=72.0,
+            analysis="PPA 1: analysis only (not listable on applications table).",
+        )
+    )
+
+    if ready_artifact == "resume":
+        ppa2 = repo.create_per_profile_application(
+            PerProfileApplicationCreate(
+                application_id=application.id,
+                profile_id=profiles[2].id,
+                order_index=2,
+                fit_score=90.0,
+                analysis="PPA 2: the only PPA with a tailored resume link.",
+                tailored_resume_link="https://files.example.com/demo/gamma-ready-resume.pdf",
+            )
+        )
+        email_id: str | None = None
+    else:
+        ppa2 = repo.create_per_profile_application(
+            PerProfileApplicationCreate(
+                application_id=application.id,
+                profile_id=profiles[2].id,
+                order_index=2,
+                fit_score=90.0,
+                analysis="PPA 2: the only PPA with an email draft (no tailored resume).",
+            )
+        )
+        em = repo.create_email(
+            EmailCreate(
+                per_profile_application_id=ppa2.id,
+                kind=EmailKind.cold,
+                content="<p>Hi — this is the only substantive email draft for this application.</p>",
+                lifecycle_status=EmailLifecycleStatus.drafted,
+                sent=False,
+            )
+        )
+        email_id = em.id
+
+    return SeedMultiPpaSingleReadyResult(
+        company_id=company.id,
+        application_id=application.id,
+        company_name=company_name,
+        not_ready_profile_names=(names[0], names[1]),
+        ready_profile_name=names[2],
+        ready_artifact=ready_artifact,
+        per_profile_application_ids=(ppa0.id, ppa1.id, ppa2.id),
+        email_id_if_any=email_id,
+    )
 
 
 def seed_rich_dummy_application(
