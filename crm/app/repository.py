@@ -793,7 +793,7 @@ class InMemoryRepository(BaseRepository):
     def _batch_applied_profile_names_for_applications(
         self, application_ids: list[str]
     ) -> dict[str, list[AppliedProfileName]]:
-        """One display name per profile for each application (PPA rows with resume and/or email prep)."""
+        """Show only the first PPA profile name for each application."""
         if not application_ids:
             return {}
 
@@ -803,34 +803,34 @@ class InMemoryRepository(BaseRepository):
             if ppa.application_id in app_set:
                 ppas_by_app[ppa.application_id].append(ppa)
 
-        all_ppas = [p for p in self.per_profile_applications.values() if p.application_id in app_set]
-        ppa_id_set = {p.id for p in all_ppas}
-        ppa_ids_with_substantive_email: set[str] = set()
-        for e in self.emails.values():
-            if e.per_profile_application_id not in ppa_id_set:
-                continue
-            if (e.content or "").strip():
-                ppa_ids_with_substantive_email.add(e.per_profile_application_id)
-        qualifying_profile_ids: set[str] = set()
-        for ppa in all_ppas:
-            if self._per_profile_shown_in_applied_profiles_column(ppa, ppa_ids_with_substantive_email):
-                qualifying_profile_ids.add(ppa.profile_id)
+        # Previous logic intentionally kept for reference:
+        # - Gather all PPAs across the page.
+        # - Mark qualifying profile IDs based on resume link / substantive email / cold email plan.
+        # - Render a de-duplicated list of qualifying profiles per application.
+        #
+        # all_ppas = [p for p in self.per_profile_applications.values() if p.application_id in app_set]
+        # ppa_id_set = {p.id for p in all_ppas}
+        # ppa_ids_with_substantive_email: set[str] = set()
+        # for e in self.emails.values():
+        #     if e.per_profile_application_id not in ppa_id_set:
+        #         continue
+        #     if (e.content or "").strip():
+        #         ppa_ids_with_substantive_email.add(e.per_profile_application_id)
+        # qualifying_profile_ids: set[str] = set()
+        # for ppa in all_ppas:
+        #     if self._per_profile_shown_in_applied_profiles_column(ppa, ppa_ids_with_substantive_email):
+        #         qualifying_profile_ids.add(ppa.profile_id)
 
         out: dict[str, list[AppliedProfileName]] = {}
         for aid in application_ids:
             rows = sorted(ppas_by_app[aid], key=lambda p: (p.order_index, p.created_at))
-            seen: set[str] = set()
-            names: list[AppliedProfileName] = []
-            for ppa in rows:
-                if ppa.profile_id in seen:
-                    continue
-                if ppa.profile_id not in qualifying_profile_ids:
-                    continue
-                seen.add(ppa.profile_id)
-                prof = self.get_profile(ppa.profile_id)
-                display = prof.name if prof else "Unknown profile"
-                names.append(AppliedProfileName(profile_name=display))
-            out[aid] = names
+            first_ppa = rows[0] if rows else None
+            if not first_ppa:
+                out[aid] = []
+                continue
+            prof = self.get_profile(first_ppa.profile_id)
+            display = prof.name if prof else "Unknown profile"
+            out[aid] = [AppliedProfileName(profile_name=display)]
         return out
 
     def list_applications(

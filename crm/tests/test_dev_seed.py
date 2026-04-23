@@ -45,18 +45,18 @@ def _find_list_item_for_app(repo: InMemoryRepository, application_id: str):
     return None
 
 
-def test_seed_multi_ppa_applied_profiles_demo_only_third_ppa_listable_resume() -> None:
+def test_seed_multi_ppa_applied_profiles_demo_uses_first_profile_for_resume_case() -> None:
     repo = InMemoryRepository()
     result = seed_multi_ppa_single_ready_profile_demo(repo, label="test", ready_artifact="resume")
     item = _find_list_item_for_app(repo, result.application_id)
     assert item is not None
-    assert [p.profile_name for p in item.applied_profiles] == [result.ready_profile_name]
+    assert [p.profile_name for p in item.applied_profiles] == [result.not_ready_profile_names[0]]
 
 
-def test_seed_multi_ppa_applied_profiles_demo_only_third_ppa_listable_email() -> None:
+def test_seed_multi_ppa_applied_profiles_demo_uses_first_profile_for_email_case() -> None:
     repo = InMemoryRepository()
     result = seed_multi_ppa_single_ready_profile_demo(repo, label="test2", ready_artifact="email")
     assert result.email_id_if_any is not None
     item = _find_list_item_for_app(repo, result.application_id)
     assert item is not None
-    assert [p.profile_name for p in item.applied_profiles] == [result.ready_profile_name]
+    assert [p.profile_name for p in item.applied_profiles] == [result.not_ready_profile_names[0]]
