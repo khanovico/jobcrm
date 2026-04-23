@@ -11,11 +11,7 @@ from app.models import (
     PerProfileApplication,
     UserCreate,
 )
-from app.repository import (
-    InMemoryRepository,
-    RELATED_COMPANY_DELETED_ARCHIVE_REASON,
-    RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON,
-)
+from app.repository import InMemoryRepository, RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
 
 
 def _register_and_login(client: TestClient) -> str:
@@ -171,7 +167,7 @@ def test_list_applications_tolerates_ppa_cold_email_plan_stored_as_dict() -> Non
     assert r.status_code == 200
     rows = r.json()
     assert len(rows) == 1
-    assert rows[0]["applied_profiles"][0]["profile_name"] == profile["name"]
+    assert rows[0]["applied_profiles"] == []
 
 
 def test_create_application_defaults_to_pending_preparation() -> None:
@@ -879,8 +875,8 @@ def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume()
     assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
-def test_list_applications_applied_profiles_includes_ppa_without_resume_or_email() -> None:
-    """Application list should list all PPA profile names, not only those with a resume link or email."""
+def test_list_applications_applied_profiles_excludes_ppa_without_resume_or_email() -> None:
+    """Applied profiles column only includes PPAs with a resume link and/or at least one email draft."""
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -907,7 +903,55 @@ def test_list_applications_applied_profiles_includes_ppa_without_resume_or_email
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
-    assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
+    assert listed[0]["applied_profiles"] == []
+
+
+def test_list_applications_applied_profiles_includes_only_profiles_with_resume_or_email() -> None:
+    """With multiple PPAs, only profiles that have resume or email on at least one PPA appear in the list."""
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Multi Co"}, headers=headers).json()
+    p_a = client.post(
+        "/api/v1/profiles", json={**_valid_profile_create_payload(), "name": "Only Analysis"},
+        headers=headers,
+    ).json()
+    p_b = client.post(
+        "/api/v1/profiles", json={**_valid_profile_create_payload(), "name": "Has Resume"},
+        headers=headers,
+    ).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": p_a["id"],
+            "order_index": 0,
+            "analysis": "not ready yet",
+        },
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": p_b["id"],
+            "order_index": 1,
+            "tailored_resume_link": "https://example.com/cv.pdf",
+        },
+        headers=headers,
+    )
+
+    listed = client.get("/api/v1/applications", headers=headers).json()
+    assert len(listed) == 1
+    assert listed[0]["applied_profiles"] == [{"profile_name": "Has Resume"}]
 
 
 def test_mark_applied_stamps_once() -> None:

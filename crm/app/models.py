@@ -616,7 +616,7 @@ class PerProfileApplication(PerProfileApplicationBase):
 
 
 class AppliedProfileName(BaseModel):
-    """Profile display for application list: one name per PPA / profile on the application."""
+    """Profile display for application list: one name per profile with a listable PPA (resume and/or email draft)."""
 
     profile_name: str
 

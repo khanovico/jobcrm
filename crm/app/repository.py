@@ -752,10 +752,19 @@ class InMemoryRepository(BaseRepository):
     def delete_profile(self, profile_id: str) -> bool:
         return self.profiles.pop(profile_id, None) is not None
 
+    def _per_profile_shown_in_applied_profiles_column(
+        self, ppa: PerProfileApplication, ppa_ids_with_email: set[str]
+    ) -> bool:
+        """List column shows a profile when the PPA has a resume link and/or at least one email draft."""
+        link = ppa.tailored_resume_link
+        if link is not None and str(link).strip() != "":
+            return True
+        return ppa.id in ppa_ids_with_email
+
     def _batch_applied_profile_names_for_applications(
         self, application_ids: list[str]
     ) -> dict[str, list[AppliedProfileName]]:
-        """One display name per profile for each application (all PPA rows, not only those with resume/email)."""
+        """One display name per profile for each application (PPA rows with resume link and/or email draft)."""
         if not application_ids:
             return {}
 
@@ -765,6 +774,18 @@ class InMemoryRepository(BaseRepository):
             if ppa.application_id in app_set:
                 ppas_by_app[ppa.application_id].append(ppa)
 
+        all_ppas = [p for p in self.per_profile_applications.values() if p.application_id in app_set]
+        ppa_id_set = {p.id for p in all_ppas}
+        ppa_ids_with_email = {
+            e.per_profile_application_id
+            for e in self.emails.values()
+            if e.per_profile_application_id in ppa_id_set
+        }
+        qualifying_profile_ids: set[str] = set()
+        for ppa in all_ppas:
+            if self._per_profile_shown_in_applied_profiles_column(ppa, ppa_ids_with_email):
+                qualifying_profile_ids.add(ppa.profile_id)
+
         out: dict[str, list[AppliedProfileName]] = {}
         for aid in application_ids:
             rows = sorted(ppas_by_app[aid], key=lambda p: (p.order_index, p.created_at))
@@ -772,6 +793,8 @@ class InMemoryRepository(BaseRepository):
             names: list[AppliedProfileName] = []
             for ppa in rows:
                 if ppa.profile_id in seen:
+                    continue
+                if ppa.profile_id not in qualifying_profile_ids:
                     continue
                 seen.add(ppa.profile_id)
                 prof = self.get_profile(ppa.profile_id)
