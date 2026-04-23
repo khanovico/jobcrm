@@ -16,6 +16,7 @@ For frontend change, `cd app && npm run build` should work.
 - **Memory first:** `.agents/memory` — check before big decisions; add reusable lessons there.
 - **Performance first-class:** for any frontend or API-touching change, review scale cost across request count, payload size, refetch frequency, client/render work, and loading UX. Prefer bounded/paginated flows, summary payloads, and stable layout shells during lazy loading.
 - **No waiting on humans** (unless serious harm): workflows step-by-step; “confirm” = step done. Blocked unfixably → **stop + detailed report**. Unblocked → **end-to-end**. Ship as verified as practical.
+- **Rule, conventions**: take a look at `.code/AGENTS.md` as rules lookup.
 
 ## Subagents
 ### For Codex
