@@ -126,7 +126,7 @@ export type Application = {
   updated_at: string;
 };
 
-/** Resolved profile names for PPAs that have tailored resume or email on list applications API. */
+/** Resolved profile names for PPAs with a real resume link, cold email plan, and/or substantive email draft. */
 export type AppliedProfileName = {
   profile_name: string;
 };

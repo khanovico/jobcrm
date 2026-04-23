@@ -167,7 +167,7 @@ def test_list_applications_tolerates_ppa_cold_email_plan_stored_as_dict() -> Non
     assert r.status_code == 200
     rows = r.json()
     assert len(rows) == 1
-    assert rows[0]["applied_profiles"] == []
+    assert rows[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
 def test_create_application_defaults_to_pending_preparation() -> None:
@@ -952,6 +952,113 @@ def test_list_applications_applied_profiles_includes_only_profiles_with_resume_o
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
     assert listed[0]["applied_profiles"] == [{"profile_name": "Has Resume"}]
+
+
+def test_list_applications_applied_profiles_excludes_placeholder_tailored_resume_link() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Placeholder Co"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "ok",
+            "tailored_resume_link": " pending ",
+        },
+        headers=headers,
+    )
+
+    listed = client.get("/api/v1/applications", headers=headers).json()
+    assert len(listed) == 1
+    assert listed[0]["applied_profiles"] == []
+
+
+def test_list_applications_applied_profiles_ignores_email_row_with_empty_body() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Empty Mail Co"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    ppa = client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "x",
+        },
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/per-profile-applications/{ppa['id']}/emails",
+        json={
+            "per_profile_application_id": ppa["id"],
+            "kind": "cold",
+            "content": "",
+        },
+        headers=headers,
+    )
+
+    listed = client.get("/api/v1/applications", headers=headers).json()
+    assert len(listed) == 1
+    assert listed[0]["applied_profiles"] == []
+
+
+def test_list_applications_applied_profiles_includes_cold_email_plan_without_email_row() -> None:
+    """Agent may set cold_email_plan before any Email entity exists; that still counts as email prep."""
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Plan Only Co"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/v1/applications/{application['id']}/per-profile-applications",
+        json={
+            "application_id": application["id"],
+            "profile_id": profile["id"],
+            "order_index": 0,
+            "analysis": "x",
+            "cold_email_plan": {
+                "subjects": ["Hello from a candidate"],
+                "selected_subject_index": 0,
+                "to": {"title": "Hiring", "name": "Sam", "email": "sam@example.com"},
+                "status": "none",
+            },
+        },
+        headers=headers,
+    )
+
+    listed = client.get("/api/v1/applications", headers=headers).json()
+    assert len(listed) == 1
+    assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
 def test_mark_applied_stamps_once() -> None:

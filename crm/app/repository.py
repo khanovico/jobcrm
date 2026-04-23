@@ -77,6 +77,32 @@ def _recipient_email_from_cold_email_plan(plan: ColdEmailPlan | dict | None) -> 
     return None
 
 
+def _tailored_resume_link_ready(value: object) -> bool:
+    """True when PPA has a real tailored resume URL, not a placeholder or non-string value."""
+    if value is None or not isinstance(value, str):
+        return False
+    s = value.strip()
+    if not s:
+        return False
+    low = s.lower()
+    if low in ("n/a", "na", "none", "tbd", "pending", "—", "-", "..."):
+        return False
+    return True
+
+
+def _cold_email_plan_ready_for_applied_list(plan: ColdEmailPlan | dict | None) -> bool:
+    """True when a cold email plan has enough content to count as 'email' prep (draft plan or recipient)."""
+    if plan is None:
+        return False
+    if _recipient_email_from_cold_email_plan(plan):
+        return True
+    if isinstance(plan, dict):
+        subs = plan.get("subjects") or []
+    else:
+        subs = plan.subjects or []
+    return any(str(s or "").strip() for s in subs)
+
+
 class BaseRepository:
     def create_user(self, payload: UserCreate, password_hash: str) -> UserInDB:
         raise NotImplementedError
@@ -753,18 +779,21 @@ class InMemoryRepository(BaseRepository):
         return self.profiles.pop(profile_id, None) is not None
 
     def _per_profile_shown_in_applied_profiles_column(
-        self, ppa: PerProfileApplication, ppa_ids_with_email: set[str]
+        self, ppa: PerProfileApplication, ppa_ids_with_substantive_email: set[str]
     ) -> bool:
-        """List column shows a profile when the PPA has a resume link and/or at least one email draft."""
-        link = ppa.tailored_resume_link
-        if link is not None and str(link).strip() != "":
+        """Show when PPA has a real resume link, substantive email draft(s), or cold email plan content."""
+        if _tailored_resume_link_ready(ppa.tailored_resume_link):
             return True
-        return ppa.id in ppa_ids_with_email
+        if ppa.id in ppa_ids_with_substantive_email:
+            return True
+        if _cold_email_plan_ready_for_applied_list(ppa.cold_email_plan):
+            return True
+        return False
 
     def _batch_applied_profile_names_for_applications(
         self, application_ids: list[str]
     ) -> dict[str, list[AppliedProfileName]]:
-        """One display name per profile for each application (PPA rows with resume link and/or email draft)."""
+        """One display name per profile for each application (PPA rows with resume and/or email prep)."""
         if not application_ids:
             return {}
 
@@ -776,14 +805,15 @@ class InMemoryRepository(BaseRepository):
 
         all_ppas = [p for p in self.per_profile_applications.values() if p.application_id in app_set]
         ppa_id_set = {p.id for p in all_ppas}
-        ppa_ids_with_email = {
-            e.per_profile_application_id
-            for e in self.emails.values()
-            if e.per_profile_application_id in ppa_id_set
-        }
+        ppa_ids_with_substantive_email: set[str] = set()
+        for e in self.emails.values():
+            if e.per_profile_application_id not in ppa_id_set:
+                continue
+            if (e.content or "").strip():
+                ppa_ids_with_substantive_email.add(e.per_profile_application_id)
         qualifying_profile_ids: set[str] = set()
         for ppa in all_ppas:
-            if self._per_profile_shown_in_applied_profiles_column(ppa, ppa_ids_with_email):
+            if self._per_profile_shown_in_applied_profiles_column(ppa, ppa_ids_with_substantive_email):
                 qualifying_profile_ids.add(ppa.profile_id)
 
         out: dict[str, list[AppliedProfileName]] = {}
