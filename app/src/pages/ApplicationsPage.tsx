@@ -51,6 +51,8 @@ export const ApplicationsPage = () => {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [tableSort, setTableSort] = useState<ApplicationTableSort>("updated_at_desc");
   const [profileNamesForFilter, setProfileNamesForFilter] = useState<string[]>([]);
+  const [companySearch, setCompanySearch] = useState("");
+  const previousAvailableProfileNamesRef = useRef<string[]>([]);
 
   const loadProfileNamesForFilter = useCallback(async () => {
     try {
@@ -73,9 +75,23 @@ export const ApplicationsPage = () => {
   useEffect(() => {
     if (availableAppliedProfileNames.length === 0) {
       setSelectedAppliedProfileNamesState([]);
+      previousAvailableProfileNamesRef.current = [];
       return;
     }
-    setSelectedAppliedProfileNamesState(initializeSelectedAppliedProfileNames(availableAppliedProfileNames));
+    const prev = previousAvailableProfileNamesRef.current;
+    const next = availableAppliedProfileNames;
+    const fromStore = getSelectedAppliedProfileNames() ?? next;
+    const hadAllOfPrevious =
+      prev.length > 0 &&
+      fromStore.length === prev.length &&
+      prev.every((n) => fromStore.includes(n));
+    if (hadAllOfPrevious && next.length > prev.length) {
+      setSelectedAppliedProfileNames(next);
+      setSelectedAppliedProfileNamesState(next);
+    } else {
+      setSelectedAppliedProfileNamesState(initializeSelectedAppliedProfileNames(next));
+    }
+    previousAvailableProfileNamesRef.current = next;
   }, [availableAppliedProfileNames]);
 
   const updateAppliedProfileSelection = (nextSelection: string[]) => {
@@ -84,23 +100,31 @@ export const ApplicationsPage = () => {
     setSelectedAppliedProfileNames(sanitizedSelection);
   };
 
+  const companySearchFilteredItems = useMemo(() => {
+    const q = companySearch.trim().toLowerCase();
+    if (!q) {
+      return items;
+    }
+    return items.filter((a) => a.company_name.toLowerCase().includes(q));
+  }, [items, companySearch]);
+
   const filteredItems = useMemo(() => {
     const selectedNamesList = getSelectedAppliedProfileNames() ?? availableAppliedProfileNames;
     if (availableAppliedProfileNames.length === 0) {
-      return items;
+      return companySearchFilteredItems;
     }
     const allSelected =
       selectedNamesList.length === availableAppliedProfileNames.length &&
       availableAppliedProfileNames.every((name) => selectedNamesList.includes(name));
     const selectedNames = new Set(selectedNamesList);
-    return items.filter((application) => {
+    return companySearchFilteredItems.filter((application) => {
       const appliedProfiles = application.applied_profiles ?? [];
       if (appliedProfiles.length === 0) {
         return selectedNamesList.length === 0 || allSelected;
       }
       return appliedProfiles.some((profile) => selectedNames.has(profile.profile_name));
     });
-  }, [items, availableAppliedProfileNames, selectedAppliedProfileNames]);
+  }, [companySearchFilteredItems, availableAppliedProfileNames, selectedAppliedProfileNames]);
 
   const listParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -218,6 +242,16 @@ export const ApplicationsPage = () => {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 max-w-[200px] flex-nowrap items-center gap-2">
+              <span className="shrink-0 text-xs opacity-70">Company</span>
+              <input
+                className="input input-bordered input-sm min-w-0 grow"
+                placeholder="Search"
+                value={companySearch}
+                onChange={(e) => setCompanySearch(e.target.value)}
+                aria-label="Filter applications by company name"
+              />
+            </div>
             <div className="flex min-w-0 max-w-[280px] flex-nowrap items-center gap-2">
               <span className="shrink-0 text-xs opacity-70">Order by</span>
               <select
@@ -251,6 +285,18 @@ export const ApplicationsPage = () => {
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              title="Re-select all profile names in the Applied profiles column filter (avoids hiding rows when new profile names appear)"
+              onClick={() => {
+                if (availableAppliedProfileNames.length > 0) {
+                  updateAppliedProfileSelection(availableAppliedProfileNames);
+                }
+              }}
+            >
+              All profile filters
+            </button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page)}>
               Refresh
             </button>

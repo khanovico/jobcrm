@@ -7,6 +7,7 @@ from typing import Literal
 from app.models import (
     ApplicationCreate,
     ApplicationStatus,
+    ApplicationUpdate,
     CompanyResearchStatus,
     ColdEmailPlan,
     ColdEmailPlanStatus,
@@ -164,6 +165,12 @@ def seed_multi_ppa_single_ready_profile_demo(
             )
         )
         email_id = em.id
+
+    # Bump updated_at so the application sorts near the top of default "Updated" order.
+    fin = repo.get_application(application.id)
+    if fin:
+        n = (fin.notes or "").rstrip()
+        _ = repo.update_application(application.id, ApplicationUpdate(notes=(n + " ") if n else "QA row"))
 
     return SeedMultiPpaSingleReadyResult(
         company_id=company.id,
