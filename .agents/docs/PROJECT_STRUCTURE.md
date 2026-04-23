@@ -4,7 +4,9 @@
 - `app/` - React + TypeScript frontend (Vite, Tailwind, daisyUI)
 - `crm/` - FastAPI backend (JWT auth, CRUD, status workflow)
 - `docker-compose.yml` - local orchestration for app, API, and MongoDB
-- `.cursor/docs/PRD.md` - product requirements reference
+- `.agents/docs/PRD.md` - product requirements reference
+- `.agents/rules/` - canonical shared rule bodies for coding assistants
+- `.cursor/rules/` - Cursor discovery wrappers that point to `.agents/rules/`
 
 ## Backend (`crm/`)
 - `app/main.py` - API routes (user + agent + static `llm.txt` / `sitemap.xml` / `mcp-guidance.md`)

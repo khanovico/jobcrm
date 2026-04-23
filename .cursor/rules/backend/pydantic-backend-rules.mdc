@@ -4,13 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Pydantic
+# Shared rule reference
 
-- Models at API boundaries; no raw `dict`. `Field`, enums, `Literal` over `Any`. Separate create/update/read models when fields differ.
-- Validate at edges (request + settings), not deep in domain. Stable model names.
+Canonical rule content: `.agents/rules/backend/pydantic-backend-rules.md`
 
-```python
-class CreateLead(BaseModel):
-    email: EmailStr
-    source: Literal["web", "referral", "ads"]
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

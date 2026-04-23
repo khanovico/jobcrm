@@ -4,12 +4,8 @@ globs: **/*.{a11y,spec,test}.{ts,tsx,js,jsx}
 alwaysApply: false
 ---
 
-# Playwright a11y
+# Shared rule reference
 
-- Critical flows + pages. `@axe-core/playwright` (or equivalent) in E2E. Keyboard + focus. Forms/dialogs labeled.
-- Fix serious/critical; CI runs. Deterministic — not tied to cosmetic CSS changes.
+Canonical rule content: `.agents/rules/testing/playwright-accessibility-rules.md`
 
-```ts
-await injectAxe(page);
-await checkA11y(page);
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

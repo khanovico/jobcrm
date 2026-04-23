@@ -4,13 +4,8 @@ globs: **/*.{ts,tsx}
 alwaysApply: false
 ---
 
-# TS (frontend)
+# Shared rule reference
 
-- Strict props/hook returns. `interface` for objects, `type` for unions. No `any` — `unknown` + narrow.
-- Discriminated unions for multi-mode UI. Colocate feature types.
+Canonical rule content: `.agents/rules/frontend/frontend-typescript-rules.md`
 
-```ts
-type FetchState<T> =
-  | { status: "idle" } | { status: "loading" }
-  | { status: "error"; message: string } | { status: "success"; data: T };
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

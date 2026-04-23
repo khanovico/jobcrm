@@ -3,8 +3,8 @@ description: TDD-first discipline requiring sufficient tests for new code and fe
 alwaysApply: true
 ---
 
-# TDD / coverage
+# Shared rule reference
 
-- When practical: failing test → minimal pass → refactor (green).
-- New behavior/fixes: tests for happy, failure, edge cases; regression tests for bugs. Ship only when tests pass.
-- Prefer focused, deterministic tests; unit + integration + E2E by risk. Note gaps + follow-up if full coverage not in one change.
+Canonical rule content: `.agents/rules/tdd-and-test-coverage-discipline.md`
+
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

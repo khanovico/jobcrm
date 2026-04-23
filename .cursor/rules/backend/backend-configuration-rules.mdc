@@ -4,13 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Config
+# Shared rule reference
 
-- Env / typed settings only; no secrets or env-specific constants in code. One settings module; inject everywhere.
-- Defaults only for safe local dev. Fail startup if required vars missing. `.env.example` matches reality.
+Canonical rule content: `.agents/rules/backend/backend-configuration-rules.md`
 
-```python
-class Settings(BaseSettings):
-    database_url: str
-    redis_url: str | None = None
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

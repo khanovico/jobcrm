@@ -4,13 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Structure
+# Shared rule reference
 
-- Separate routers, services, schemas, repositories. No fat route handlers.
-- Group by domain. Tiny shared utils only. Tests under `tests/` by domain. Split files that mix concerns.
+Canonical rule content: `.agents/rules/backend/backend-project-structure-rules.md`
 
-```
-routers/leads.py  → HTTP
-services/leads.py → logic
-repositories/leads.py → persistence
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

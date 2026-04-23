@@ -1,6 +1,27 @@
+[features]
+codex_hooks = true
+
 [mcp_servers.code-review-graph]
-command = "uvx"
-args = ["code-review-graph", "serve"]
+command = "/Users/admin/bin/code-review-graph-mcp.sh"
+args = []
 
 [mcp_servers.code-review-graph.tools.get_minimal_context_tool]
 approval_mode = "approve"
+
+[mcp_servers.code-review-graph.tools.get_docs_section_tool]
+approval_mode = "approve"
+
+[agents.debug-specialist]
+description = "Debugging specialist for errors, test failures, and unexpected behavior. Use proactively as soon as an issue appears to run structured root-cause analysis before implementing fixes."
+config_file = "agents/debug-specialist.toml"
+nickname_candidates = ["debugger", "root-cause", "bug-hunter"]
+
+[agents.code-reviewer]
+description = "Thorough code review specialist for this repository. Use proactively after any feature, bug fix, or refactor to analyze git diff, identify risks and regressions, verify test coverage, and provide prioritized actionable feedback."
+config_file = "agents/code-reviewer.toml"
+nickname_candidates = ["reviewer", "change-audit", "safety-check"]
+
+[agents.scalability-reviewer]
+description = "Scalability and maintainability validation specialist. Use proactively in parallel with code-reviewer after any feature or update is ready on a work branch to stress-test realistic production scale and report bottlenecks with concrete fixes."
+config_file = "agents/scalability-reviewer.toml"
+nickname_candidates = ["scalability", "perf-check", "load-review"]

@@ -5,7 +5,7 @@ description: Applies project git commit discipline—staging only related files,
 
 # Git Commit Discipline
 
-Canonical always-on rule: `.cursor/rules/git-commit-discipline.mdc`.
+Canonical always-on rule: `.agents/rules/git-commit-discipline.md`.
 
 ## Scope
 - Apply this to every commit workflow in this project.

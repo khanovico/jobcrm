@@ -4,11 +4,8 @@ globs: **/*.{tsx,jsx,css}
 alwaysApply: false
 ---
 
-# Tailwind + DaisyUI
+# Shared rule reference
 
-- Utilities first; DaisyUI for common patterns before custom CSS. Readable `className` order; responsive variants (`sm:` `md:`).
-- Theme tokens in config — no scattered magic values.
+Canonical rule content: `.agents/rules/frontend/tailwind-daisyui-frontend-rules.md`
 
-```tsx
-<button className="btn btn-primary w-full md:w-auto">Save</button>
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

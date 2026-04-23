@@ -4,13 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Routing
+# Shared rule reference
 
-- Routers per domain (`/leads`, not verbs-only). Resource paths; explicit `response_model` + `status_code`.
-- One job per route. Dependencies for auth/tenant/RBAC. Pagination/filters instead of unbounded lists.
+Canonical rule content: `.agents/rules/backend/fastapi-routing-rules.md`
 
-```python
-router = APIRouter(prefix="/leads", tags=["leads"])
-@router.get("", response_model=LeadListOut)
-async def list_leads(q: LeadQuery = Depends(), svc: LeadService = Depends(get_svc)): ...
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

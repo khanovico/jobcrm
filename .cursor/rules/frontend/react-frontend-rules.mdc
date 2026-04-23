@@ -4,11 +4,8 @@ globs: **/*.{tsx,jsx}
 alwaysApply: false
 ---
 
-# React
+# Shared rule reference
 
-- Small single-purpose components; typed props. Composition over prop drilling.
-- Local state by default; lift when needed. Shared UI logic → custom hooks. Presentational vs data split.
+Canonical rule content: `.agents/rules/frontend/react-frontend-rules.md`
 
-```tsx
-type BtnProps = { loading: boolean; onClick: () => void };
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.
