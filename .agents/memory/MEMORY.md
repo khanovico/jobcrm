@@ -9,6 +9,7 @@
 - `testing/` - feature-level test coverage discipline (**new features and feature updates require automated tests** in the same change; see `testing/test-coverage-discipline.md`).
 - `testing/backend-venv-activation.md` - for backend commands and backend-related logic, activate the repo venv first with `source crm/.venv/bin/activate`.
 - `testing/rich-dummy-seed-script.md` - one-command local seed for complete application-detail dummy data.
+- `testing/local-dev-dataset-seed.md` - broad one-command local seed for dashboard/list/detail/notification QA coverage.
 - `application-workflow/` - reusable patterns for mark/unmark toggle actions across application and per-profile email flows.
 
 ## Usage
