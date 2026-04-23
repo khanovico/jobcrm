@@ -3,8 +3,8 @@
 ## Repo
 
 - Stack: set at project init.
-- PRD: `.cursor/docs/PRD.md`
-- Structure: `.cursor/docs/PROJECT_STRUCTURE.md` (create/update as you go)
+- PRD: `.agents/docs/PRD.md`
+- Structure: `.agents/docs/PROJECT_STRUCTURE.md` (create/update as you go)
 
 ## Tests (cloud)
 
@@ -13,12 +13,18 @@ For frontend change, `cd app && npm run build` should work.
 
 ## Always
 
-- **Memory first:** `.cursor/memory` — check before big decisions; add reusable lessons there.
+- **Memory first:** `.agents/memory` — check before big decisions; add reusable lessons there.
 - **Performance first-class:** for any frontend or API-touching change, review scale cost across request count, payload size, refetch frequency, client/render work, and loading UX. Prefer bounded/paginated flows, summary payloads, and stable layout shells during lazy loading.
 - **No waiting on humans** (unless serious harm): workflows step-by-step; “confirm” = step done. Blocked unfixably → **stop + detailed report**. Unblocked → **end-to-end**. Ship as verified as practical.
+- **Rule, conventions**: take a look at `.code/AGENTS.md` as rules lookup.
 
 ## Subagents
+### For Codex
+- Debug: `.codex/agents/debug-specialist.toml`
+- Review: `.codex/agents/code-reviewer.toml`
+- Scalability: `.codex/agents/scalability-reviewer.toml`
 
+### For Cursor
 - Debug: `.cursor/agents/debug-specialist.md`
 - Review: `.cursor/agents/code-reviewer.md`  
 Spawn when useful or instructed.
@@ -28,12 +34,12 @@ Spawn when useful or instructed.
 - Branch / PR target from task.
 - Assets via URL → save under `.tmp/` (untracked).
 - Execution mode → 
-Main: `.cursor/workflows/main-execution.md`
+Main: `.agents/workflows/main-execution.md`
 - General Execution Rule: Plan first, Plan -> SubPlan -> Todos -> Step by Step
 
 ## Memory
 
-Reusable experience → write under `.cursor/memory/` with sensible category.
+Reusable experience → write under `.agents/memory/` with sensible category.
 
 ---
 
@@ -108,3 +114,42 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.

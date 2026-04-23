@@ -4,12 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Python style
+# Shared rule reference
 
-- Typed public APIs; small pure helpers; explicit deps. Split when routing + logic + data mix.
-- `snake_case` names (`is_active`, `order_repo`). No hidden side effects.
+Canonical rule content: `.agents/rules/backend/python-backend-principles.md`
 
-```python
-def process(u): ...  # bad
-def process_user_signup(p: UserIn) -> SignupResult: ...  # good
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

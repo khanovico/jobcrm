@@ -4,13 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Errors
+# Shared rule reference
 
-- Domain exceptions in services → HTTP at boundary. Log + translate; never silent swallow.
-- Consistent `{code,message,details}` (or project standard). No stacks/SQL/secrets to clients.
-- Explicit handling: validation, 404, 409, 403, upstream timeout.
+Canonical rule content: `.agents/rules/backend/error-handling-backend-rules.md`
 
-```python
-except LeadNotFoundError as e:
-    raise HTTPException(404, detail=str(e))
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

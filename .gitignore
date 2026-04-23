@@ -12,3 +12,5 @@ crm/.venv/
 app/test-results/
 app/playwright-report/
 .tmp/
+# Added by code-review-graph
+.code-review-graph/

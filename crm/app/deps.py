@@ -4,9 +4,10 @@ from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.agent_auth import hash_api_key
+from app.auth import hash_password
 from app.auth import decode_access_token
 from app.config import settings
-from app.models import AgentContext, UserInDB, UserRole
+from app.models import AgentContext, UserCreate, UserInDB, UserRole
 from app.rate_limit import MinuteRateLimiter
 from app.repository import BaseRepository, InMemoryRepository, MongoRepository
 
@@ -15,10 +16,30 @@ _repo: BaseRepository | None = None
 _agent_limiter = MinuteRateLimiter(settings.agent_rate_limit_per_minute)
 
 
+def _seed_memory_user(repo: BaseRepository) -> None:
+    if not settings.use_memory_repository:
+        return
+    if not settings.seed_user_email or not settings.seed_user_password:
+        return
+    if repo.get_user_by_email(settings.seed_user_email):
+        return
+    role = UserRole(settings.seed_user_role)
+    repo.create_user(
+        UserCreate(
+            name=settings.seed_user_name,
+            email=settings.seed_user_email,
+            password=settings.seed_user_password,
+            role=role,
+        ),
+        hash_password(settings.seed_user_password),
+    )
+
+
 def get_repository() -> BaseRepository:
     global _repo
     if _repo is None:
         _repo = InMemoryRepository() if settings.use_memory_repository else MongoRepository()
+        _seed_memory_user(_repo)
     return _repo
 
 

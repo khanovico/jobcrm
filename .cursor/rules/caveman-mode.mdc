@@ -3,9 +3,8 @@ description: When and how to use caveman (terse) mode alongside the installed ca
 alwaysApply: true
 ---
 
-# Caveman mode
+# Shared rule reference
 
-- On `/caveman`, **caveman mode**, **fewer tokens**, **be terse**, etc.: short replies — drop filler, hedging, long narration unless correctness needs it.
-- Code, configs, commits, diffs: normal formatting. **Safety** (destructive, security, ambiguity): clear warnings — not buried in terse prose.
-- **stop caveman** / **normal mode** / **explain fully** → standard tone.
-- Other project rules (tests, commits, architecture) **override** tone.
+Canonical rule content: `.agents/rules/caveman-mode.md`
+
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

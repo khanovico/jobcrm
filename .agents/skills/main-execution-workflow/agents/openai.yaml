@@ -1,0 +1,4 @@
+interface:
+  display_name: "Main Execution"
+  short_description: "Run JobCRM main workflow for a given task"
+  default_prompt: "Use $main-execution-workflow to execute this JobCRM task end to end."

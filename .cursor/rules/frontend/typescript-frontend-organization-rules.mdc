@@ -4,12 +4,8 @@ globs: **/*.{ts,tsx}
 alwaysApply: false
 ---
 
-# TS organization
+# Shared rule reference
 
-- Exports + main symbol at top; private helpers below. Split files mixing UI + fetch + heavy logic.
-- Minimal scope per commit. Exported hooks/utils: explicit return types. Constants for repeated literals.
+Canonical rule content: `.agents/rules/frontend/typescript-frontend-organization-rules.md`
 
-```ts
-export function useLeadFilters(): LeadFiltersResult { ... }
-function normalize(s: string): string { return s.trim().toLowerCase(); }
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

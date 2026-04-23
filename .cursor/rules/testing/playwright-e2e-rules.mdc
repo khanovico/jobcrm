@@ -4,12 +4,8 @@ globs: **/*.{e2e,spec,test}.{ts,tsx,js,jsx}
 alwaysApply: false
 ---
 
-# Playwright E2E
+# Shared rule reference
 
-- Critical journeys first (auth, CRUD, nav). `getByRole` / `getByLabel` / `getByTestId` — not CSS/XPath.
-- Auto-wait assertions; no `sleep`. Mock flaky externals. Success + error paths. Small specs per feature.
+Canonical rule content: `.agents/rules/testing/playwright-e2e-rules.md`
 
-```ts
-await page.getByTestId("login-submit").click();
-await expect(page).toHaveURL(/dashboard/);
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

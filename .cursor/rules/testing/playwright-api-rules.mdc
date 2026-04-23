@@ -4,12 +4,8 @@ globs: **/*.{api,spec,test}.{ts,js}
 alwaysApply: false
 ---
 
-# Playwright API
+# Shared rule reference
 
-- `request` fixture for contract tests. Group by resource; status + body. Isolated data; no cross-test leakage.
-- Auth, validation, permission failures on critical routes.
+Canonical rule content: `.agents/rules/testing/playwright-api-rules.md`
 
-```ts
-const res = await request.post("/api/leads", { data: payload });
-expect(res.status()).toBe(201);
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

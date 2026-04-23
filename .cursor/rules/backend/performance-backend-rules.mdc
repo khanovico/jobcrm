@@ -4,12 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# Performance
+# Shared rule reference
 
-- No blocking I/O in handlers if async available. Paginate/batch reads. Cache hot reads (TTL + invalidation).
-- Background jobs for heavy work (email, exports). Measure before optimizing.
+Canonical rule content: `.agents/rules/backend/performance-backend-rules.md`
 
-```python
-# Bad: heavy work in GET
-# Good: POST /jobs → 202 + worker
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

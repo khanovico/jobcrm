@@ -8,25 +8,15 @@ const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "../.."
 const iso = "2020-01-01T00:00:00.000Z";
 
 const API_BASE = "http://127.0.0.1:8000";
+const E2E_EMAIL = "e2e-admin@example.com";
+const E2E_PASSWORD = "secret1234";
 
-async function obtainSessionToken(page: Page): Promise<void> {
-  const email = `e2e-ind-${Date.now()}@example.com`;
-  const password = "secret1234";
-  const registerRes = await page.request.post(`${API_BASE}/api/v1/auth/register`, {
-    data: JSON.stringify({ name: "E2E Industries Layout", email, password }),
-    headers: { "Content-Type": "application/json" }
-  });
-  expect(registerRes.status(), await registerRes.text()).toBe(201);
-  const loginRes = await page.request.post(`${API_BASE}/api/v1/auth/login`, {
-    data: JSON.stringify({ email, password }),
-    headers: { "Content-Type": "application/json" }
-  });
-  expect(loginRes.ok(), await loginRes.text()).toBeTruthy();
-  const { access_token: accessToken } = (await loginRes.json()) as { access_token: string };
-  await page.goto("/");
-  await page.evaluate((token) => {
-    window.localStorage.setItem("jobcrm-token", token);
-  }, accessToken);
+async function login(page: Page): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(E2E_EMAIL);
+  await page.getByLabel("Password").fill(E2E_PASSWORD);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "JobCRM" })).toBeVisible();
 }
 
 test.describe("Industries page layout", () => {
@@ -51,7 +41,7 @@ test.describe("Industries page layout", () => {
       });
     });
 
-    await obtainSessionToken(page);
+    await login(page);
 
     await page.goto("/industries");
     await expect(page.getByTestId("industries-table-scroll")).toBeVisible();

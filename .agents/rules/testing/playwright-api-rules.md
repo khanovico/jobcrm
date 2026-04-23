@@ -1,0 +1,10 @@
+
+# Playwright API
+
+- `request` fixture for contract tests. Group by resource; status + body. Isolated data; no cross-test leakage.
+- Auth, validation, permission failures on critical routes.
+
+```ts
+const res = await request.post("/api/leads", { data: payload });
+expect(res.status()).toBe(201);
+```

@@ -1,0 +1,10 @@
+
+# Playwright a11y
+
+- Critical flows + pages. `@axe-core/playwright` (or equivalent) in E2E. Keyboard + focus. Forms/dialogs labeled.
+- Fix serious/critical; CI runs. Deterministic — not tied to cosmetic CSS changes.
+
+```ts
+await injectAxe(page);
+await checkA11y(page);
+```

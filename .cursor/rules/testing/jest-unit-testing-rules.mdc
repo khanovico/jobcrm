@@ -4,13 +4,8 @@ globs: **/*.{test,spec}.{ts,tsx,js,jsx}
 alwaysApply: false
 ---
 
-# Unit tests (Jest)
+# Shared rule reference
 
-- Utils, hooks, pure logic. `describe` / behavior names. Happy + failure + edge (empty, null, bad input).
-- Deterministic mocks (network, storage, timers). Reset mocks between tests. Arrange–Act–Assert. Regression on bugfixes.
+Canonical rule content: `.agents/rules/testing/jest-unit-testing-rules.md`
 
-```ts
-describe("formatLeadName", () => {
-  it("fallback when empty", () => expect(formatLeadName("")).toBe("Unknown Lead"));
-});
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.

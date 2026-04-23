@@ -1,0 +1,10 @@
+
+# Playwright integration
+
+- UI ↔ API: `page.route` for stable mocks. Assert method/path/body when actions trigger requests.
+- Loading → success/error in one flow. Few focused tests per area. Behavior/a11y, not pixels.
+
+```ts
+await page.route("**/api/leads*", (r) => r.fulfill({ status: 200, body: "[]" }));
+await expect(page.getByText("No leads")).toBeVisible();
+```

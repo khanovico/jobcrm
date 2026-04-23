@@ -4,13 +4,8 @@ globs: **/*.py
 alwaysApply: false
 ---
 
-# FastAPI
+# Shared rule reference
 
-- Typed request/response models. `async def` for I/O. Thin handlers → services. Lifespan over ad-hoc startup events.
-- `Depends` for auth, db, cross-cutting. `HTTPException` or global handlers.
+Canonical rule content: `.agents/rules/backend/fastapi-backend-rules.md`
 
-```python
-@router.post("/users", response_model=UserOut, status_code=201)
-async def create_user(body: UserIn, svc: UserService = Depends(get_user_svc)):
-    return await svc.create(body)
-```
+Use the shared rule file above as the source of truth. Keep this Cursor rule limited to discovery metadata plus this reference so the rule body is not duplicated per assistant.
