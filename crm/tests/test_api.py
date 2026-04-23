@@ -875,8 +875,8 @@ def test_list_applications_applied_profiles_includes_ppa_with_email_not_resume()
     assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
-def test_list_applications_applied_profiles_excludes_ppa_without_resume_or_email() -> None:
-    """Applied profiles column only includes PPAs with a resume link and/or at least one email draft."""
+def test_list_applications_applied_profiles_uses_first_ppa_even_without_ready_artifacts() -> None:
+    """Applied profiles column now always shows the first PPA profile (order index 0)."""
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -903,11 +903,11 @@ def test_list_applications_applied_profiles_excludes_ppa_without_resume_or_email
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
-    assert listed[0]["applied_profiles"] == []
+    assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
-def test_list_applications_applied_profiles_includes_only_profiles_with_resume_or_email() -> None:
-    """With multiple PPAs, only profiles that have resume or email on at least one PPA appear in the list."""
+def test_list_applications_applied_profiles_uses_order_index_zero_when_multiple_ppas() -> None:
+    """With multiple PPAs, applied_profiles returns only the first PPA's profile."""
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -915,11 +915,11 @@ def test_list_applications_applied_profiles_includes_only_profiles_with_resume_o
     headers = _auth_headers(token)
 
     company = client.post("/api/v1/companies", json={"name": "Multi Co"}, headers=headers).json()
-    p_a = client.post(
+    first_profile = client.post(
         "/api/v1/profiles", json={**_valid_profile_create_payload(), "name": "Only Analysis"},
         headers=headers,
     ).json()
-    p_b = client.post(
+    second_profile = client.post(
         "/api/v1/profiles", json={**_valid_profile_create_payload(), "name": "Has Resume"},
         headers=headers,
     ).json()
@@ -932,7 +932,7 @@ def test_list_applications_applied_profiles_includes_only_profiles_with_resume_o
         f"/api/v1/applications/{application['id']}/per-profile-applications",
         json={
             "application_id": application["id"],
-            "profile_id": p_a["id"],
+            "profile_id": first_profile["id"],
             "order_index": 0,
             "analysis": "not ready yet",
         },
@@ -942,7 +942,7 @@ def test_list_applications_applied_profiles_includes_only_profiles_with_resume_o
         f"/api/v1/applications/{application['id']}/per-profile-applications",
         json={
             "application_id": application["id"],
-            "profile_id": p_b["id"],
+            "profile_id": second_profile["id"],
             "order_index": 1,
             "tailored_resume_link": "https://example.com/cv.pdf",
         },
@@ -951,10 +951,10 @@ def test_list_applications_applied_profiles_includes_only_profiles_with_resume_o
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
-    assert listed[0]["applied_profiles"] == [{"profile_name": "Has Resume"}]
+    assert listed[0]["applied_profiles"] == [{"profile_name": "Only Analysis"}]
 
 
-def test_list_applications_applied_profiles_excludes_placeholder_tailored_resume_link() -> None:
+def test_list_applications_applied_profiles_empty_when_application_has_no_ppa() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -962,30 +962,18 @@ def test_list_applications_applied_profiles_excludes_placeholder_tailored_resume
     headers = _auth_headers(token)
 
     company = client.post("/api/v1/companies", json={"name": "Placeholder Co"}, headers=headers).json()
-    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
     application = client.post(
         "/api/v1/applications",
         json={"company_id": company["id"], "status": "company_research_pending"},
         headers=headers,
     ).json()
-    client.post(
-        f"/api/v1/applications/{application['id']}/per-profile-applications",
-        json={
-            "application_id": application["id"],
-            "profile_id": profile["id"],
-            "order_index": 0,
-            "analysis": "ok",
-            "tailored_resume_link": " pending ",
-        },
-        headers=headers,
-    )
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
     assert listed[0]["applied_profiles"] == []
 
 
-def test_list_applications_applied_profiles_ignores_email_row_with_empty_body() -> None:
+def test_list_applications_applied_profiles_uses_first_ppa_even_with_empty_email() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
@@ -1021,11 +1009,11 @@ def test_list_applications_applied_profiles_ignores_email_row_with_empty_body() 
 
     listed = client.get("/api/v1/applications", headers=headers).json()
     assert len(listed) == 1
-    assert listed[0]["applied_profiles"] == []
+    assert listed[0]["applied_profiles"] == [{"profile_name": profile["name"]}]
 
 
-def test_list_applications_applied_profiles_includes_cold_email_plan_without_email_row() -> None:
-    """Agent may set cold_email_plan before any Email entity exists; that still counts as email prep."""
+def test_list_applications_applied_profiles_uses_first_ppa_even_with_only_plan_content() -> None:
+    """Any first PPA is shown in list regardless of readiness artifact."""
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
