@@ -2,8 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const API_ORIGIN = "http://127.0.0.1:8000";
 
-/** Stable user so re-runs can log in after the first successful registration. */
-const E2E_EMAIL = "e2e.company.clear@example.com";
+const E2E_EMAIL = "e2e-admin@example.com";
 const E2E_PASSWORD = "secret1234";
 
 test.describe("Company clear (enrichment wipe, keeps name + website)", () => {
@@ -14,24 +13,6 @@ test.describe("Company clear (enrichment wipe, keeps name + website)", () => {
       headers: { "Content-Type": "application/json" },
       data: { email: E2E_EMAIL, password: E2E_PASSWORD }
     });
-    if (!loginRes.ok()) {
-      const reg = await request.post(`${API_ORIGIN}/api/v1/auth/register`, {
-        headers: { "Content-Type": "application/json" },
-        data: { name: "E2E Company Clear", email: E2E_EMAIL, password: E2E_PASSWORD }
-      });
-      if (!reg.ok()) {
-        test.skip(
-          true,
-          `Need auth: login failed and register returned ${reg.status()} (${await reg.text()}). ` +
-            `Use a fresh API (CI or CI=1 locally) or ensure this user can register.`
-        );
-        return;
-      }
-      loginRes = await request.post(`${API_ORIGIN}/api/v1/auth/login`, {
-        headers: { "Content-Type": "application/json" },
-        data: { email: E2E_EMAIL, password: E2E_PASSWORD }
-      });
-    }
     if (!loginRes.ok()) {
       throw new Error(`Login failed: ${loginRes.status()} ${await loginRes.text()}`);
     }
