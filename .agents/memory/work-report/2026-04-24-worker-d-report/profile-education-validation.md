@@ -23,7 +23,7 @@
 - Validation currently focuses on numeric format/range per field; no extra cross-field chronology rule added.
 
 ## Commit Hash
-- Pending commit
+- `bc9d432` (implementation commit for UXPERF-045)
 
 ## Handoff Notes
 - Scope limited to UXPERF-045 ownership (`ProfileDetailPage` + directly related tests/report only).
