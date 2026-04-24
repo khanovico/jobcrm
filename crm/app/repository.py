@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -53,6 +54,7 @@ from app.models import (
     WorkerSettingsUpdate,
     WorkerStateResponse,
     WorkerType,
+    migrate_legacy_application_status,
     utcnow,
     validate_application_transition,
 )
@@ -1410,8 +1412,24 @@ class MongoRepository(InMemoryRepository):
         super().__init__()
         self.client = MongoClient(settings.mongo_uri)
         self.db = self.client[settings.mongo_db_name]
+        self._ensure_indexes()
         self._load()
         self._load_workers_mongo()
+
+    def _ensure_indexes(self) -> None:
+        self.db.companies.create_index([("archived", 1), ("updated_at", -1)])
+        self.db.companies.create_index([("archived", 1), ("research_status", 1), ("updated_at", -1)])
+        self.db.companies.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
+        self.db.profiles.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
+        self.db.profiles.create_index([("frozen", 1), ("created_at", 1)])
+        self.db.applications.create_index([("status", 1), ("updated_at", -1)])
+        self.db.applications.create_index([("company_id", 1), ("updated_at", -1)])
+        self.db.applications.create_index([("created_by_user_id", 1), ("updated_at", -1)])
+        self.db.audit_events.create_index([("actor_type", 1), ("entity_type", 1), ("created_at", -1)])
+        self.db.notifications.create_index([("user_id", 1), ("read_at", 1), ("timestamp", -1)])
+        self.db.per_profile_applications.create_index(
+            [("application_id", 1), ("order_index", 1), ("created_at", 1)]
+        )
 
     def _load_workers_mongo(self) -> None:
         doc = self.db.app_settings.find_one({"_id": "worker_settings"})
@@ -1484,6 +1502,110 @@ class MongoRepository(InMemoryRepository):
             row.pop("_id")
             loaded[row["id"]] = model.model_validate(row)
         return loaded
+
+    def _model_from_mongo_row(self, row: dict, model):
+        payload = dict(row)
+        payload["id"] = str(payload.pop("_id"))
+        return model.model_validate(payload)
+
+    def _models_from_mongo_rows(self, rows: Iterable[dict], model):
+        return [self._model_from_mongo_row(row, model) for row in rows]
+
+    def _mongo_find_page(
+        self,
+        collection_name: str,
+        query: dict,
+        model,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        skip: int = 0,
+        limit: int | None = None,
+        collation: dict | None = None,
+    ):
+        cursor = self.db[collection_name].find(query)
+        if collation and hasattr(cursor, "collation"):
+            cursor = cursor.collation(collation)
+        if sort:
+            cursor = cursor.sort(sort)
+        if skip:
+            cursor = cursor.skip(skip)
+        if limit is not None:
+            cursor = cursor.limit(limit)
+        return self._models_from_mongo_rows(cursor, model)
+
+    def _literal_contains_filter(self, value: str) -> dict:
+        return {"$regex": re.escape(value), "$options": "i"}
+
+    def _mongo_json_datetime(self, value: datetime) -> str:
+        return value.isoformat().replace("+00:00", "Z")
+
+    def _company_research_status_filter(self, status: CompanyResearchStatus) -> dict:
+        if status == CompanyResearchStatus.indexed:
+            return {
+                "$or": [
+                    {"research_status": status.value},
+                    {"research_status": {"$exists": False}, "indexed": True},
+                ]
+            }
+        if status == CompanyResearchStatus.pending:
+            return {
+                "$or": [
+                    {"research_status": status.value},
+                    {"research_status": {"$exists": False}, "indexed": {"$ne": True}},
+                ]
+            }
+        return {"research_status": status.value}
+
+    def _application_status_values_for_query(self, status: ApplicationStatus) -> list[str]:
+        values = {
+            raw
+            for raw in (
+                "draft",
+                "pending_preparation",
+                "researching",
+                "analysis_ready",
+                "preparation_ready",
+                "applied",
+                *[item.value for item in ApplicationStatus],
+            )
+            if migrate_legacy_application_status(raw)[0] == status
+        }
+        return sorted(values)
+
+    def _company_sort_spec(self, sort: str) -> list[tuple[str, int]]:
+        if sort == "created_at_desc":
+            return [("created_at", -1)]
+        if sort == "created_at_asc":
+            return [("created_at", 1)]
+        if sort == "updated_at_asc":
+            return [("updated_at", 1)]
+        if sort == "name_asc":
+            return [("name", 1)]
+        return [("updated_at", -1)]
+
+    def _application_sort_spec(self, sort: str) -> list[tuple[str, int]]:
+        if sort == "created_at_asc":
+            return [("created_at", 1)]
+        if sort == "created_at_desc":
+            return [("created_at", -1)]
+        if sort == "updated_at_asc":
+            return [("updated_at", 1)]
+        return [("updated_at", -1)]
+
+    def _company_ids_with_applications_mongo(self, query: dict | None = None) -> set[str]:
+        return {str(value) for value in self.db.applications.distinct("company_id", query or {})}
+
+    def _annotate_companies_has_application_mongo(self, companies: list[Company]) -> list[Company]:
+        if not companies:
+            return []
+        company_ids = [company.id for company in companies]
+        app_company_ids = self._company_ids_with_applications_mongo(
+            {"company_id": {"$in": company_ids}}
+        )
+        return [
+            company.model_copy(update={"has_application": company.id in app_company_ids})
+            for company in companies
+        ]
 
     def _sync(self) -> None:
         # Repair/bootstrap fallback only. Normal writes must use targeted helpers below.
@@ -1610,6 +1732,195 @@ class MongoRepository(InMemoryRepository):
 
     def _email_ids_for_ppas(self, ppa_ids: set[str]) -> set[str]:
         return set(self._emails_for_ppas(ppa_ids))
+
+    def list_companies(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        sort: str = "updated_at_desc",
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> list[Company]:
+        query: dict[str, object] = {"archived": {"$ne": True}}
+        if search:
+            query["name"] = self._literal_contains_filter(search)
+        if research_status is not None:
+            query = {
+                "$and": [
+                    query,
+                    self._company_research_status_filter(research_status),
+                ]
+            }
+        if has_application is not None:
+            company_ids = list(self._company_ids_with_applications_mongo())
+            query["_id"] = {"$in" if has_application else "$nin": company_ids}
+        companies = self._mongo_find_page(
+            "companies",
+            query,
+            Company,
+            sort=self._company_sort_spec(sort),
+            skip=skip,
+            limit=limit,
+            collation={"locale": "en", "strength": 2} if sort == "name_asc" else None,
+        )
+        return self._annotate_companies_has_application_mongo(companies)
+
+    def list_profiles(
+        self, skip: int, limit: int, search: str | None, include_frozen: bool = True
+    ) -> list[Profile]:
+        query: dict[str, object] = {}
+        if not include_frozen:
+            query["frozen"] = {"$ne": True}
+        if search:
+            query["name"] = self._literal_contains_filter(search)
+        return self._mongo_find_page(
+            "profiles",
+            query,
+            Profile,
+            sort=[("name", 1)],
+            skip=skip,
+            limit=limit,
+            collation={"locale": "en", "strength": 2},
+        )
+
+    def list_profile_ids(self, skip: int, limit: int, include_frozen: bool = True) -> list[str]:
+        query: dict[str, object] = {}
+        if not include_frozen:
+            query["frozen"] = {"$ne": True}
+        rows = self._mongo_find_page(
+            "profiles",
+            query,
+            Profile,
+            sort=[("created_at", 1)],
+            skip=skip,
+            limit=limit,
+        )
+        return [profile.id for profile in rows]
+
+    def _mongo_batch_applied_profile_names_for_applications(
+        self, application_ids: list[str]
+    ) -> dict[str, list[AppliedProfileName]]:
+        if not application_ids:
+            return {}
+        ppas = self._mongo_find_page(
+            "per_profile_applications",
+            {"application_id": {"$in": application_ids}},
+            PerProfileApplication,
+            sort=[("application_id", 1), ("order_index", 1), ("created_at", 1)],
+        )
+        first_by_app: dict[str, PerProfileApplication] = {}
+        for ppa in ppas:
+            first_by_app.setdefault(ppa.application_id, ppa)
+        profile_ids = list({ppa.profile_id for ppa in first_by_app.values()})
+        profiles = self._mongo_find_page(
+            "profiles",
+            {"_id": {"$in": profile_ids}},
+            Profile,
+        )
+        profile_name_by_id = {profile.id: profile.name for profile in profiles}
+        return {
+            application_id: [
+                AppliedProfileName(
+                    profile_name=profile_name_by_id.get(ppa.profile_id, "Unknown profile")
+                )
+            ]
+            for application_id, ppa in first_by_app.items()
+        } | {
+            application_id: []
+            for application_id in application_ids
+            if application_id not in first_by_app
+        }
+
+    def list_applications(
+        self,
+        skip: int,
+        limit: int,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        sort: str = "updated_at_desc",
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+    ) -> list[ApplicationListItem]:
+        query: dict[str, object] = {}
+        if status and exclude_status:
+            query["$and"] = [
+                {"status": {"$in": self._application_status_values_for_query(status)}},
+                {"status": {"$nin": self._application_status_values_for_query(exclude_status)}},
+            ]
+        elif status:
+            query["status"] = {"$in": self._application_status_values_for_query(status)}
+        elif exclude_status:
+            query["status"] = {"$nin": self._application_status_values_for_query(exclude_status)}
+        if company_id:
+            query["company_id"] = company_id
+        if created_by_user_id is not None:
+            query["created_by_user_id"] = created_by_user_id
+        if applied is True:
+            query = {"$and": [query, {"$or": [{"applied": True}, {"status": "applied"}]}]}
+        elif applied is False:
+            query = {"$and": [query, {"applied": {"$ne": True}}, {"status": {"$ne": "applied"}}]}
+        if email_sent is not None:
+            query["email_sent"] = email_sent
+        applications = self._mongo_find_page(
+            "applications",
+            query,
+            Application,
+            sort=self._application_sort_spec(sort),
+            skip=skip,
+            limit=limit,
+        )
+        company_ids = list({application.company_id for application in applications})
+        companies = self._mongo_find_page("companies", {"_id": {"$in": company_ids}}, Company)
+        company_name_by_id = {company.id: company.name for company in companies}
+        batch = self._mongo_batch_applied_profile_names_for_applications(
+            [application.id for application in applications]
+        )
+        return [
+            ApplicationListItem(
+                **application.model_dump(),
+                company_name=company_name_by_id.get(application.company_id, "Unknown company"),
+                applied_profiles=batch.get(application.id, []),
+            )
+            for application in applications
+        ]
+
+    def list_audit_events(self, query: AuditListQuery) -> list[AuditEvent]:
+        mongo_query: dict[str, object] = {}
+        if query.actor_type:
+            mongo_query["actor_type"] = query.actor_type.value
+        if query.entity_type:
+            mongo_query["entity_type"] = query.entity_type
+        created_at: dict[str, str] = {}
+        if query.from_ts:
+            created_at["$gte"] = self._mongo_json_datetime(query.from_ts)
+        if query.to_ts:
+            created_at["$lte"] = self._mongo_json_datetime(query.to_ts)
+        if created_at:
+            mongo_query["created_at"] = created_at
+        return self._mongo_find_page(
+            "audit_events",
+            mongo_query,
+            AuditEvent,
+            sort=[("created_at", -1)],
+            skip=query.skip,
+            limit=query.limit,
+        )
+
+    def list_notifications(self, user_id: str, q: NotificationListQuery) -> list[UserNotification]:
+        query: dict[str, object] = {"user_id": user_id}
+        if q.unread_only:
+            query["read_at"] = None
+        return self._mongo_find_page(
+            "notifications",
+            query,
+            UserNotification,
+            sort=[("timestamp", -1)],
+            skip=q.skip,
+            limit=q.limit,
+        )
 
     def create_user(self, payload: UserCreate, password_hash: str) -> UserInDB:
         user = super().create_user(payload, password_hash)

@@ -9,12 +9,15 @@ from app.main import app
 from app.models import (
     ApplicationCreate,
     ApplicationStatus,
+    ActorType,
+    AuditListQuery,
     CompanyCreate,
     CompanyResearchStatus,
     CompanyUpdate,
     EmailCreate,
     EmailKind,
     NotificationKind,
+    NotificationListQuery,
     NotificationPayload,
     NotificationSeverity,
     PerProfileApplication,
@@ -1441,12 +1444,109 @@ def test_mongo_dashboard_application_counts_uses_count_queries() -> None:
     ]
 
 
+def _mongo_doc(item) -> dict:
+    payload = item.model_dump(mode="json")
+    payload["_id"] = payload.pop("id")
+    return payload
+
+
+def _matches_mongo_query(row: dict, query: dict) -> bool:
+    for key, expected in query.items():
+        if key == "$and":
+            if not all(_matches_mongo_query(row, part) for part in expected):
+                return False
+            continue
+        if key == "$or":
+            if not any(_matches_mongo_query(row, part) for part in expected):
+                return False
+            continue
+        actual = row.get(key)
+        if isinstance(expected, dict):
+            if "$exists" in expected and (key in row) is not bool(expected["$exists"]):
+                return False
+            if "$ne" in expected and actual == expected["$ne"]:
+                return False
+            if "$in" in expected and actual not in expected["$in"]:
+                return False
+            if "$nin" in expected and actual in expected["$nin"]:
+                return False
+            if "$gte" in expected and actual < expected["$gte"]:
+                return False
+            if "$lte" in expected and actual > expected["$lte"]:
+                return False
+            if "$regex" in expected:
+                import re
+
+                flags = re.IGNORECASE if "i" in expected.get("$options", "") else 0
+                if not re.search(expected["$regex"], str(actual or ""), flags):
+                    return False
+            continue
+        if actual != expected:
+            return False
+    return True
+
+
+class _FakeMongoCursor:
+    def __init__(self, collection: "_FakeMongoCollection", rows: list[dict]) -> None:
+        self.collection = collection
+        self.rows = rows
+        self.sort_spec: list[tuple[str, int]] = []
+        self.skip_count = 0
+        self.limit_count: int | None = None
+        self.collation_value: dict | None = None
+
+    def collation(self, value: dict):
+        self.collation_value = value
+        self.collection.collations.append(value)
+        return self
+
+    def sort(self, spec: list[tuple[str, int]]):
+        self.sort_spec = spec
+        self.collection.sorts.append(spec)
+        return self
+
+    def skip(self, count: int):
+        self.skip_count = count
+        self.collection.skips.append(count)
+        return self
+
+    def limit(self, count: int):
+        self.limit_count = count
+        self.collection.limits.append(count)
+        return self
+
+    def __iter__(self):
+        rows = list(self.rows)
+        for key, direction in reversed(self.sort_spec):
+            rows.sort(
+                key=lambda row: (
+                    str(row.get(key)).lower()
+                    if self.collation_value and isinstance(row.get(key), str)
+                    else row.get(key)
+                ),
+                reverse=direction < 0,
+            )
+        if self.skip_count:
+            rows = rows[self.skip_count :]
+        if self.limit_count is not None:
+            rows = rows[: self.limit_count]
+        return iter(rows)
+
+
 class _FakeMongoCollection:
-    def __init__(self) -> None:
+    def __init__(self, docs: list[dict] | None = None) -> None:
+        self.docs = docs or []
         self.replacements: list[tuple[dict, dict, bool]] = []
         self.deletes: list[dict] = []
         self.full_rewrites: list[dict] = []
         self.inserts: list[list[dict]] = []
+        self.find_queries: list[dict] = []
+        self.sorts: list[list[tuple[str, int]]] = []
+        self.skips: list[int] = []
+        self.limits: list[int] = []
+        self.collations: list[dict] = []
+        self.distinct_calls: list[tuple[str, dict]] = []
+        self.indexes: list[tuple[list[tuple[str, int]], dict]] = []
 
     def replace_one(self, query: dict, payload: dict, upsert: bool = False) -> None:
         self.replacements.append((query, payload, upsert))
@@ -1462,14 +1562,33 @@ class _FakeMongoCollection:
     def insert_many(self, docs: list[dict]) -> None:
         self.inserts.append(docs)
 
-    def find(self) -> list[dict]:
-        return []
+    def find(self, query: dict | None = None):
+        query = query or {}
+        self.find_queries.append(query)
+        return _FakeMongoCursor(
+            self,
+            [row for row in self.docs if _matches_mongo_query(row, query)],
+        )
 
-    def find_one(self, query: dict) -> None:
-        return None
+    def find_one(self, query: dict) -> dict | None:
+        return next(iter(self.find(query)), None)
+
+    def distinct(self, field: str, query: dict | None = None) -> list:
+        query = query or {}
+        self.distinct_calls.append((field, query))
+        return list(
+            {
+                row.get(field)
+                for row in self.docs
+                if field in row and _matches_mongo_query(row, query)
+            }
+        )
 
     def count_documents(self, query: dict) -> int:
         return 0
+
+    def create_index(self, keys: list[tuple[str, int]], **kwargs) -> None:
+        self.indexes.append((keys, kwargs))
 
 
 class _FakeMongoDb:
@@ -1488,6 +1607,13 @@ class _FakeMongoDb:
             collection.deletes.clear()
             collection.full_rewrites.clear()
             collection.inserts.clear()
+            collection.find_queries.clear()
+            collection.sorts.clear()
+            collection.skips.clear()
+            collection.limits.clear()
+            collection.collations.clear()
+            collection.distinct_calls.clear()
+            collection.indexes.clear()
 
     def assert_no_full_rewrites(self) -> None:
         rewritten = {
@@ -1506,6 +1632,42 @@ def _mongo_repo_for_write_tests() -> tuple[MongoRepository, _FakeMongoDb]:
     return repo, db
 
 
+def _mongo_repo_for_query_tests() -> tuple[MongoRepository, _FakeMongoDb]:
+    repo = object.__new__(MongoRepository)
+    db = _FakeMongoDb()
+    repo.db = db
+    return repo, db
+
+
+def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
+    repo, db = _mongo_repo_for_query_tests()
+
+    repo._ensure_indexes()
+
+    assert (("archived", 1), ("updated_at", -1)) in [
+        tuple(keys) for keys, _ in db.companies.indexes
+    ]
+    assert (
+        [("name", 1)],
+        {"collation": {"locale": "en", "strength": 2}},
+    ) in db.companies.indexes
+    assert (
+        [("name", 1)],
+        {"collation": {"locale": "en", "strength": 2}},
+    ) in db.profiles.indexes
+    assert ([("status", 1), ("updated_at", -1)], {}) in db.applications.indexes
+    assert ([("company_id", 1), ("updated_at", -1)], {}) in db.applications.indexes
+    assert ([("user_id", 1), ("read_at", 1), ("timestamp", -1)], {}) in db.notifications.indexes
+    assert (
+        [("actor_type", 1), ("entity_type", 1), ("created_at", -1)],
+        {},
+    ) in db.audit_events.indexes
+    assert (
+        [("application_id", 1), ("order_index", 1), ("created_at", 1)],
+        {},
+    ) in db.per_profile_applications.indexes
+
+
 class _FakeBulkMongoCollection(_FakeMongoCollection):
     def __init__(self) -> None:
         super().__init__()
@@ -1522,6 +1684,259 @@ class _FakeBulkMongoDb(_FakeMongoDb):
             collection = _FakeBulkMongoCollection()
             self._collections[name] = collection
         return collection
+
+
+def test_mongo_repository_list_companies_uses_query_pagination_and_distinct_annotation() -> None:
+    seed = InMemoryRepository()
+    acme = seed.create_company(
+        CompanyCreate(name="Ac.me Labs", research_status=CompanyResearchStatus.pending)
+    )
+    other = seed.create_company(
+        CompanyCreate(name="Other", research_status=CompanyResearchStatus.indexed)
+    )
+    archived = seed.create_company(CompanyCreate(name="Ac.me Archived"))
+    seed.archive_company(archived.id, "old")
+    app = seed.create_application(
+        ApplicationCreate(company_id=acme.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id="u1",
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.companies.docs = [_mongo_doc(other), _mongo_doc(acme), _mongo_doc(archived)]
+    db.applications.docs = [_mongo_doc(app)]
+
+    rows = repo.list_companies(
+        skip=0,
+        limit=10,
+        search="Ac.",
+        sort="name_asc",
+        research_status=CompanyResearchStatus.pending,
+        has_application=True,
+    )
+
+    assert [row.id for row in rows] == [acme.id]
+    assert rows[0].has_application is True
+    assert db.companies.find_queries[-1] == {
+        "$and": [
+            {
+                "archived": {"$ne": True},
+                "name": {"$regex": "Ac\\.", "$options": "i"},
+            },
+            {
+                "$or": [
+                    {"research_status": "pending"},
+                    {"research_status": {"$exists": False}, "indexed": {"$ne": True}},
+                ]
+            },
+        ],
+        "_id": {"$in": [acme.id]},
+    }
+    assert db.companies.sorts[-1] == [("name", 1)]
+    assert db.companies.limits[-1] == 10
+    assert db.companies.collations[-1] == {"locale": "en", "strength": 2}
+    assert db.applications.distinct_calls == [
+        ("company_id", {}),
+        ("company_id", {"company_id": {"$in": [acme.id]}}),
+    ]
+
+
+def test_mongo_repository_list_profiles_uses_query_pagination() -> None:
+    seed = InMemoryRepository()
+    active = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    frozen = seed.create_profile(
+        ProfileCreate.model_validate(
+            {**_valid_profile_create_payload(), "email": "frozen@example.com", "name": "Frozen"}
+        )
+    )
+    seed.profiles[frozen.id] = seed.profiles[frozen.id].model_copy(update={"frozen": True})
+    repo, db = _mongo_repo_for_query_tests()
+    db.profiles.docs = [_mongo_doc(seed.profiles[frozen.id]), _mongo_doc(active)]
+
+    rows = repo.list_profiles(skip=0, limit=5, search="general", include_frozen=False)
+    profile_query = db.profiles.find_queries[-1]
+    profile_sort = db.profiles.sorts[-1]
+    profile_limit = db.profiles.limits[-1]
+    profile_collation = db.profiles.collations[-1]
+    ids = repo.list_profile_ids(skip=0, limit=5, include_frozen=False)
+
+    assert [row.id for row in rows] == [active.id]
+    assert ids == [active.id]
+    assert profile_query == {
+        "frozen": {"$ne": True},
+        "name": {"$regex": "general", "$options": "i"},
+    }
+    assert profile_sort == [("name", 1)]
+    assert profile_limit == 5
+    assert profile_collation == {"locale": "en", "strength": 2}
+    assert db.profiles.find_queries[-1] == {"frozen": {"$ne": True}}
+
+
+def test_mongo_repository_list_applications_uses_query_page_and_bounded_enrichment() -> None:
+    seed = InMemoryRepository()
+    company = seed.create_company(CompanyCreate(name="Acme"))
+    profile = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    first = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id="u1",
+    )
+    second = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id="u1",
+    )
+    ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=second.id, profile_id=profile.id)
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.applications.docs = [_mongo_doc(first), _mongo_doc(second)]
+    db.companies.docs = [_mongo_doc(company)]
+    db.per_profile_applications.docs = [_mongo_doc(ppa)]
+    db.profiles.docs = [_mongo_doc(profile)]
+
+    rows = repo.list_applications(
+        skip=0,
+        limit=20,
+        status=ApplicationStatus.ppa_pending,
+        company_id=company.id,
+        applied=False,
+        email_sent=False,
+        sort="updated_at_asc",
+        exclude_status=None,
+        created_by_user_id="u1",
+    )
+
+    assert [row.id for row in rows] == [second.id]
+    assert rows[0].company_name == company.name
+    assert rows[0].applied_profiles[0].profile_name == profile.name
+    assert db.applications.find_queries[-1] == {
+        "$and": [
+            {
+                "status": {"$in": ["analysis_ready", "ppa_pending"]},
+                "company_id": company.id,
+                "created_by_user_id": "u1",
+            },
+            {"applied": {"$ne": True}},
+            {"status": {"$ne": "applied"}},
+        ],
+        "email_sent": False,
+    }
+    assert db.applications.sorts[-1] == [("updated_at", 1)]
+    assert db.applications.limits[-1] == 20
+    assert db.companies.find_queries[-1] == {"_id": {"$in": [company.id]}}
+    assert db.per_profile_applications.find_queries[-1] == {
+        "application_id": {"$in": [second.id]}
+    }
+    assert db.profiles.find_queries[-1] == {"_id": {"$in": [profile.id]}}
+
+    combined_rows = repo.list_applications(
+        skip=0,
+        limit=20,
+        status=ApplicationStatus.ppa_pending,
+        sort="updated_at_desc",
+        exclude_status=ApplicationStatus.archived,
+    )
+
+    assert [row.id for row in combined_rows] == [second.id]
+    assert db.applications.find_queries[-1] == {
+        "$and": [
+            {"status": {"$in": ["analysis_ready", "ppa_pending"]}},
+            {"status": {"$nin": ["archived"]}},
+        ]
+    }
+
+
+def test_mongo_repository_list_queries_include_legacy_normalized_records() -> None:
+    seed = InMemoryRepository()
+    legacy_company = seed.create_company(CompanyCreate(name="Legacy Indexed"))
+    legacy_company_doc = _mongo_doc(legacy_company)
+    legacy_company_doc.pop("research_status", None)
+    legacy_company_doc["indexed"] = True
+    legacy_company_doc["archived"] = False
+    legacy_app = seed.create_application(
+        ApplicationCreate(company_id=legacy_company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    legacy_app_doc = _mongo_doc(legacy_app)
+    legacy_app_doc["status"] = "draft"
+    repo, db = _mongo_repo_for_query_tests()
+    db.companies.docs = [legacy_company_doc]
+    db.applications.docs = [legacy_app_doc]
+
+    companies = repo.list_companies(
+        skip=0,
+        limit=10,
+        search=None,
+        research_status=CompanyResearchStatus.indexed,
+    )
+    applications = repo.list_applications(
+        skip=0,
+        limit=10,
+        status=ApplicationStatus.company_research_pending,
+    )
+
+    assert [company.id for company in companies] == [legacy_company.id]
+    assert companies[0].research_status == CompanyResearchStatus.indexed
+    assert [application.id for application in applications] == [legacy_app.id]
+    assert applications[0].status == ApplicationStatus.company_research_pending
+    assert db.companies.find_queries[0]["$and"][1] == {
+        "$or": [
+            {"research_status": "indexed"},
+            {"research_status": {"$exists": False}, "indexed": True},
+        ]
+    }
+    assert db.applications.find_queries[-1] == {
+        "status": {"$in": ["company_research_pending", "draft", "pending_preparation"]}
+    }
+
+
+def test_mongo_repository_audit_and_notification_lists_use_query_pagination() -> None:
+    seed = InMemoryRepository()
+    event = seed.create_audit_event(
+        actor_type=ActorType.user.value,
+        actor_id="u1",
+        action="create",
+        entity_type="company",
+        entity_id="c1",
+    )
+    note = seed.create_notification(
+        user_id="u1",
+        notification=NotificationKind.COMPANY_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(message="Ready"),
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.audit_events.docs = [_mongo_doc(event)]
+    db.notifications.docs = [_mongo_doc(note)]
+
+    audit_rows = repo.list_audit_events(
+        AuditListQuery(
+            skip=0,
+            limit=5,
+            actor_type=ActorType.user,
+            entity_type="company",
+            from_ts=event.created_at,
+            to_ts=event.created_at,
+        )
+    )
+    notification_rows = repo.list_notifications(
+        "u1", NotificationListQuery(skip=1, limit=3, unread_only=True)
+    )
+
+    assert [row.id for row in audit_rows] == [event.id]
+    assert db.audit_events.find_queries[-1] == {
+        "actor_type": "user",
+        "entity_type": "company",
+        "created_at": {
+            "$gte": event.created_at.isoformat().replace("+00:00", "Z"),
+            "$lte": event.created_at.isoformat().replace("+00:00", "Z"),
+        },
+    }
+    assert db.audit_events.sorts[-1] == [("created_at", -1)]
+    assert db.audit_events.skips == []
+    assert db.audit_events.limits[-1] == 5
+    assert notification_rows == []
+    assert db.notifications.find_queries[-1] == {"user_id": "u1", "read_at": None}
+    assert db.notifications.sorts[-1] == [("timestamp", -1)]
+    assert db.notifications.skips[-1] == 1
+    assert db.notifications.limits[-1] == 3
 
 
 def test_mongo_repository_updates_company_and_related_apps_without_full_sync() -> None:
