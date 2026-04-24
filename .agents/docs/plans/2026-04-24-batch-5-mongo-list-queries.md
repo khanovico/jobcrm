@@ -46,5 +46,5 @@ Clear UXPERF-004 by moving core paged Mongo list reads away from full in-memory 
 - [x] Run full backend tests.
 - [x] Run code-reviewer and scalability-reviewer with longer waits.
 - [x] Update audit checkbox for UXPERF-004.
-- [ ] Commit work branch.
-- [ ] Merge batch branch back into `codex/ux-performance-audit`.
+- [x] Commit work branch.
+- [x] Merge batch branch back into `codex/ux-performance-audit`.
