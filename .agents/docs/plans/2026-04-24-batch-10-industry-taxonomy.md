@@ -39,7 +39,7 @@ Clear:
 - [x] Run targeted backend and frontend tests plus frontend build.
 - [x] Run code-reviewer and scalability-reviewer and address actionable findings.
 - [x] Update audit rows `UXPERF-014`, `UXPERF-015`, and `UXPERF-046`.
-- [ ] Commit Batch 10 and merge back into `codex/ux-performance-audit`.
+- [x] Commit Batch 10 and merge back into `codex/ux-performance-audit`.
 
 ## Parallel Work
 
