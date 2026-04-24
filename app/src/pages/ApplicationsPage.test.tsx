@@ -330,6 +330,52 @@ describe("ApplicationsPage", () => {
     );
   });
 
+  it("disables mark applied action while request is in flight to prevent repeat clicks", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const appliedPayload = {
+      ...applicationRow,
+      applied: true,
+      applied_at: "2026-01-01"
+    };
+    let resolveMarkApplied: (response: Response) => void = () => {};
+    const markAppliedPromise = new Promise<Response>((resolve) => {
+      resolveMarkApplied = resolve;
+    });
+
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/applications/") && url.includes("/mark-applied")) {
+        return markAppliedPromise;
+      }
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    const markButton = await screen.findByRole("button", { name: "Mark Applied" });
+    fireEvent.click(markButton);
+    await waitFor(() => expect(markButton).toBeDisabled());
+    fireEvent.click(markButton);
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input).includes("/applications/a1/mark-applied"))
+    ).toHaveLength(1);
+
+    resolveMarkApplied(new Response(JSON.stringify(appliedPayload), { status: 200 }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Mark Applied" })).toBeEnabled();
+    });
+  });
+
   it("shows unmark applied button and unmarks when already applied", async () => {
     const fetchMock = vi.mocked(fetch);
     const unmarkedPayload = {
@@ -385,6 +431,39 @@ describe("ApplicationsPage", () => {
         body: JSON.stringify({ applied: false, force: false })
       })
     );
+  });
+
+  it("shows inline action error and keeps pending mode when mark applied fails", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/applications/") && url.includes("/mark-applied")) {
+        return Promise.resolve(new Response(JSON.stringify({ detail: "Temporary backend failure" }), { status: 500 }));
+      }
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mark Applied" }));
+
+    expect(await screen.findByText(/Could not mark Acme as applied\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pending" })).toHaveClass("btn-active");
+
+    const listCalls = fetchMock.mock.calls
+      .map(([input]) => (typeof input === "string" ? input : input.toString()))
+      .filter((url) => isApplicationsListRequest(url));
+    expect(listCalls.every((url) => !url.includes("applied=true"))).toBe(true);
   });
 
   it("renames Active tab to Pending and includes Applied tab", async () => {

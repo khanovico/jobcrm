@@ -37,6 +37,8 @@ export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [markAppliedBusyId, setMarkAppliedBusyId] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
   const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(null);
@@ -349,6 +351,11 @@ export const ApplicationsPage = () => {
           </div>
         </div>
         {error && !createOpen && <div className="alert alert-error mb-2 text-sm">{error}</div>}
+        {actionError ? (
+          <div role="alert" className="alert alert-error mb-2 text-sm">
+            {actionError}
+          </div>
+        ) : null}
         <div className="overflow-x-auto rounded-lg border border-base-300">
           <table className="table table-sm">
             <thead>
@@ -420,7 +427,10 @@ export const ApplicationsPage = () => {
                           <button
                             type="button"
                             className={`btn btn-xs ${application.applied ? "btn-outline" : "btn-success"}`}
-                            disabled={!application.applied && application.status !== "application_ready"}
+                            disabled={
+                              markAppliedBusyId === application.id ||
+                              (!application.applied && application.status !== "application_ready")
+                            }
                             title={
                               !application.applied && application.status !== "application_ready"
                                 ? "Mark applied only when status is Application ready"
@@ -428,12 +438,24 @@ export const ApplicationsPage = () => {
                             }
                             onClick={async (e) => {
                               e.stopPropagation();
+                              if (markAppliedBusyId === application.id) return;
                               const nextApplied = !application.applied;
-                              await api.markApplied(application.id, nextApplied);
-                              await load(page);
+                              setActionError(null);
+                              setMarkAppliedBusyId(application.id);
+                              try {
+                                await api.markApplied(application.id, nextApplied);
+                                await load(page);
+                              } catch (err) {
+                                const detail = err instanceof Error && err.message ? ` ${err.message}` : "";
+                                setActionError(
+                                  `Could not ${nextApplied ? "mark" : "unmark"} ${application.company_name} as applied.${detail}`
+                                );
+                              } finally {
+                                setMarkAppliedBusyId((current) => (current === application.id ? null : current));
+                              }
                             }}
                           >
-                            {application.applied ? "Unmark Applied" : "Mark Applied"}
+                            {markAppliedBusyId === application.id ? "Saving..." : application.applied ? "Unmark Applied" : "Mark Applied"}
                           </button>
                           <button
                             type="button"
