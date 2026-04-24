@@ -8,7 +8,7 @@ This is a conceptual map of the CRM. Authoritative field types and validation li
 |--------|---------|
 | **User** | Human login; JWT auth. **Admin** can mint agent API keys. |
 | **AgentApiKey** | Hashed key with scopes (`read`, `write`, sometimes `admin`). Sent as `X-API-Key`. |
-| **Company** | Employer. **`research_status`**: `pending` → `indexing` → `indexed`. Agent backlog: `GET .../companies/unindexed` returns `research_status=pending`, FIFO. Legacy `indexed` in JSON is mapped to `research_status`. |
+| **Company** | Employer. **`research_status`**: `pending` → `indexing` → `indexed`. Agent backlog: `GET .../companies/unindexed` returns compact `research_status=pending` task summaries, FIFO. Legacy `indexed` in JSON is mapped to `research_status`. |
 | **Industry** | Taxonomy; many-to-many with companies via `industry_ids[]`. |
 | **Profile** | Candidate/person (resume, bio, niche, contact). |
 | **Application** | One job pursuit: links **one Company**, has **status** workflow, optional **job_post**, `archive_reason` when **archived**. |
@@ -49,7 +49,7 @@ Other fields on Application:
 
 ## Company research (agent)
 
-- **`research_status: pending`** — candidate for `GET /api/v1/agent/companies/unindexed` (max **5**, oldest `created_at` first).
+- **`research_status: pending`** — candidate for `GET /api/v1/agent/companies/unindexed` compact task summaries (max **5**, oldest `created_at` first).
 - Agent moves companies through **`indexing`** → **`indexed`** via `PUT /api/v1/agent/companies/{id}` or bulk `PATCH /api/v1/agent/companies/bulk` (legacy **`indexed`** boolean in JSON is still accepted and mapped).
 
 ## Workers (concurrency)

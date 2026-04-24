@@ -109,6 +109,10 @@ def test_agent_pending_and_company_update() -> None:
     assert pending.status_code == 200
     assert len(pending.json()) == 1
     pending_application_id = pending.json()[0]["id"]
+    assert pending.json()[0]["company_name"] == "Acme Co"
+    assert pending.json()[0]["company_website"] == "https://acme.example"
+    assert "notes" not in pending.json()[0]
+    assert "job_post" not in pending.json()[0]
 
     by_id = client.get(
         f"/api/v1/agent/applications/{pending_application_id}",
@@ -342,6 +346,23 @@ def test_agent_health_unindexed_bulk_profiles_notifications() -> None:
     assert len(uj) == 2
     assert uj[0]["id"] == c_old["id"]
     assert uj[0]["research_status"] == "pending"
+    assert set(uj[0]) == {
+        "id",
+        "name",
+        "website",
+        "research_status",
+        "has_application",
+        "created_at",
+        "updated_at",
+    }
+    full_company = client.get(f"/api/v1/agent/companies/{uj[0]['id']}", headers=ak)
+    assert full_company.status_code == 200
+    assert full_company.json()["id"] == c_old["id"]
+    assert full_company.json()["name"] == "Old Co"
+    assert full_company.json()["has_application"] is False
+
+    missing_company = client.get("/api/v1/agent/companies/missing-company", headers=ak)
+    assert missing_company.status_code == 404
 
     bulk = client.patch(
         "/api/v1/agent/companies/bulk",

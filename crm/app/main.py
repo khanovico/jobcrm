@@ -25,7 +25,9 @@ from app.models import (
     AgentApiKeyCreate,
     AgentApiKeyCreated,
     AgentApiKeyPublic,
+    AgentApplicationTaskSummary,
     AgentCompaniesBulkUpdateRequest,
+    AgentCompanyResearchTaskSummary,
     AgentIndustriesBulkCreateRequest,
     AgentContext,
     AgentHealthResponse,
@@ -739,14 +741,15 @@ def get_application_detail(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
     ppas = repo.list_per_profile_for_application(application_id)
+    emails_by_ppa = repo.list_emails_for_ppas([ppa.id for ppa in ppas])
+    profile_name_by_id = repo.list_profile_names_by_ids([ppa.profile_id for ppa in ppas])
     ppa_rows: list[PerProfileApplicationDetail] = []
     for ppa in ppas:
-        profile = repo.get_profile(ppa.profile_id)
         ppa_rows.append(
             PerProfileApplicationDetail(
                 **ppa.model_dump(),
-                profile_name=profile.name if profile else "Unknown profile",
-                emails=repo.list_emails_for_ppa(ppa.id),
+                profile_name=profile_name_by_id.get(ppa.profile_id, "Unknown profile"),
+                emails=emails_by_ppa.get(ppa.id, []),
             )
         )
     return ApplicationDetailResponse(
@@ -1229,38 +1232,38 @@ def agent_health(
 
 @app.get(
     "/api/v1/agent/applications/company-research-pending",
-    response_model=list[Application],
+    response_model=list[AgentApplicationTaskSummary],
 )
 def agent_list_company_research_pending(
     limit: int = Query(default=5, ge=1, le=50),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[AgentApplicationTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_applications_by_status(ApplicationStatus.company_research_pending, limit)
+    return repo.list_agent_application_tasks(ApplicationStatus.company_research_pending, limit)
 
 
-@app.get("/api/v1/agent/applications/ppa-pending", response_model=list[Application])
+@app.get("/api/v1/agent/applications/ppa-pending", response_model=list[AgentApplicationTaskSummary])
 def agent_list_ppa_pending(
     limit: int = Query(default=5, ge=1, le=50),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[AgentApplicationTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_applications_by_status(ApplicationStatus.ppa_pending, limit)
+    return repo.list_agent_application_tasks(ApplicationStatus.ppa_pending, limit)
 
 
 @app.get(
     "/api/v1/agent/applications/application-pending",
-    response_model=list[Application],
+    response_model=list[AgentApplicationTaskSummary],
 )
 def agent_list_application_pending(
     limit: int = Query(default=5, ge=1, le=50),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[AgentApplicationTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_applications_by_status(ApplicationStatus.application_pending, limit)
+    return repo.list_agent_application_tasks(ApplicationStatus.application_pending, limit)
 
 
 @app.post(
@@ -1332,14 +1335,27 @@ def agent_list_companies(
     return repo.list_companies(skip=skip, limit=limit, search=None)
 
 
-@app.get("/api/v1/agent/companies/unindexed", response_model=list[Company])
+@app.get("/api/v1/agent/companies/unindexed", response_model=list[AgentCompanyResearchTaskSummary])
 def agent_list_unindexed_companies(
     limit: int = Query(default=5, ge=1, le=5),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Company]:
+) -> list[AgentCompanyResearchTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_companies_unindexed(limit)
+    return repo.list_company_research_tasks(limit)
+
+
+@app.get("/api/v1/agent/companies/{company_id}", response_model=Company)
+def agent_get_company(
+    company_id: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Company:
+    require_agent_scope(agent, "read")
+    company = repo.get_company(company_id)
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    return company
 
 
 @app.patch("/api/v1/agent/companies/bulk", response_model=list[Company])

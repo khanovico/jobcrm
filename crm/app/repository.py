@@ -15,6 +15,8 @@ from app.config import settings
 from app.models import (
     AgentApiKeyCreate,
     AgentApiKeyInDB,
+    AgentApplicationTaskSummary,
+    AgentCompanyResearchTaskSummary,
     AppliedProfileName,
     Application,
     ApplicationBootstrapCreate,
@@ -168,6 +170,12 @@ class BaseRepository:
         """Companies with research_status=pending, oldest created first (FIFO)."""
         raise NotImplementedError
 
+    def list_company_research_tasks(
+        self, limit: int
+    ) -> list[AgentCompanyResearchTaskSummary]:
+        """Compact company research queue items with pending research_status, oldest first."""
+        raise NotImplementedError
+
     def create_company(self, payload: CompanyCreate) -> Company:
         raise NotImplementedError
 
@@ -210,6 +218,9 @@ class BaseRepository:
     def get_profile(self, profile_id: str) -> Profile | None:
         raise NotImplementedError
 
+    def list_profile_names_by_ids(self, profile_ids: list[str]) -> dict[str, str]:
+        raise NotImplementedError
+
     def update_profile(self, profile_id: str, payload: ProfileUpdate) -> Profile | None:
         raise NotImplementedError
 
@@ -231,6 +242,11 @@ class BaseRepository:
         raise NotImplementedError
 
     def list_applications_by_status(self, status: ApplicationStatus, limit: int) -> list[Application]:
+        raise NotImplementedError
+
+    def list_agent_application_tasks(
+        self, status: ApplicationStatus, limit: int
+    ) -> list[AgentApplicationTaskSummary]:
         raise NotImplementedError
 
     def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
@@ -396,6 +412,9 @@ class BaseRepository:
     def list_emails_for_ppa(self, per_profile_application_id: str) -> list[Email]:
         raise NotImplementedError
 
+    def list_emails_for_ppas(self, per_profile_application_ids: list[str]) -> dict[str, list[Email]]:
+        raise NotImplementedError
+
     def create_email(self, payload: EmailCreate) -> Email:
         raise NotImplementedError
 
@@ -558,6 +577,24 @@ class InMemoryRepository(BaseRepository):
         ]
         values.sort(key=lambda c: c.created_at)
         return values[:limit]
+
+    def list_company_research_tasks(
+        self, limit: int
+    ) -> list[AgentCompanyResearchTaskSummary]:
+        companies = self.list_companies_unindexed(limit)
+        company_ids_with_apps = _company_ids_with_applications(self.applications)
+        return [
+            AgentCompanyResearchTaskSummary(
+                id=company.id,
+                name=company.name,
+                website=company.website,
+                research_status=company.research_status,
+                has_application=company.id in company_ids_with_apps,
+                created_at=company.created_at,
+                updated_at=company.updated_at,
+            )
+            for company in companies
+        ]
 
     def _initial_application_status_for_company(self, company_id: str) -> ApplicationStatus:
         company = self.get_company(company_id)
@@ -800,6 +837,14 @@ class InMemoryRepository(BaseRepository):
     def get_profile(self, profile_id: str) -> Profile | None:
         return self.profiles.get(profile_id)
 
+    def list_profile_names_by_ids(self, profile_ids: list[str]) -> dict[str, str]:
+        ids = list(dict.fromkeys(profile_ids))
+        return {
+            profile_id: self.profiles[profile_id].name
+            for profile_id in ids
+            if profile_id in self.profiles
+        }
+
     def update_profile(self, profile_id: str, payload: ProfileUpdate) -> Profile | None:
         profile = self.get_profile(profile_id)
         if not profile:
@@ -912,6 +957,28 @@ class InMemoryRepository(BaseRepository):
         rows = [a for a in self.applications.values() if a.status == status]
         rows = _sort_applications(rows, "created_at_asc")
         return rows[:limit]
+
+    def list_agent_application_tasks(
+        self, status: ApplicationStatus, limit: int
+    ) -> list[AgentApplicationTaskSummary]:
+        applications = self.list_applications_by_status(status, limit)
+        return [
+            AgentApplicationTaskSummary(
+                id=application.id,
+                status=application.status,
+                company_id=application.company_id,
+                company_name=self.companies.get(application.company_id).name
+                if application.company_id in self.companies
+                else "Unknown company",
+                company_website=self.companies.get(application.company_id).website
+                if application.company_id in self.companies
+                else None,
+                job_link=application.job_post.job_link if application.job_post else None,
+                created_at=application.created_at,
+                updated_at=application.updated_at,
+            )
+            for application in applications
+        ]
 
     def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
         rows = self.applications.values()
@@ -1352,6 +1419,18 @@ class InMemoryRepository(BaseRepository):
         rows = [e for e in self.emails.values() if e.per_profile_application_id == per_profile_application_id]
         return sorted(rows, key=lambda e: e.created_at)
 
+    def list_emails_for_ppas(self, per_profile_application_ids: list[str]) -> dict[str, list[Email]]:
+        lookup = {ppa_id: [] for ppa_id in dict.fromkeys(per_profile_application_ids)}
+        if not lookup:
+            return {}
+        for email in self.emails.values():
+            rows = lookup.get(email.per_profile_application_id)
+            if rows is not None:
+                rows.append(email)
+        for rows in lookup.values():
+            rows.sort(key=lambda e: e.created_at)
+        return lookup
+
     def create_email(self, payload: EmailCreate) -> Email:
         if not self.get_per_profile_application(payload.per_profile_application_id):
             raise ValueError("Invalid per_profile_application_id")
@@ -1419,10 +1498,12 @@ class MongoRepository(InMemoryRepository):
     def _ensure_indexes(self) -> None:
         self.db.companies.create_index([("archived", 1), ("updated_at", -1)])
         self.db.companies.create_index([("archived", 1), ("research_status", 1), ("updated_at", -1)])
+        self.db.companies.create_index([("archived", 1), ("research_status", 1), ("created_at", 1)])
         self.db.companies.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.profiles.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.profiles.create_index([("frozen", 1), ("created_at", 1)])
         self.db.applications.create_index([("status", 1), ("updated_at", -1)])
+        self.db.applications.create_index([("status", 1), ("created_at", 1)])
         self.db.applications.create_index([("company_id", 1), ("updated_at", -1)])
         self.db.applications.create_index([("created_by_user_id", 1), ("updated_at", -1)])
         self.db.audit_events.create_index([("actor_type", 1), ("entity_type", 1), ("created_at", -1)])
@@ -1430,6 +1511,7 @@ class MongoRepository(InMemoryRepository):
         self.db.per_profile_applications.create_index(
             [("application_id", 1), ("order_index", 1), ("created_at", 1)]
         )
+        self.db.emails.create_index([("per_profile_application_id", 1), ("created_at", 1)])
 
     def _load_workers_mongo(self) -> None:
         doc = self.db.app_settings.find_one({"_id": "worker_settings"})
@@ -1532,6 +1614,22 @@ class MongoRepository(InMemoryRepository):
         if limit is not None:
             cursor = cursor.limit(limit)
         return self._models_from_mongo_rows(cursor, model)
+
+    def _mongo_find_docs(
+        self,
+        collection_name: str,
+        query: dict,
+        *,
+        sort: list[tuple[str, int]] | None = None,
+        limit: int | None = None,
+        projection: dict[str, int] | None = None,
+    ) -> list[dict]:
+        cursor = self.db[collection_name].find(query, projection)
+        if sort:
+            cursor = cursor.sort(sort)
+        if limit is not None:
+            cursor = cursor.limit(limit)
+        return list(cursor)
 
     def _literal_contains_filter(self, value: str) -> dict:
         return {"$regex": re.escape(value), "$options": "i"}
@@ -1766,6 +1864,46 @@ class MongoRepository(InMemoryRepository):
         )
         return self._annotate_companies_has_application_mongo(companies)
 
+    def list_company_research_tasks(
+        self, limit: int
+    ) -> list[AgentCompanyResearchTaskSummary]:
+        query = {
+            "$and": [
+                {"archived": {"$ne": True}},
+                self._company_research_status_filter(CompanyResearchStatus.pending),
+            ]
+        }
+        docs = self._mongo_find_docs(
+            "companies",
+            query,
+            sort=[("created_at", 1)],
+            limit=limit,
+            projection={
+                "_id": 1,
+                "name": 1,
+                "website": 1,
+                "research_status": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+        )
+        company_ids = [str(doc["_id"]) for doc in docs]
+        company_ids_with_apps = self._company_ids_with_applications_mongo(
+            {"company_id": {"$in": company_ids}}
+        )
+        return [
+            AgentCompanyResearchTaskSummary(
+                id=str(doc["_id"]),
+                name=doc["name"],
+                website=doc.get("website"),
+                research_status=Company.model_validate({**doc, "id": str(doc["_id"])}).research_status,
+                has_application=str(doc["_id"]) in company_ids_with_apps,
+                created_at=doc["created_at"],
+                updated_at=doc["updated_at"],
+            )
+            for doc in docs
+        ]
+
     def list_profiles(
         self, skip: int, limit: int, search: str | None, include_frozen: bool = True
     ) -> list[Profile]:
@@ -1783,6 +1921,17 @@ class MongoRepository(InMemoryRepository):
             limit=limit,
             collation={"locale": "en", "strength": 2},
         )
+
+    def list_profile_names_by_ids(self, profile_ids: list[str]) -> dict[str, str]:
+        ids = list(dict.fromkeys(profile_ids))
+        if not ids:
+            return {}
+        docs = self._mongo_find_docs(
+            "profiles",
+            {"_id": {"$in": ids}},
+            projection={"_id": 1, "name": 1},
+        )
+        return {str(doc["_id"]): doc["name"] for doc in docs}
 
     def list_profile_ids(self, skip: int, limit: int, include_frozen: bool = True) -> list[str]:
         query: dict[str, object] = {}
@@ -1887,6 +2036,46 @@ class MongoRepository(InMemoryRepository):
             for application in applications
         ]
 
+    def list_agent_application_tasks(
+        self, status: ApplicationStatus, limit: int
+    ) -> list[AgentApplicationTaskSummary]:
+        application_docs = self._mongo_find_docs(
+            "applications",
+            {"status": {"$in": self._application_status_values_for_query(status)}},
+            sort=[("created_at", 1)],
+            limit=limit,
+            projection={
+                "_id": 1,
+                "status": 1,
+                "company_id": 1,
+                "job_post.job_link": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+        )
+        company_ids = list({doc["company_id"] for doc in application_docs})
+        company_docs = self._mongo_find_docs(
+            "companies",
+            {"_id": {"$in": company_ids}},
+            projection={"_id": 1, "name": 1, "website": 1},
+        )
+        company_by_id = {str(doc["_id"]): doc for doc in company_docs}
+        return [
+            AgentApplicationTaskSummary(
+                id=str(doc["_id"]),
+                status=migrate_legacy_application_status(str(doc["status"]))[0],
+                company_id=doc["company_id"],
+                company_name=company_by_id.get(doc["company_id"], {}).get(
+                    "name", "Unknown company"
+                ),
+                company_website=company_by_id.get(doc["company_id"], {}).get("website"),
+                job_link=(doc.get("job_post") or {}).get("job_link"),
+                created_at=doc["created_at"],
+                updated_at=doc["updated_at"],
+            )
+            for doc in application_docs
+        ]
+
     def list_audit_events(self, query: AuditListQuery) -> list[AuditEvent]:
         mongo_query: dict[str, object] = {}
         if query.actor_type:
@@ -1921,6 +2110,21 @@ class MongoRepository(InMemoryRepository):
             skip=q.skip,
             limit=q.limit,
         )
+
+    def list_emails_for_ppas(self, per_profile_application_ids: list[str]) -> dict[str, list[Email]]:
+        ppa_ids = list(dict.fromkeys(per_profile_application_ids))
+        if not ppa_ids:
+            return {}
+        rows = self._mongo_find_page(
+            "emails",
+            {"per_profile_application_id": {"$in": ppa_ids}},
+            Email,
+            sort=[("per_profile_application_id", 1), ("created_at", 1)],
+        )
+        grouped = {ppa_id: [] for ppa_id in ppa_ids}
+        for email in rows:
+            grouped.setdefault(email.per_profile_application_id, []).append(email)
+        return grouped
 
     def create_user(self, payload: UserCreate, password_hash: str) -> UserInDB:
         user = super().create_user(payload, password_hash)
