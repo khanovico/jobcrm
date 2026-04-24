@@ -21,7 +21,7 @@
 - No API key listing/revoke UI included by scope and endpoint availability constraint.
 
 ## Commit
-- `0ed8bdc`
+- `c492c1c`
 
 ## Handoff Notes (Exact)
 - Main agent should integrate this worker patch with concurrent Settings/Auth changes and re-run full frontend test/build once `LoginPage.test.tsx` typing issue is resolved upstream.

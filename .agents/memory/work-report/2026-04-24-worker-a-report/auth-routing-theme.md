@@ -34,7 +34,7 @@
 - React Router v7 future-flag warnings appear in test output (pre-existing noise, non-blocking).
 
 ## Commit
-- Commit hash: `47b440e`
+- Commit hash: `9aea7de`
 
 ## Handoff notes for main agent
 - Worker A scope complete for target tickets and ready for integration.
