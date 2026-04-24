@@ -7,8 +7,12 @@ import { useAuth } from "../auth";
 import { Profile, ProfileCreatePayload } from "../types";
 
 type EdRow = { university_name: string; from_year: string; to_year: string };
+type EdRowErrors = { from_year: string | null; to_year: string | null };
 
 const emptyEdRow = (): EdRow => ({ university_name: "", from_year: "", to_year: "" });
+const MIN_EDUCATION_YEAR = 1900;
+const MAX_EDUCATION_YEAR = 2100;
+const YEAR_INPUT_PATTERN = /^\d{4}$/;
 
 export const ProfileDetailPage = () => {
   const { profileId } = useParams<{ profileId: string }>();
@@ -77,9 +81,29 @@ export const ProfileDetailPage = () => {
   const parseYear = (s: string): number | null => {
     const t = s.trim();
     if (!t) return null;
-    const n = Number.parseInt(t, 10);
-    return Number.isFinite(n) ? n : null;
+    if (!YEAR_INPUT_PATTERN.test(t)) return null;
+    const n = Number(t);
+    if (!Number.isInteger(n)) return null;
+    if (n < MIN_EDUCATION_YEAR || n > MAX_EDUCATION_YEAR) return null;
+    return n;
   };
+
+  const validateYear = (value: string, label: "From" | "To"): string | null => {
+    const t = value.trim();
+    if (!t) return null;
+    if (!YEAR_INPUT_PATTERN.test(t)) return `${label} year must be a 4-digit year.`;
+    const n = Number(t);
+    if (!Number.isInteger(n) || n < MIN_EDUCATION_YEAR || n > MAX_EDUCATION_YEAR) {
+      return `${label} year must be between ${MIN_EDUCATION_YEAR} and ${MAX_EDUCATION_YEAR}.`;
+    }
+    return null;
+  };
+
+  const educationRowErrors: EdRowErrors[] = edRows.map((row) => ({
+    from_year: validateYear(row.from_year, "From"),
+    to_year: validateYear(row.to_year, "To")
+  }));
+  const hasEducationYearErrors = educationRowErrors.some((row) => row.from_year || row.to_year);
 
   const buildEducations = () => {
     return edRows
@@ -106,6 +130,10 @@ export const ProfileDetailPage = () => {
   const onCreate = async (event: FormEvent) => {
     event.preventDefault();
     if (!canEditProfiles) return;
+    if (hasEducationYearErrors) {
+      setError("Fix education year errors before saving.");
+      return;
+    }
     const v = validateCreate();
     if (v) {
       setError(v);
@@ -137,6 +165,10 @@ export const ProfileDetailPage = () => {
     event.preventDefault();
     if (!canEditProfiles) return;
     if (!profileId || isNew) return;
+    if (hasEducationYearErrors) {
+      setError("Fix education year errors before saving.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -264,6 +296,7 @@ export const ProfileDetailPage = () => {
                       className="input input-bordered input-sm w-24"
                       placeholder="From"
                       inputMode="numeric"
+                      aria-invalid={educationRowErrors[idx].from_year ? "true" : "false"}
                       value={row.from_year}
                       onChange={(e) => {
                         const next = [...edRows];
@@ -275,6 +308,7 @@ export const ProfileDetailPage = () => {
                       className="input input-bordered input-sm w-24"
                       placeholder="To"
                       inputMode="numeric"
+                      aria-invalid={educationRowErrors[idx].to_year ? "true" : "false"}
                       value={row.to_year}
                       onChange={(e) => {
                         const next = [...edRows];
@@ -291,6 +325,12 @@ export const ProfileDetailPage = () => {
                       >
                         Remove
                       </button>
+                    )}
+                    {(educationRowErrors[idx].from_year || educationRowErrors[idx].to_year) && (
+                      <div className="w-full text-xs text-error">
+                        {educationRowErrors[idx].from_year && <p>{educationRowErrors[idx].from_year}</p>}
+                        {educationRowErrors[idx].to_year && <p>{educationRowErrors[idx].to_year}</p>}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -351,7 +391,7 @@ export const ProfileDetailPage = () => {
 
             <div className="flex flex-wrap gap-2 pt-2">
               {canEditProfiles && (
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button type="submit" className="btn btn-primary" disabled={saving || hasEducationYearErrors}>
                   {saving ? "Saving…" : isNew ? "Create profile" : "Save changes"}
                 </button>
               )}
