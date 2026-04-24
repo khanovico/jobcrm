@@ -16,8 +16,10 @@ import {
   Email,
   GlobalSearchResult,
   IndustryBulkCreatePayload,
+  IndustryCountResponse,
   IndustryCreatePayload,
   Industry,
+  IndustryOptionsResponse,
   IndustryUpdatePayload,
   PerProfileApplication,
   Profile,
@@ -118,6 +120,10 @@ export const api = {
     request<GlobalSearchResult>(`/api/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`),
   listIndustries: (params?: URLSearchParams) =>
     request<Industry[]>(`/api/v1/industries${params ? `?${params.toString()}` : ""}`),
+  countIndustries: (params?: URLSearchParams) =>
+    request<IndustryCountResponse>(`/api/v1/industries/count${params ? `?${params.toString()}` : ""}`),
+  listIndustryOptions: (params?: URLSearchParams) =>
+    request<IndustryOptionsResponse>(`/api/v1/industries/options${params ? `?${params.toString()}` : ""}`),
   createIndustry: (payload: IndustryCreatePayload) =>
     request<Industry>("/api/v1/industries", { method: "POST", body: JSON.stringify(payload) }),
   bulkCreateIndustries: (payload: IndustryBulkCreatePayload) =>

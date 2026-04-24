@@ -60,6 +60,15 @@ export type IndustryBulkCreatePayload = {
   industries: IndustryCreatePayload[];
 };
 
+export type IndustryCountResponse = {
+  total: number;
+};
+
+export type IndustryOptionsResponse = {
+  selected: Industry[];
+  options: Industry[];
+};
+
 export type EducationEntry = {
   university_name: string;
   from_year?: number | null;

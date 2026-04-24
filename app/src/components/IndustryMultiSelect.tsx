@@ -1,36 +1,53 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
 
 import type { Industry } from "../types";
 
 type Props = {
-  industries: Industry[];
+  selectedIndustries: Industry[];
+  options: Industry[];
   value: string[];
   onChange: (ids: string[]) => void;
+  search: string;
+  onSearchChange: (value: string) => void;
+  loading?: boolean;
   disabled?: boolean;
 };
 
-/** Multi-select industries by name; persists `value` as industry IDs for the API. */
-export function IndustryMultiSelect({ industries, value, onChange, disabled }: Props) {
+const mergeIndustries = (...groups: Industry[][]): Industry[] => {
+  const seen = new Set<string>();
+  const merged: Industry[] = [];
+  for (const group of groups) {
+    for (const industry of group) {
+      if (seen.has(industry.id)) continue;
+      seen.add(industry.id);
+      merged.push(industry);
+    }
+  }
+  return merged;
+};
+
+/** Bounded server-backed industry picker; persists `value` as industry IDs for the API. */
+export function IndustryMultiSelect({
+  selectedIndustries,
+  options,
+  value,
+  onChange,
+  search,
+  onSearchChange,
+  loading,
+  disabled
+}: Props) {
   const baseId = useId();
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-
-  const byId = useMemo(() => {
+  const industryById = useMemo(() => {
     const m = new Map<string, Industry>();
-    industries.forEach((i) => m.set(i.id, i));
+    mergeIndustries(selectedIndustries, options).forEach((industry) => m.set(industry.id, industry));
     return m;
-  }, [industries]);
+  }, [options, selectedIndustries]);
 
-  const unselected = useMemo(
-    () => industries.filter((i) => !value.includes(i.id)).sort((a, b) => a.name.localeCompare(b.name)),
-    [industries, value]
+  const visibleOptions = useMemo(
+    () => options.filter((industry) => !value.includes(industry.id)),
+    [options, value]
   );
-
-  const suggestions = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return unselected;
-    return unselected.filter((i) => i.name.toLowerCase().includes(q));
-  }, [unselected, query]);
 
   const remove = (id: string) => {
     onChange(value.filter((x) => x !== id));
@@ -39,13 +56,11 @@ export function IndustryMultiSelect({ industries, value, onChange, disabled }: P
   const add = (id: string) => {
     if (value.includes(id)) return;
     onChange([...value, id]);
-    setQuery("");
-    setOpen(false);
+    onSearchChange("");
   };
 
-  const labelFor = (id: string) => byId.get(id)?.name ?? "Unknown industry";
-
-  const showList = open && suggestions.length > 0 && !disabled;
+  const labelFor = (id: string) => industryById.get(id)?.name ?? "Unknown industry";
+  const disabledSearch = disabled || loading;
 
   return (
     <div className="space-y-2">
@@ -73,80 +88,51 @@ export function IndustryMultiSelect({ industries, value, onChange, disabled }: P
         )}
       </div>
 
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-start">
-        <select
-          className="select select-bordered w-full lg:max-w-xs lg:flex-shrink-0"
-          disabled={disabled || unselected.length === 0}
-          value=""
-          onChange={(e) => {
-            const id = e.target.value;
-            if (id) add(id);
+      <div className="space-y-2">
+        <input
+          id={`${baseId}-search`}
+          type="search"
+          autoComplete="off"
+          className="input input-bordered w-full"
+          disabled={disabledSearch}
+          placeholder="Search industries to add..."
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && visibleOptions[0]) {
+              e.preventDefault();
+              add(visibleOptions[0].id);
+            }
           }}
-          aria-label="Add industry from dropdown"
-        >
-          <option value="">Add industry…</option>
-          {unselected.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </select>
-
-        <div className="relative min-w-0 flex-1">
-          <input
-            id={`${baseId}-search`}
-            type="search"
-            autoComplete="off"
-            className="input input-bordered w-full"
-            disabled={disabled || unselected.length === 0}
-            placeholder={unselected.length === 0 ? "All listed industries are selected" : "Type to filter industries…"}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOpen(true);
-            }}
-            onFocus={() => setOpen(true)}
-            onBlur={() => {
-              window.setTimeout(() => setOpen(false), 180);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && suggestions[0]) {
-                e.preventDefault();
-                add(suggestions[0].id);
-              }
-              if (e.key === "Escape") {
-                setOpen(false);
-              }
-            }}
-            aria-autocomplete="list"
-            aria-expanded={showList}
-            aria-controls={`${baseId}-listbox`}
-          />
-          {showList ? (
-            <ul
-              id={`${baseId}-listbox`}
-              role="listbox"
-              className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-base-300 bg-base-100 py-1 shadow-lg"
-            >
-              {suggestions.map((i) => (
-                <li key={i.id} role="presentation">
+          aria-label="Search industries"
+          aria-controls={`${baseId}-listbox`}
+        />
+        <div className="rounded-lg border border-base-300 bg-base-100">
+          {loading ? (
+            <p className="p-3 text-sm opacity-70">Loading industries...</p>
+          ) : visibleOptions.length === 0 ? (
+            <p className="p-3 text-sm opacity-70">No matching industries.</p>
+          ) : (
+            <ul id={`${baseId}-listbox`} role="listbox" className="max-h-52 overflow-auto py-1">
+              {visibleOptions.map((industry) => (
+                <li key={industry.id} role="presentation">
                   <button
                     type="button"
                     role="option"
                     className="flex w-full px-3 py-2 text-left text-sm hover:bg-base-200"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => add(i.id)}
+                    disabled={disabled}
+                    onClick={() => add(industry.id)}
                   >
-                    {i.name}
+                    {industry.name}
                   </button>
                 </li>
               ))}
             </ul>
-          ) : null}
+          )}
         </div>
       </div>
       <p className="text-xs opacity-70">
-        Choose from the list or search by name. Names come from the Industries page; the company stores industry IDs.
+        Search shows a bounded list of matching industries. Selected industries stay visible even outside current search.
       </p>
     </div>
   );

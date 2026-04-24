@@ -253,6 +253,15 @@ class Industry(IndustryBase):
     updated_at: datetime
 
 
+class IndustryCountResponse(BaseModel):
+    total: int
+
+
+class IndustryOptionsResponse(BaseModel):
+    selected: list[Industry]
+    options: list[Industry]
+
+
 class CompanyResearchStatus(str, Enum):
     pending = "pending"
     indexing = "indexing"

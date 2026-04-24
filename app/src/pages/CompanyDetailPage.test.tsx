@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,11 +7,11 @@ import { resetIndustryCatalogCacheForTests } from "../state/industryCatalog";
 import { CompanyDetailPage } from "./CompanyDetailPage";
 import type { Company } from "../types";
 
-const { getCompany, listApplications, listIndustries, getCompanyApplicationCount, markApplied } = vi.hoisted(
+const { getCompany, listApplications, listIndustryOptions, getCompanyApplicationCount, markApplied } = vi.hoisted(
   () => ({
     getCompany: vi.fn(),
     listApplications: vi.fn(),
-    listIndustries: vi.fn(),
+    listIndustryOptions: vi.fn(),
     getCompanyApplicationCount: vi.fn(),
     markApplied: vi.fn()
   })
@@ -29,7 +29,7 @@ vi.mock("../api", () => ({
   api: {
     getCompany,
     listApplications,
-    listIndustries,
+    listIndustryOptions,
     updateCompany: vi.fn(),
     deleteCompany: vi.fn(),
     clearCompanyResearchDetail: vi.fn(),
@@ -61,11 +61,11 @@ describe("CompanyDetailPage", () => {
   beforeEach(() => {
     getCompany.mockReset();
     listApplications.mockReset();
-    listIndustries.mockReset();
+    listIndustryOptions.mockReset();
     getCompanyApplicationCount.mockReset();
     markApplied.mockReset();
     listApplications.mockResolvedValue([]);
-    listIndustries.mockResolvedValue([]);
+    listIndustryOptions.mockResolvedValue({ selected: [], options: [] });
     getCompanyApplicationCount.mockResolvedValue({ count: 0 });
     markApplied.mockResolvedValue({ id: "a1", applied: true } as never);
   });
@@ -183,26 +183,40 @@ describe("CompanyDetailPage", () => {
     expect(screen.getByRole("link", { name: "https://enrich.example/doc" })).toBeInTheDocument();
   });
 
-  it("reuses cached industries when revisiting company detail", async () => {
-    getCompany.mockResolvedValue(baseCompany());
-    listIndustries.mockResolvedValue([
-      {
-        id: "ind-1",
-        name: "FinTech",
-        description: "Finance",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z"
-      }
-    ]);
-
-    const firstMount = renderPage();
-    await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
-    firstMount.unmount();
+  it("hydrates selected industries without fetching the full catalog", async () => {
+    getCompany.mockResolvedValue(baseCompany({ industry_ids: ["ind-250"] }));
+    listIndustryOptions.mockResolvedValue({
+      selected: [
+        {
+          id: "ind-250",
+          name: "Late Catalog Industry",
+          description: "",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z"
+        }
+      ],
+      options: [
+        {
+          id: "ind-1",
+          name: "FinTech",
+          description: "Finance",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z"
+        }
+      ]
+    });
 
     renderPage();
     await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
-
-    expect(listIndustries).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getAllByText("Late Catalog Industry").length).toBeGreaterThan(0);
+    });
+    expect(listIndustryOptions).toHaveBeenCalledTimes(1);
+    const hydratedCall = listIndustryOptions.mock.calls
+      .map((call) => call[0] as URLSearchParams)
+      .find((params) => params.getAll("ids").includes("ind-250"));
+    expect(hydratedCall).toBeTruthy();
+    expect(hydratedCall?.get("limit")).toBe("20");
   });
 
   it("paginates company applications", async () => {
@@ -241,9 +255,11 @@ describe("CompanyDetailPage", () => {
     expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Go to next page" })).toBeEnabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to next page" }));
 
-    expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
+    });
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.getByText("2026-02-01T00:00:00Z")).toBeInTheDocument();
   });

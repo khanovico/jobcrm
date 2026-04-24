@@ -11,7 +11,7 @@ import {
   applicationStatusBadgeClass,
   formatApplicationStatusLabel
 } from "../applicationStatus";
-import { getAllIndustries } from "../state/industryCatalog";
+import { getIndustryOptions } from "../state/industryCatalog";
 import { invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Application, Company, CompanyResearchStatus, Industry } from "../types";
 
@@ -52,6 +52,10 @@ export const CompanyDetailPage = () => {
   const [applicationsPage, setApplicationsPage] = useState(1);
   const [hasNextApplicationsPage, setHasNextApplicationsPage] = useState(false);
   const [industries, setIndustries] = useState<Industry[]>([]);
+  const [industryOptions, setIndustryOptions] = useState<Industry[]>([]);
+  const [industrySearchInput, setIndustrySearchInput] = useState("");
+  const [industrySearch, setIndustrySearch] = useState("");
+  const [loadingIndustries, setLoadingIndustries] = useState(false);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [linkedin, setLinkedin] = useState("");
@@ -73,19 +77,17 @@ export const CompanyDetailPage = () => {
 
   const industryNameById = useMemo(() => {
     const m: Record<string, string> = {};
-    industries.forEach((i) => {
+    [...industries, ...industryOptions].forEach((i) => {
       m[i.id] = i.name;
     });
     return m;
-  }, [industries]);
+  }, [industries, industryOptions]);
 
   const loadCompanyContext = useCallback(async () => {
     if (!companyId) return;
     setError(null);
     try {
-      const [co, inds] = await Promise.all([api.getCompany(companyId), getAllIndustries()]);
-      setCompany(co);
-      setIndustries(inds);
+      const co = await api.getCompany(companyId);
       setName(co.name);
       setWebsite(co.website ?? "");
       setLinkedin(co.linkedin ?? "");
@@ -99,6 +101,7 @@ export const CompanyDetailPage = () => {
       setActivelyHiring(co.actively_hiring === null || co.actively_hiring === undefined ? "" : co.actively_hiring);
       setHqLocations((co.hq_locations ?? []).join(", "));
       setSelectedIndustryIds([...(co.industry_ids ?? [])]);
+      setCompany(co);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -127,6 +130,35 @@ export const CompanyDetailPage = () => {
   useEffect(() => {
     void loadCompanyContext();
   }, [loadCompanyContext]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setIndustrySearch(industrySearchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [industrySearchInput]);
+
+  useEffect(() => {
+    if (!company || company.id !== companyId) return;
+    let active = true;
+    setLoadingIndustries(true);
+    getIndustryOptions({ ids: selectedIndustryIds, search: industrySearch })
+      .then((response) => {
+        if (!active) return;
+        setIndustries(response.selected);
+        setIndustryOptions(response.options);
+      })
+      .catch((e) => {
+        if (!active) return;
+        setError((e as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoadingIndustries(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [company?.id, companyId, industrySearch, selectedIndustryIds]);
 
   useEffect(() => {
     setApplicationsPage(1);
@@ -549,9 +581,13 @@ export const CompanyDetailPage = () => {
               <div className="form-control w-full">
                 <span className="label-text">Industries</span>
                 <IndustryMultiSelect
-                  industries={industries}
+                  selectedIndustries={industries}
+                  options={industryOptions}
                   value={selectedIndustryIds}
                   onChange={setSelectedIndustryIds}
+                  search={industrySearchInput}
+                  onSearchChange={setIndustrySearchInput}
+                  loading={loadingIndustries}
                   disabled={saving}
                 />
               </div>

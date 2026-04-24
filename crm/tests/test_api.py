@@ -16,6 +16,7 @@ from app.models import (
     CompanyUpdate,
     EmailCreate,
     EmailKind,
+    IndustryCreate,
     NotificationKind,
     NotificationListQuery,
     NotificationPayload,
@@ -232,6 +233,14 @@ def test_auth_required_for_companies() -> None:
     assert response.status_code == 401
 
 
+def test_auth_required_for_industry_picker_endpoints() -> None:
+    app.dependency_overrides[get_repository] = lambda: InMemoryRepository()
+    client = TestClient(app)
+
+    assert client.get("/api/v1/industries/count").status_code == 401
+    assert client.get("/api/v1/industries/options").status_code == 401
+
+
 def test_human_list_endpoints_reject_unbounded_limits() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
@@ -241,6 +250,7 @@ def test_human_list_endpoints_reject_unbounded_limits() -> None:
 
     endpoints = [
         "/api/v1/industries",
+        "/api/v1/industries/options",
         "/api/v1/companies",
         "/api/v1/companies/summary",
         "/api/v1/profiles",
@@ -1879,6 +1889,7 @@ class _FakeMongoCollection:
         self.full_rewrites: list[dict] = []
         self.inserts: list[list[dict]] = []
         self.find_queries: list[dict] = []
+        self.count_queries: list[dict] = []
         self.sorts: list[list[tuple[str, int]]] = []
         self.skips: list[int] = []
         self.limits: list[int] = []
@@ -1943,7 +1954,8 @@ class _FakeMongoCollection:
         )
 
     def count_documents(self, query: dict) -> int:
-        return 0
+        self.count_queries.append(query)
+        return sum(1 for row in self.docs if _matches_mongo_query(row, query))
 
     def create_index(self, keys: list[tuple[str, int]], **kwargs) -> None:
         self.indexes.append((keys, kwargs))
@@ -1966,6 +1978,7 @@ class _FakeMongoDb:
             collection.full_rewrites.clear()
             collection.inserts.clear()
             collection.find_queries.clear()
+            collection.count_queries.clear()
             collection.sorts.clear()
             collection.skips.clear()
             collection.limits.clear()
@@ -2010,6 +2023,10 @@ def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
         [("name", 1)],
         {"collation": {"locale": "en", "strength": 2}},
     ) in db.companies.indexes
+    assert (
+        [("name", 1)],
+        {"collation": {"locale": "en", "strength": 2}},
+    ) in db.industries.indexes
     assert (
         [("name", 1)],
         {"collation": {"locale": "en", "strength": 2}},
@@ -2206,6 +2223,38 @@ def test_mongo_repository_list_profiles_uses_query_pagination() -> None:
     assert profile_limit == 5
     assert profile_collation == {"locale": "en", "strength": 2}
     assert db.profiles.find_queries[-1] == {"frozen": {"$ne": True}}
+
+
+def test_mongo_repository_industry_picker_helpers_use_query_paths() -> None:
+    seed = InMemoryRepository()
+    agriculture = seed.create_industry(IndustryCreate(name="Agriculture"))
+    analytics = seed.create_industry(IndustryCreate(name="Analytics"))
+    retail = seed.create_industry(IndustryCreate(name="Retail"))
+    repo, db = _mongo_repo_for_query_tests()
+    db.industries.docs = [_mongo_doc(retail), _mongo_doc(agriculture), _mongo_doc(analytics)]
+
+    listed = repo.list_industries(skip=1, limit=1, search="a")
+    total = repo.count_industries("a")
+    selected = repo.get_industries_by_ids([retail.id, analytics.id, "missing-id"])
+    options = repo.list_industry_options(limit=1, search="a", exclude_ids=[analytics.id])
+
+    assert [row.id for row in listed] == [analytics.id]
+    assert total == 3
+    assert [row.id for row in selected] == [retail.id, analytics.id]
+    assert [row.id for row in options] == [agriculture.id]
+    assert db.industries.count_queries[-1] == {"name": {"$regex": "a", "$options": "i"}}
+    assert db.industries.find_queries[-3] == {"name": {"$regex": "a", "$options": "i"}}
+    assert db.industries.find_queries[-2] == {
+        "_id": {"$in": [retail.id, analytics.id, "missing-id"]}
+    }
+    assert db.industries.find_queries[-1] == {
+        "name": {"$regex": "a", "$options": "i"},
+        "_id": {"$nin": [analytics.id]},
+    }
+    assert db.industries.skips[-1] == 1
+    assert db.industries.sorts[-1] == [("name", 1)]
+    assert db.industries.limits[-1] == 1
+    assert db.industries.collations[-1] == {"locale": "en", "strength": 2}
 
 
 def test_mongo_repository_list_applications_uses_query_page_and_bounded_enrichment() -> None:
@@ -3133,6 +3182,66 @@ def test_cors_preflight_login() -> None:
     )
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_industry_count_and_options_support_bounded_picker_flows() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    agriculture = client.post("/api/v1/industries", json={"name": "Agriculture"}, headers=headers).json()
+    analytics = client.post("/api/v1/industries", json={"name": "Analytics"}, headers=headers).json()
+    retail = client.post("/api/v1/industries", json={"name": "Retail"}, headers=headers).json()
+    space = client.post("/api/v1/industries", json={"name": "Space"}, headers=headers).json()
+
+    count_all = client.get("/api/v1/industries/count", headers=headers)
+    assert count_all.status_code == 200
+    assert count_all.json() == {"total": 4}
+
+    count_filtered = client.get(
+        "/api/v1/industries/count",
+        headers=headers,
+        params={"search": "an"},
+    )
+    assert count_filtered.status_code == 200
+    assert count_filtered.json() == {"total": 1}
+
+    options = client.get(
+        "/api/v1/industries/options",
+        headers=headers,
+        params=[
+            ("ids", retail["id"]),
+            ("ids", analytics["id"]),
+            ("ids", "missing-id"),
+            ("search", "a"),
+            ("limit", "1"),
+        ],
+    )
+    assert options.status_code == 200
+    assert options.json() == {
+        "selected": [retail, analytics],
+        "options": [agriculture],
+    }
+
+    no_search = client.get(
+        "/api/v1/industries/options",
+        headers=headers,
+        params=[("ids", space["id"]), ("limit", "2")],
+    )
+    assert no_search.status_code == 200
+    assert no_search.json() == {
+        "selected": [space],
+        "options": [agriculture, analytics],
+    }
+
+    too_many_ids = client.get(
+        "/api/v1/industries/options",
+        headers=headers,
+        params=[("ids", f"ind-{index}") for index in range(101)],
+    )
+    assert too_many_ids.status_code == 422
 
 
 def test_bulk_create_industries_and_duplicate_validation() -> None:
