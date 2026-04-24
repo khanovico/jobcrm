@@ -1350,23 +1350,24 @@ def agent_bulk_update_companies(
 ) -> list[Company]:
     require_agent_scope(agent, "write")
     updated: list[Company] = []
-    for item in body.updates:
-        company = repo.update_company(item.company_id, item.payload)
-        if not company:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Company not found: {item.company_id}",
+    with repo.bulk_persistence():
+        for item in body.updates:
+            company = repo.update_company(item.company_id, item.payload)
+            if not company:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Company not found: {item.company_id}",
+                )
+            _audit(
+                repo,
+                actor_type=ActorType.agent,
+                actor_id=agent.key_id,
+                action="bulk_update",
+                entity_type="company",
+                entity_id=item.company_id,
+                metadata={"fields": list(item.payload.model_dump(exclude_none=True).keys())},
             )
-        _audit(
-            repo,
-            actor_type=ActorType.agent,
-            actor_id=agent.key_id,
-            action="bulk_update",
-            entity_type="company",
-            entity_id=item.company_id,
-            metadata={"fields": list(item.payload.model_dump(exclude_none=True).keys())},
-        )
-        updated.append(company)
+            updated.append(company)
     return updated
 
 

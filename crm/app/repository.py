@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Literal
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
+from typing import Literal
 from uuid import uuid4
 
-from pymongo import MongoClient
+from pymongo import DeleteOne, MongoClient, ReplaceOne
 
 from app.company_name import normalize_company_name
 from app.config import settings
@@ -59,6 +61,18 @@ from app.models import (
 RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON = "Related company research cleared"
 
 
+class _MongoPersistenceBatch:
+    def __init__(self) -> None:
+        self.depth = 0
+        self.replacements: dict[str, dict[str, object]] = {}
+        self.deletes: dict[str, set[str]] = {}
+
+
+_MONGO_PERSISTENCE_BATCH: ContextVar[_MongoPersistenceBatch | None] = ContextVar(
+    "mongo_persistence_batch", default=None
+)
+
+
 def _recipient_email_from_cold_email_plan(plan: ColdEmailPlan | dict | None) -> str | None:
     """Resolve recipient email from a model or raw dict (Mongo / legacy / model_construct)."""
     if plan is None:
@@ -104,6 +118,10 @@ def _cold_email_plan_ready_for_applied_list(plan: ColdEmailPlan | dict | None) -
 
 
 class BaseRepository:
+    @contextmanager
+    def bulk_persistence(self):
+        yield
+
     def create_user(self, payload: UserCreate, password_hash: str) -> UserInDB:
         raise NotImplementedError
 
@@ -1468,6 +1486,7 @@ class MongoRepository(InMemoryRepository):
         return loaded
 
     def _sync(self) -> None:
+        # Repair/bootstrap fallback only. Normal writes must use targeted helpers below.
         self._sync_collection("users", self.users)
         self._sync_collection("industries", self.industries)
         self._sync_collection("companies", self.companies)
@@ -1491,46 +1510,160 @@ class MongoRepository(InMemoryRepository):
         if docs:
             collection.insert_many(docs)
 
+    @contextmanager
+    def bulk_persistence(self):
+        batch = _MONGO_PERSISTENCE_BATCH.get()
+        token = None
+        if batch is None:
+            batch = _MongoPersistenceBatch()
+            token = _MONGO_PERSISTENCE_BATCH.set(batch)
+        batch.depth += 1
+        try:
+            yield
+        finally:
+            batch.depth -= 1
+            if token is not None:
+                try:
+                    self._flush_bulk_persistence(batch)
+                finally:
+                    _MONGO_PERSISTENCE_BATCH.reset(token)
+
+    def _flush_bulk_persistence(self, batch: _MongoPersistenceBatch) -> None:
+        for collection_name in set(batch.deletes) | set(batch.replacements):
+            collection = self.db[collection_name]
+            ids = batch.deletes.get(collection_name, set())
+            values = batch.replacements.get(collection_name, {})
+            operations = [DeleteOne({"_id": item_id}) for item_id in ids]
+            operations.extend(
+                ReplaceOne(
+                    {"_id": item.id}, self._serialize_document(item), upsert=True
+                )
+                for item in values.values()
+            )
+            if not operations:
+                continue
+            if hasattr(collection, "bulk_write"):
+                collection.bulk_write(operations, ordered=False)
+                continue
+            for item_id in ids:
+                collection.delete_one({"_id": item_id})
+            for item in values.values():
+                self._persist_document_now(collection_name, item)
+
+    def _serialize_document(self, item) -> dict:
+        payload = item.model_dump(mode="json")
+        payload["_id"] = payload["id"]
+        payload.pop("id")
+        return payload
+
+    def _persist_document_now(self, collection_name: str, item) -> None:
+        self.db[collection_name].replace_one(
+            {"_id": item.id}, self._serialize_document(item), upsert=True
+        )
+
+    def _persist_document(self, collection_name: str, item) -> None:
+        batch = _MONGO_PERSISTENCE_BATCH.get()
+        if batch is not None:
+            item_id = str(item.id)
+            batch.deletes.setdefault(collection_name, set()).discard(item_id)
+            batch.replacements.setdefault(collection_name, {})[item_id] = item
+            return
+        self._persist_document_now(collection_name, item)
+
+    def _delete_document(self, collection_name: str, item_id: str) -> None:
+        batch = _MONGO_PERSISTENCE_BATCH.get()
+        if batch is not None:
+            batch.replacements.setdefault(collection_name, {}).pop(item_id, None)
+            batch.deletes.setdefault(collection_name, set()).add(item_id)
+            return
+        self.db[collection_name].delete_one({"_id": item_id})
+
+    def _persist_ids(self, collection_name: str, values: dict, item_ids: set[str]) -> None:
+        for item_id in item_ids:
+            item = values.get(item_id)
+            if item is None:
+                self._delete_document(collection_name, item_id)
+            else:
+                self._persist_document(collection_name, item)
+
+    def _changed_ids(self, before: dict[str, object], values: dict) -> set[str]:
+        item_ids = set(before) | set(values)
+        return {item_id for item_id in item_ids if before.get(item_id) != values.get(item_id)}
+
+    def _applications_for_company(self, company_id: str) -> dict[str, Application]:
+        return {a.id: a for a in self.applications.values() if a.company_id == company_id}
+
+    def _ppas_for_applications(self, application_ids: set[str]) -> dict[str, PerProfileApplication]:
+        return {
+            p.id: p
+            for p in self.per_profile_applications.values()
+            if p.application_id in application_ids
+        }
+
+    def _ppa_ids_for_applications(self, application_ids: set[str]) -> set[str]:
+        return set(self._ppas_for_applications(application_ids))
+
+    def _emails_for_ppas(self, ppa_ids: set[str]) -> dict[str, Email]:
+        return {
+            e.id: e for e in self.emails.values() if e.per_profile_application_id in ppa_ids
+        }
+
+    def _email_ids_for_ppas(self, ppa_ids: set[str]) -> set[str]:
+        return set(self._emails_for_ppas(ppa_ids))
+
     def create_user(self, payload: UserCreate, password_hash: str) -> UserInDB:
         user = super().create_user(payload, password_hash)
-        self._sync()
+        self._persist_document("users", user)
         return user
 
     def create_industry(self, payload: IndustryCreate) -> Industry:
         industry = super().create_industry(payload)
-        self._sync()
+        self._persist_document("industries", industry)
         return industry
 
     def update_industry(self, industry_id: str, payload: IndustryUpdate) -> Industry | None:
         industry = super().update_industry(industry_id, payload)
-        self._sync()
+        if industry:
+            self._persist_document("industries", industry)
         return industry
 
     def delete_industry(self, industry_id: str) -> bool:
         deleted = super().delete_industry(industry_id)
-        self._sync()
+        if deleted:
+            self._delete_document("industries", industry_id)
         return deleted
 
     def update_company(self, company_id: str, payload: CompanyUpdate) -> Company | None:
+        applications_before = self._applications_for_company(company_id)
         company = super().update_company(company_id, payload)
-        self._sync()
+        if company:
+            application_ids = self._changed_ids(
+                applications_before, self._applications_for_company(company_id)
+            )
+            self._persist_document("companies", company)
+            self._persist_ids("applications", self.applications, application_ids)
         return company
 
     def create_company(self, payload: CompanyCreate) -> Company:
         company = super().create_company(payload)
-        self._sync()
+        self._persist_document("companies", company)
         return company
 
     def unarchive_company(self, company_id: str, payload: CompanyCreate) -> Company | None:
         company = super().unarchive_company(company_id, payload)
         if company:
-            self._sync()
+            self._persist_document("companies", company)
         return company
 
     def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        applications_before = self._applications_for_company(company_id)
         ok, n = super().archive_company(company_id, archive_reason)
         if ok:
-            self._sync()
+            application_ids = self._changed_ids(
+                applications_before, self._applications_for_company(company_id)
+            )
+            self._persist_document("companies", self.companies[company_id])
+            self._persist_ids("applications", self.applications, application_ids)
         return (ok, n)
 
     def clear_company_research_detail(
@@ -1539,11 +1672,28 @@ class MongoRepository(InMemoryRepository):
         *,
         related_applications: Literal["none", "archive", "reset"] = "none",
     ) -> Company | None:
-        company = super().clear_company_research_detail(
-            company_id, related_applications=related_applications
-        )
-        if company:
-            self._sync()
+        applications_before = self._applications_for_company(company_id)
+        application_ids_before = set(applications_before)
+        ppas_before = self._ppas_for_applications(application_ids_before)
+        emails_before = self._emails_for_ppas(set(ppas_before))
+        with self.bulk_persistence():
+            company = super().clear_company_research_detail(
+                company_id, related_applications=related_applications
+            )
+            if company:
+                applications_after = self._applications_for_company(company_id)
+                application_ids = self._changed_ids(applications_before, applications_after)
+                related_application_ids = set(applications_before) | set(applications_after)
+                ppas_after = self._ppas_for_applications(related_application_ids)
+                ppa_ids = self._changed_ids(ppas_before, ppas_after)
+                emails_after = self._emails_for_ppas(set(ppas_before) | set(ppas_after))
+                email_ids = self._changed_ids(emails_before, emails_after)
+                self._persist_document("companies", company)
+                self._persist_ids("applications", self.applications, application_ids)
+                self._persist_ids(
+                    "per_profile_applications", self.per_profile_applications, ppa_ids
+                )
+                self._persist_ids("emails", self.emails, email_ids)
         return company
 
     def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
@@ -1577,22 +1727,24 @@ class MongoRepository(InMemoryRepository):
 
     def create_profile(self, payload: ProfileCreate) -> Profile:
         profile = super().create_profile(payload)
-        self._sync()
+        self._persist_document("profiles", profile)
         return profile
 
     def update_profile(self, profile_id: str, payload: ProfileUpdate) -> Profile | None:
         profile = super().update_profile(profile_id, payload)
-        self._sync()
+        if profile:
+            self._persist_document("profiles", profile)
         return profile
 
     def delete_profile(self, profile_id: str) -> bool:
         deleted = super().delete_profile(profile_id)
-        self._sync()
+        if deleted:
+            self._delete_document("profiles", profile_id)
         return deleted
 
     def create_application(self, payload: ApplicationCreate, created_by_user_id: str | None) -> Application:
         application = super().create_application(payload, created_by_user_id)
-        self._sync()
+        self._persist_document("applications", application)
         return application
 
     def bootstrap_application(
@@ -1602,38 +1754,51 @@ class MongoRepository(InMemoryRepository):
         created_by_user_id: str | None,
     ) -> tuple[Company, Application]:
         result = super().bootstrap_application(company, payload, created_by_user_id)
-        self._sync()
         return result
 
     def update_application(
         self, application_id: str, payload: ApplicationUpdate
     ) -> Application | None:
         application = super().update_application(application_id, payload)
-        self._sync()
+        if application:
+            self._persist_document("applications", application)
         return application
 
     def mark_application_applied(
         self, application_id: str, applied: bool, *, force: bool = False
     ) -> Application | None:
         application = super().mark_application_applied(application_id, applied, force=force)
-        self._sync()
+        if application:
+            self._persist_document("applications", application)
         return application
 
     def mark_application_email_sent(
         self, application_id: str, sent: bool
     ) -> Application | None:
         application = super().mark_application_email_sent(application_id, sent)
-        self._sync()
+        if application:
+            self._persist_document("applications", application)
         return application
 
     def delete_application(self, application_id: str) -> bool:
         deleted = super().delete_application(application_id)
-        self._sync()
+        if deleted:
+            self._delete_document("applications", application_id)
         return deleted
 
     def clear_application_to_company_research_pending(self, application_id: str) -> Application | None:
+        application_ids = {application_id}
+        ppa_ids = self._ppa_ids_for_applications(application_ids)
+        email_ids = self._email_ids_for_ppas(ppa_ids)
         application = super().clear_application_to_company_research_pending(application_id)
-        self._sync()
+        if application:
+            ppa_ids.update(self._ppa_ids_for_applications(application_ids))
+            email_ids.update(self._email_ids_for_ppas(ppa_ids))
+            self._persist_document("applications", application)
+            self._persist_ids(
+                "per_profile_applications", self.per_profile_applications, ppa_ids
+            )
+            self._persist_ids("emails", self.emails, email_ids)
         return application
 
     def create_audit_event(
@@ -1654,7 +1819,7 @@ class MongoRepository(InMemoryRepository):
             entity_id=entity_id,
             metadata=metadata,
         )
-        self._sync()
+        self._persist_document("audit_events", event)
         return event
 
     def create_notification(
@@ -1675,41 +1840,59 @@ class MongoRepository(InMemoryRepository):
             timestamp=timestamp,
             check=check,
         )
-        self._sync()
+        self._persist_document("notifications", note)
         return note
 
     def mark_notification_read(self, user_id: str, notification_id: str) -> UserNotification | None:
         note = super().mark_notification_read(user_id, notification_id)
-        self._sync()
+        if note:
+            self._persist_document("notifications", note)
         return note
 
     def mark_notifications_read_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        owned_ids = {
+            note_id
+            for note_id in dict.fromkeys(notification_ids)
+            if (
+                (note := self.notifications.get(note_id))
+                and note.user_id == user_id
+                and note.read_at is None
+            )
+        }
         n = super().mark_notifications_read_bulk(user_id, notification_ids)
         if n:
-            self._sync()
+            self._persist_ids("notifications", self.notifications, owned_ids)
         return n
 
     def delete_notification(self, user_id: str, notification_id: str) -> bool:
         ok = super().delete_notification(user_id, notification_id)
         if ok:
-            self._sync()
+            self._delete_document("notifications", notification_id)
         return ok
 
     def delete_notifications_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        owned_ids = {
+            note_id
+            for note_id in dict.fromkeys(notification_ids)
+            if (
+                (note := self.notifications.get(note_id))
+                and note.user_id == user_id
+            )
+        }
         n = super().delete_notifications_bulk(user_id, notification_ids)
         if n:
-            self._sync()
+            self._persist_ids("notifications", self.notifications, owned_ids)
         return n
 
     def create_agent_api_key(self, payload: AgentApiKeyCreate, key_hash: str) -> AgentApiKeyInDB:
         rec = super().create_agent_api_key(payload, key_hash)
-        self._sync()
+        self._persist_document("agent_api_keys", rec)
         return rec
 
     def revoke_agent_api_key(self, key_id: str) -> bool:
         revoked = super().revoke_agent_api_key(key_id)
         if revoked:
-            self._sync()
+            self._delete_document("agent_api_keys", key_id)
             self._persist_workers_mongo()
         return revoked
 
@@ -1726,37 +1909,42 @@ class MongoRepository(InMemoryRepository):
         self, payload: PerProfileApplicationCreate
     ) -> PerProfileApplication:
         ppa = super().create_per_profile_application(payload)
-        self._sync()
+        self._persist_document("per_profile_applications", ppa)
         return ppa
 
     def update_per_profile_application(
         self, ppa_id: str, payload: PerProfileApplicationUpdate
     ) -> PerProfileApplication | None:
         ppa = super().update_per_profile_application(ppa_id, payload)
-        self._sync()
+        if ppa:
+            self._persist_document("per_profile_applications", ppa)
         return ppa
 
     def delete_per_profile_application(self, ppa_id: str) -> bool:
         deleted = super().delete_per_profile_application(ppa_id)
-        self._sync()
+        if deleted:
+            self._delete_document("per_profile_applications", ppa_id)
         return deleted
 
     def create_email(self, payload: EmailCreate) -> Email:
         email = super().create_email(payload)
-        self._sync()
+        self._persist_document("emails", email)
         return email
 
     def update_email(self, email_id: str, payload: EmailUpdate) -> Email | None:
         email = super().update_email(email_id, payload)
-        self._sync()
+        if email:
+            self._persist_document("emails", email)
         return email
 
     def mark_email_sent(self, email_id: str, sent: bool) -> Email | None:
         email = super().mark_email_sent(email_id, sent)
-        self._sync()
+        if email:
+            self._persist_document("emails", email)
         return email
 
     def delete_email(self, email_id: str) -> bool:
         deleted = super().delete_email(email_id)
-        self._sync()
+        if deleted:
+            self._delete_document("emails", email_id)
         return deleted
