@@ -34,6 +34,9 @@
 5. Validation and handoff
    - Run lightweight validation appropriate for docs-only change.
    - Commit focused docs changes.
+6. Deep frontend UX pass
+   - Re-review every frontend feature/page after user feedback.
+   - Expand audit with interaction-flow, design, accessibility, recoverability, and feedback issues.
 
 ## TODO
 - [x] Create branch.
@@ -44,6 +47,11 @@
 - [x] Write dedicated issue document.
 - [x] Validate docs-only change.
 - [x] Commit.
+- [x] Re-open audit for deeper frontend UX review.
+- [x] Audit remaining frontend pages/components.
+- [x] Expand dedicated issue document with detailed UX findings.
+- [x] Validate expanded docs-only change.
+- [x] Commit expanded audit.
 
 ## Parallel-Safe Work
 - Static reads of frontend and backend files are parallel-safe.
