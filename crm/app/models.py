@@ -761,6 +761,11 @@ class UserNotification(BaseModel):
         }
 
 
+class NotificationSummaryResponse(BaseModel):
+    unread_count: int
+    newest_unread: list[UserNotification]
+
+
 class AgentApiKeyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     scopes: list[str] = Field(default_factory=lambda: ["read", "write"])

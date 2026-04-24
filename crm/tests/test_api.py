@@ -1246,6 +1246,76 @@ def test_notifications_unread_count_endpoint_returns_only_unread_total() -> None
     assert response.json() == {"count": 2}
 
 
+def test_notifications_summary_returns_count_and_bounded_newest_unread_rows() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    user = repo.get_user_by_email("test@example.com")
+    assert user is not None
+
+    first = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a1", message="Older"),
+    )
+    second = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.FOLLOW_UP_DRAFT,
+        notification_type=NotificationSeverity.WARN,
+        payload=NotificationPayload(id="a2", message="Newest"),
+    )
+    newest = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.SYSTEM_ERROR,
+        notification_type=NotificationSeverity.FAILED,
+        payload=NotificationPayload(id="a3", message="Read"),
+    )
+    repo.mark_notification_read(user.id, first.id)
+
+    response = client.get(
+        "/api/v1/notifications/summary",
+        params={"latest_limit": 1},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unread_count"] == 2
+    assert [n["id"] for n in body["newest_unread"]] == [newest.id]
+
+
+def test_notifications_summary_zero_limit_skips_notification_list_lookup() -> None:
+    class SummaryRepo(InMemoryRepository):
+        def list_notifications(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise AssertionError("latest_limit=0 must not fetch notification rows")
+
+    repo = SummaryRepo()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    user = repo.get_user_by_email("test@example.com")
+    assert user is not None
+    repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a1", message="Unread"),
+    )
+
+    response = client.get(
+        "/api/v1/notifications/summary",
+        params={"latest_limit": 0},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"unread_count": 1, "newest_unread": []}
+
+
 def test_notifications_bulk_read_marks_only_selected_unread_rows() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
@@ -1784,6 +1854,65 @@ def test_revoke_agent_key_removes_it_and_blocks_future_agent_access() -> None:
     missing = client.delete(f"/api/v1/admin/agent-keys/{key_id}", headers=headers)
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Agent API key not found"
+
+
+def test_user_role_cannot_list_or_revoke_agent_keys() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _create_user_and_login(
+        client,
+        name="User",
+        email="agent-key-user@example.com",
+        role="user",
+    )
+    headers = _auth_headers(token)
+
+    listed = client.get("/api/v1/admin/agent-keys", headers=headers)
+    assert listed.status_code == 403
+    revoked = client.delete("/api/v1/admin/agent-keys/key-id", headers=headers)
+    assert revoked.status_code == 403
+
+
+def test_revoke_agent_key_releases_owned_worker_leases() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _create_user_and_login(
+        client,
+        name="Admin",
+        email="agent-key-lease-admin@example.com",
+        role="admin",
+    )
+    headers = _auth_headers(token)
+    first = client.post("/api/v1/admin/agent-keys", json={"name": "first-worker-key"}, headers=headers)
+    second = client.post("/api/v1/admin/agent-keys", json={"name": "second-worker-key"}, headers=headers)
+    assert first.status_code == 201
+    assert second.status_code == 201
+    first_raw = first.json()["raw_key"]
+    first_id = first.json()["id"]
+    second_raw = second.json()["raw_key"]
+
+    first_agent_headers = {"X-API-Key": first_raw}
+    assigned = client.post(
+        "/api/v1/agent/workers/assign/company-researcher",
+        headers=first_agent_headers,
+    )
+    assert assigned.status_code == 200
+    blocked = client.post(
+        "/api/v1/agent/workers/assign/company-researcher",
+        headers={"X-API-Key": second_raw},
+    )
+    assert blocked.status_code == 409
+
+    revoked = client.delete(f"/api/v1/admin/agent-keys/{first_id}", headers=headers)
+    assert revoked.status_code == 204
+
+    reassigned = client.post(
+        "/api/v1/agent/workers/assign/company-researcher",
+        headers={"X-API-Key": second_raw},
+    )
+    assert reassigned.status_code == 200
 
 
 def test_agent_worker_path_assign_release_and_count() -> None:

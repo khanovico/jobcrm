@@ -343,6 +343,9 @@ class BaseRepository:
     def revoke_agent_api_key(self, key_id: str) -> bool:
         raise NotImplementedError
 
+    def release_worker_leases_for_agent_key(self, key_id: str) -> int:
+        raise NotImplementedError
+
     def get_agent_api_key_by_hash(self, key_hash: str) -> AgentApiKeyInDB | None:
         raise NotImplementedError
 
@@ -1257,7 +1260,14 @@ class InMemoryRepository(BaseRepository):
         return sorted(self.agent_api_keys.values(), key=lambda k: k.created_at, reverse=True)
 
     def revoke_agent_api_key(self, key_id: str) -> bool:
+        self.release_worker_leases_for_agent_key(key_id)
         return self.agent_api_keys.pop(key_id, None) is not None
+
+    def release_worker_leases_for_agent_key(self, key_id: str) -> int:
+        to_drop = [lid for lid, lease in self._worker_leases.items() if lease.agent_key_id == key_id]
+        for lease_id in to_drop:
+            self._worker_leases.pop(lease_id, None)
+        return len(to_drop)
 
     def get_agent_api_key_by_hash(self, key_hash: str) -> AgentApiKeyInDB | None:
         return next((k for k in self.agent_api_keys.values() if k.key_hash == key_hash), None)
@@ -1700,11 +1710,17 @@ class MongoRepository(InMemoryRepository):
         revoked = super().revoke_agent_api_key(key_id)
         if revoked:
             self._sync()
+            self._persist_workers_mongo()
         return revoked
 
     def touch_agent_api_key_used(self, key_id: str) -> None:
-        # Hot path: update in-memory only (avoid full Mongo resync on every agent request).
         super().touch_agent_api_key_used(key_id)
+        key = self.agent_api_keys.get(key_id)
+        if not key:
+            return
+        payload = key.model_dump(mode="json")
+        payload["_id"] = payload.pop("id")
+        self.db.agent_api_keys.replace_one({"_id": key_id}, payload, upsert=True)
 
     def create_per_profile_application(
         self, payload: PerProfileApplicationCreate

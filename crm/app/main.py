@@ -62,6 +62,7 @@ from app.models import (
     NotificationBulkDelete,
     NotificationBulkRead,
     NotificationListQuery,
+    NotificationSummaryResponse,
     PerProfileApplication,
     PerProfileApplicationCreate,
     PerProfileApplicationDetail,
@@ -1073,6 +1074,30 @@ def unread_notifications_count(
     repo: BaseRepository = Depends(get_repository),
 ) -> dict[str, int]:
     return {"count": repo.count_unread_notifications(user.id)}
+
+
+@app.get(
+    "/api/v1/notifications/summary",
+    response_model=NotificationSummaryResponse,
+    response_model_by_alias=True,
+)
+def notifications_summary_route(
+    latest_limit: int = Query(default=10, ge=0, le=25),
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> NotificationSummaryResponse:
+    rows = (
+        []
+        if latest_limit == 0
+        else repo.list_notifications(
+            user.id,
+            NotificationListQuery(skip=0, limit=latest_limit, unread_only=True),
+        )
+    )
+    return NotificationSummaryResponse(
+        unread_count=repo.count_unread_notifications(user.id),
+        newest_unread=[enrich_notification_link(repo, user.id, n) for n in rows],
+    )
 
 
 @app.post("/api/v1/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)

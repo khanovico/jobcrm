@@ -26,6 +26,10 @@ Clear every issue in `.agents/docs/UX_PERFORMANCE_AUDIT_2026-04-24.md` through s
 - UXPERF-047: Notification message expansion/detail.
 - UXPERF-048: Confirm destructive bulk notification delete.
 
+## Batch 3 Tickets
+- UXPERF-050: API key list/revoke flow.
+- UXPERF-016: Reduce notification polling request count and link enrichment pressure.
+
 ## Relevant Files
 - `app/src/App.tsx`
 - `app/src/pages/LoginPage.tsx`
@@ -48,6 +52,8 @@ Clear every issue in `.agents/docs/UX_PERFORMANCE_AUDIT_2026-04-24.md` through s
 - Worker D owns profile education validation: `ProfileDetailPage.tsx`, related tests.
 - Worker E owns company-list wording: `CompaniesPage.tsx`, related tests.
 - Main agent owns notifications detail/delete confirmation: `NotificationsPage.tsx`, `NotificationsPage.test.tsx`.
+- Worker F owns API key management: `SettingsPage.tsx`, settings API methods/types, backend key list/revoke endpoints and tests.
+- Main agent owns notification polling endpoint/Layout integration for UXPERF-016.
 
 ## Dependencies And Conflict Risks
 - Worker A may touch `Layout.tsx`; no other batch work should edit it.
@@ -76,3 +82,9 @@ Clear every issue in `.agents/docs/UX_PERFORMANCE_AUDIT_2026-04-24.md` through s
 - [x] Run review and scalability review on batch 2.
 - [x] Check completed audit rows for batch 2.
 - [x] Commit batch 2.
+- [x] Spawn Worker F for UXPERF-050.
+- [x] Implement UXPERF-016 locally.
+- [x] Run batch 3 targeted tests/build.
+- [x] Run review and scalability review on batch 3.
+- [x] Check completed audit rows for batch 3.
+- [x] Commit batch 3.

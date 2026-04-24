@@ -116,11 +116,10 @@ export const Layout = () => {
       if (pollInFlightRef.current) return;
       pollInFlightRef.current = true;
       try {
-        const unread = await api.getUnreadNotificationsCount();
-        if (!cancelled) setUnreadCount(unread.count);
-
-        const rows = await api.listNotifications({ unreadOnly: true, skip: 0, limit: 25 });
+        const summary = await api.getNotificationsSummary(10);
         if (cancelled) return;
+        setUnreadCount(summary.unread_count);
+        const rows = summary.newest_unread;
 
         let initialDone = false;
         try {
@@ -173,8 +172,8 @@ export const Layout = () => {
     const refreshUnreadBadge = () => {
       void (async () => {
         try {
-          const unread = await api.getUnreadNotificationsCount();
-          if (!cancelled) setUnreadCount(unread.count);
+          const summary = await api.getNotificationsSummary(0);
+          if (!cancelled) setUnreadCount(summary.unread_count);
         } catch {
           if (!cancelled) setUnreadCount(0);
         }

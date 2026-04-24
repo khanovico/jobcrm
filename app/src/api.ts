@@ -262,6 +262,10 @@ export const api = {
   },
   getUnreadNotificationsCount: () =>
     request<{ count: number }>("/api/v1/notifications/unread-count"),
+  getNotificationsSummary: (latestLimit = 10) =>
+    request<{ unread_count: number; newest_unread: UserNotification[] }>(
+      `/api/v1/notifications/summary?latest_limit=${latestLimit}`
+    ),
   markNotificationRead: (id: string) =>
     request<void>(`/api/v1/notifications/${id}/read`, { method: "POST" }),
   markNotificationsReadBulk: (ids: string[]) =>

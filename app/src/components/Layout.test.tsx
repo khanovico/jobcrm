@@ -7,10 +7,9 @@ import { AuthProvider } from "../auth";
 import { NOTIFICATIONS_INBOX_CHANGED } from "../notificationSync";
 import { Layout } from "./Layout";
 
-const { getUnreadNotificationsCount, listNotifications, setUnauthorizedHandler, getMe } = vi.hoisted(
+const { getNotificationsSummary, setUnauthorizedHandler, getMe } = vi.hoisted(
   () => ({
-    getUnreadNotificationsCount: vi.fn(),
-    listNotifications: vi.fn(),
+    getNotificationsSummary: vi.fn(),
     setUnauthorizedHandler: vi.fn(),
     getMe: vi.fn()
   })
@@ -18,8 +17,7 @@ const { getUnreadNotificationsCount, listNotifications, setUnauthorizedHandler, 
 
 vi.mock("../api", () => ({
   api: {
-    getUnreadNotificationsCount,
-    listNotifications,
+    getNotificationsSummary,
     getMe
   },
   setUnauthorizedHandler
@@ -34,9 +32,8 @@ beforeEach(() => {
   localStorage.setItem("jobcrm-token", "test-token");
   sessionStorage.removeItem("jobcrm-notifications-initial-sync");
   sessionStorage.removeItem("jobcrm-notifications-seen-ids");
-  getUnreadNotificationsCount.mockReset();
-  listNotifications.mockReset();
-  listNotifications.mockResolvedValue([]);
+  getNotificationsSummary.mockReset();
+  getNotificationsSummary.mockResolvedValue({ unread_count: 0, newest_unread: [] });
   getMe.mockReset();
   getMe.mockResolvedValue({ id: "u1", name: "Admin", email: "admin@example.com", role: "admin", admin: true });
 });
@@ -47,7 +44,7 @@ function Placeholder({ title }: { title: string }) {
 
 describe("Layout", () => {
   it("marks the current route in the sidebar", () => {
-    getUnreadNotificationsCount.mockResolvedValue({ count: 0 });
+    getNotificationsSummary.mockResolvedValue({ unread_count: 0, newest_unread: [] });
     render(
       <MemoryRouter initialEntries={["/applications"]}>
         <AuthProvider>
@@ -66,7 +63,7 @@ describe("Layout", () => {
   });
 
   it("highlights Dashboard only on the root path", () => {
-    getUnreadNotificationsCount.mockResolvedValue({ count: 0 });
+    getNotificationsSummary.mockResolvedValue({ unread_count: 0, newest_unread: [] });
     render(
       <MemoryRouter initialEntries={["/"]}>
         <AuthProvider>
@@ -85,8 +82,7 @@ describe("Layout", () => {
   });
 
   it("shows unread badge for notifications and polls notifications on an interval", async () => {
-    getUnreadNotificationsCount.mockResolvedValueOnce({ count: 2 });
-    listNotifications.mockResolvedValue([]);
+    getNotificationsSummary.mockResolvedValueOnce({ unread_count: 2, newest_unread: [] });
     const intervalSpy = vi.spyOn(window, "setInterval");
 
     render(
@@ -104,14 +100,14 @@ describe("Layout", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Unread notifications: 2")).toBeInTheDocument();
     });
-    expect(getUnreadNotificationsCount).toHaveBeenCalled();
-    expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 25 });
+    expect(getNotificationsSummary).toHaveBeenCalledWith(10);
     expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 45_000);
   });
 
   it("refreshes sidebar unread badge when inbox changes without waiting for poll", async () => {
-    getUnreadNotificationsCount.mockResolvedValueOnce({ count: 3 }).mockResolvedValueOnce({ count: 0 });
-    listNotifications.mockResolvedValue([]);
+    getNotificationsSummary
+      .mockResolvedValueOnce({ unread_count: 3, newest_unread: [] })
+      .mockResolvedValueOnce({ unread_count: 0, newest_unread: [] });
 
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -134,28 +130,31 @@ describe("Layout", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText(/Unread notifications:/)).not.toBeInTheDocument();
     });
-    expect(getUnreadNotificationsCount).toHaveBeenCalledTimes(2);
+    expect(getNotificationsSummary).toHaveBeenCalledTimes(2);
+    expect(getNotificationsSummary).toHaveBeenLastCalledWith(0);
   });
 
   it("shows a toast when a new unread notification appears after initial load", async () => {
     const intervalSpy = vi.spyOn(window, "setInterval");
-    getUnreadNotificationsCount.mockResolvedValue({ count: 1 });
-    listNotifications
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: "new-note",
-          user_id: "u1",
-          notification: "APPLICATION_UPDATE",
-          type: "SUCCESS",
-          timestamp: "2026-01-01T00:00:00Z",
-          check: false,
-          payload: { id: "a1", message: "Prep complete" },
-          created_at: "2026-01-01T00:00:00Z",
-          read_at: null,
-          link: "/applications/a1"
-        }
-      ]);
+    getNotificationsSummary
+      .mockResolvedValueOnce({ unread_count: 1, newest_unread: [] })
+      .mockResolvedValueOnce({
+        unread_count: 1,
+        newest_unread: [
+          {
+            id: "new-note",
+            user_id: "u1",
+            notification: "APPLICATION_UPDATE",
+            type: "SUCCESS",
+            timestamp: "2026-01-01T00:00:00Z",
+            check: false,
+            payload: { id: "a1", message: "Prep complete" },
+            created_at: "2026-01-01T00:00:00Z",
+            read_at: null,
+            link: "/applications/a1"
+          }
+        ]
+      });
 
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -169,7 +168,7 @@ describe("Layout", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(listNotifications).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getNotificationsSummary).toHaveBeenCalledTimes(1));
 
     const pollCallback = intervalSpy.mock.calls.find((c) => c[1] === 45_000)?.[0] as () => void;
     expect(pollCallback).toBeDefined();
@@ -184,7 +183,7 @@ describe("Layout", () => {
 
   it("hides settings and audit links for user role", async () => {
     getMe.mockResolvedValueOnce({ id: "u2", name: "User", email: "user@example.com", role: "user", admin: false });
-    getUnreadNotificationsCount.mockResolvedValue({ count: 0 });
+    getNotificationsSummary.mockResolvedValue({ unread_count: 0, newest_unread: [] });
 
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -204,7 +203,7 @@ describe("Layout", () => {
   });
 
   it("keeps the sidebar mounted while a lazy route loads", async () => {
-    getUnreadNotificationsCount.mockResolvedValue({ count: 0 });
+    getNotificationsSummary.mockResolvedValue({ unread_count: 0, newest_unread: [] });
     let resolveLazyRoute: ((value: { default: () => JSX.Element }) => void) | null = null;
     const LazyRoute = lazy(
       () =>
@@ -239,7 +238,7 @@ describe("Layout", () => {
 
   it("persists theme preference and exposes current theme state", async () => {
     localStorage.setItem("jobcrm-theme", "dark");
-    getUnreadNotificationsCount.mockResolvedValue({ count: 0 });
+    getNotificationsSummary.mockResolvedValue({ unread_count: 0, newest_unread: [] });
 
     render(
       <MemoryRouter initialEntries={["/"]}>
