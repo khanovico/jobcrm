@@ -1461,7 +1461,7 @@ def test_notifications_bulk_delete_returns_deleted_count() -> None:
     bulk = client.request(
         "DELETE",
         "/api/v1/notifications",
-        json={"ids": [n1.id, n2.id, "missing-id"]},
+        json={"ids": [n1.id, n1.id, n2.id, "missing-id"]},
         headers=headers,
     )
     assert bulk.status_code == 200
@@ -1478,6 +1478,23 @@ def test_notifications_bulk_delete_returns_deleted_count() -> None:
     )
     del_one = client.delete(f"/api/v1/notifications/{solo.id}", headers=headers)
     assert del_one.status_code == 204
+
+
+def test_notifications_bulk_delete_rejects_oversized_payload() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    response = client.request(
+        "DELETE",
+        "/api/v1/notifications",
+        json={"ids": [f"n-{idx}" for idx in range(201)]},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
 
 
 def test_company_update_accepts_legacy_full_overview_field() -> None:

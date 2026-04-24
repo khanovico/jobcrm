@@ -699,7 +699,7 @@ class NotificationPayload(BaseModel):
 
 
 class NotificationBulkDelete(BaseModel):
-    ids: list[str] = Field(min_length=1)
+    ids: list[str] = Field(min_length=1, max_length=200)
 
 
 class NotificationBulkRead(BaseModel):

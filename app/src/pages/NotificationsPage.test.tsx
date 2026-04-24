@@ -70,6 +70,40 @@ describe("NotificationsPage", () => {
     );
   });
 
+  it("expands long notification messages inline", async () => {
+    const longMessage =
+      "Application preparation finished with several details that are too long for a compact table cell.";
+    listNotifications.mockResolvedValueOnce([
+      {
+        id: "n1",
+        user_id: "u1",
+        notification: "APPLICATION_UPDATE",
+        type: "SUCCESS",
+        timestamp: "2026-01-01T00:00:00Z",
+        check: false,
+        payload: { id: "a1", message: longMessage },
+        created_at: "2026-01-01T00:00:00Z",
+        read_at: null,
+        link: null
+      }
+    ]);
+
+    render(
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText(longMessage);
+    const expand = screen.getByRole("button", { name: "Show full message" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(expand);
+    expect(screen.getByRole("button", { name: "Collapse message" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
+  });
+
   it("shows read notifications when active-only toggle is disabled", async () => {
     listNotifications
       .mockResolvedValueOnce([
@@ -192,7 +226,7 @@ describe("NotificationsPage", () => {
     expect(listNotifications).toHaveBeenCalledTimes(1);
   });
 
-  it("bulk deletes selected notifications optimistically", async () => {
+  it("confirms before bulk deleting selected notifications", async () => {
     listNotifications.mockResolvedValueOnce([
       {
         id: "n1",
@@ -229,11 +263,48 @@ describe("NotificationsPage", () => {
     await screen.findByText("One");
     await userEvent.click(screen.getByRole("button", { name: "Select all" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete selected (2)" }));
+    expect(deleteNotificationsBulk).not.toHaveBeenCalled();
+
+    expect(await screen.findByRole("heading", { name: "Delete selected notifications" })).toBeInTheDocument();
+    expect(screen.getByText("Delete 2 selected notifications? This cannot be undone.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Delete notifications" }));
 
     await waitFor(() => {
       expect(deleteNotificationsBulk).toHaveBeenCalledWith(["n1", "n2"]);
     });
     expect(screen.getByText("No active notifications.")).toBeInTheDocument();
+  });
+
+  it("cancels bulk delete without removing selected notifications", async () => {
+    listNotifications.mockResolvedValueOnce([
+      {
+        id: "n1",
+        user_id: "u1",
+        notification: "APPLICATION_UPDATE",
+        type: "SUCCESS",
+        timestamp: "2026-01-01T00:00:00Z",
+        check: false,
+        payload: { id: "a1", message: "One" },
+        created_at: "2026-01-01T00:00:00Z",
+        read_at: null,
+        link: null
+      }
+    ]);
+
+    render(
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("One");
+    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete selected (1)" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    expect(deleteNotificationsBulk).not.toHaveBeenCalled();
+    expect(screen.getByText("One")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Delete selected notifications" })).not.toBeInTheDocument();
   });
 
   it("bulk marks selected unread notifications with one request", async () => {

@@ -1227,7 +1227,7 @@ class InMemoryRepository(BaseRepository):
 
     def delete_notifications_bulk(self, user_id: str, notification_ids: list[str]) -> int:
         removed = 0
-        for nid in notification_ids:
+        for nid in dict.fromkeys(notification_ids):
             note = self.notifications.get(nid)
             if note and note.user_id == user_id:
                 del self.notifications[nid]

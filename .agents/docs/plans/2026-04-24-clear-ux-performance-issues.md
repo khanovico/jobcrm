@@ -20,6 +20,12 @@ Clear every issue in `.agents/docs/UX_PERFORMANCE_AUDIT_2026-04-24.md` through s
 - UXPERF-005: Bound human list endpoint limits.
 - UXPERF-006: Dashboard aggregate counts.
 
+## Batch 2 Tickets
+- UXPERF-038: Company list "Applied" column/filter wording.
+- UXPERF-045: Profile education year validation.
+- UXPERF-047: Notification message expansion/detail.
+- UXPERF-048: Confirm destructive bulk notification delete.
+
 ## Relevant Files
 - `app/src/App.tsx`
 - `app/src/pages/LoginPage.tsx`
@@ -39,6 +45,9 @@ Clear every issue in `.agents/docs/UX_PERFORMANCE_AUDIT_2026-04-24.md` through s
 - Worker B owns notifications bulk mark-read: backend notification endpoint/repository, frontend notifications API/page, related tests.
 - Worker C owns settings safety UX: `SettingsPage.tsx`, related tests.
 - Main agent owns backend list-limit/dashboard aggregate work to avoid API/repository conflict drift.
+- Worker D owns profile education validation: `ProfileDetailPage.tsx`, related tests.
+- Worker E owns company-list wording: `CompaniesPage.tsx`, related tests.
+- Main agent owns notifications detail/delete confirmation: `NotificationsPage.tsx`, `NotificationsPage.test.tsx`.
 
 ## Dependencies And Conflict Risks
 - Worker A may touch `Layout.tsx`; no other batch work should edit it.
@@ -60,3 +69,10 @@ Clear every issue in `.agents/docs/UX_PERFORMANCE_AUDIT_2026-04-24.md` through s
 - [x] Run review and scalability review on integrated batch.
 - [x] Check completed audit rows.
 - [x] Commit batch 1.
+- [x] Spawn Worker D for UXPERF-045.
+- [x] Spawn Worker E for UXPERF-038.
+- [x] Implement UXPERF-047 and UXPERF-048 locally.
+- [x] Run batch 2 targeted tests/build.
+- [x] Run review and scalability review on batch 2.
+- [x] Check completed audit rows for batch 2.
+- [x] Commit batch 2.
