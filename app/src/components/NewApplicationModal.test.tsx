@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -95,9 +95,15 @@ describe("NewApplicationModal", () => {
     };
     render(<Harness />);
 
-    await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "Persistent Co");
-    await userEvent.type(screen.getByRole("textbox", { name: "Company website (optional)" }), "https://persistent.example");
-    await userEvent.type(screen.getByRole("textbox", { name: "Job link (optional)" }), "https://jobs.example/persistent");
+    fireEvent.change(screen.getByRole("textbox", { name: "Company name" }), {
+      target: { value: "Persistent Co" }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Company website (optional)" }), {
+      target: { value: "https://persistent.example" }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Job link (optional)" }), {
+      target: { value: "https://jobs.example/persistent" }
+    });
     await userEvent.click(screen.getByRole("button", { name: /Parent rerender/ }));
 
     expect(screen.getByRole("textbox", { name: "Company name" })).toHaveValue("Persistent Co");

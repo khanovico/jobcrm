@@ -37,7 +37,7 @@ Out of scope:
 - [x] Add focused frontend tests.
 - [x] Run targeted frontend tests and `npm run build`.
 - [x] Run review and scalability review.
-- [ ] Commit, merge to `codex/ux-performance-audit`, update audit rows, and run final relevant verification.
+- [x] Commit, merge to `codex/ux-performance-audit`, update audit rows, and run final relevant verification.
 
 ## Conflict Risks
 
