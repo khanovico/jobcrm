@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { api } from "../api";
+import { Modal } from "../components/Modal";
 import { AgentApiKeyCreated, UserPublic, WorkerStateResponse, WorkerType } from "../types";
 
 export const SettingsPage = () => {
@@ -19,6 +20,8 @@ export const SettingsPage = () => {
   const [maxResearcher, setMaxResearcher] = useState("");
   const [maxPpa, setMaxPpa] = useState("");
   const [maxDrafter, setMaxDrafter] = useState("");
+  const [pendingWorkerRelease, setPendingWorkerRelease] = useState<WorkerType | null>(null);
+  const [keyAcknowledged, setKeyAcknowledged] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,9 +77,14 @@ export const SettingsPage = () => {
     }
     setSubmitting(true);
     try {
+      if (createdKey && !keyAcknowledged) {
+        setSubmitError("Acknowledge or copy the current key before creating another key.");
+        return;
+      }
       const result = await api.createAgentApiKey({ name, scopes });
       setCreatedKey(result);
       setKeyName("");
+      setKeyAcknowledged(false);
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -89,6 +97,7 @@ export const SettingsPage = () => {
     try {
       await navigator.clipboard.writeText(createdKey.raw_key);
       setCopyDone(true);
+      setKeyAcknowledged(true);
     } catch {
       setSubmitError("Could not copy to clipboard.");
     }
@@ -149,6 +158,17 @@ export const SettingsPage = () => {
       setWorkerBusy(false);
     }
   };
+
+  const workerTypeLabel: Record<WorkerType, string> = {
+    company_researcher: "company researcher",
+    ppa_analyser: "PPA analyser",
+    application_drafter: "application drafter"
+  };
+
+  const getWorkerActiveCount = (workerType: WorkerType) => workerState?.active[workerType] ?? 0;
+
+  const pendingWorkerActiveCount = pendingWorkerRelease ? getWorkerActiveCount(pendingWorkerRelease) : 0;
+  const keyNeedsAcknowledgement = !!createdKey && !keyAcknowledged;
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -227,24 +247,24 @@ export const SettingsPage = () => {
                 <button
                   type="button"
                   className="btn btn-outline btn-warning btn-sm w-full justify-center sm:w-auto"
-                  disabled={workerBusy}
-                  onClick={() => void releaseWorkers("company_researcher")}
+                  disabled={workerBusy || getWorkerActiveCount("company_researcher") === 0}
+                  onClick={() => setPendingWorkerRelease("company_researcher")}
                 >
                   Release company researcher workers
                 </button>
                 <button
                   type="button"
                   className="btn btn-outline btn-warning btn-sm w-full justify-center sm:w-auto"
-                  disabled={workerBusy}
-                  onClick={() => void releaseWorkers("ppa_analyser")}
+                  disabled={workerBusy || getWorkerActiveCount("ppa_analyser") === 0}
+                  onClick={() => setPendingWorkerRelease("ppa_analyser")}
                 >
                   Release PPA analyser workers
                 </button>
                 <button
                   type="button"
                   className="btn btn-outline btn-warning btn-sm w-full justify-center sm:w-auto"
-                  disabled={workerBusy}
-                  onClick={() => void releaseWorkers("application_drafter")}
+                  disabled={workerBusy || getWorkerActiveCount("application_drafter") === 0}
+                  onClick={() => setPendingWorkerRelease("application_drafter")}
                 >
                   Release application drafter workers
                 </button>
@@ -286,9 +306,28 @@ export const SettingsPage = () => {
                         {copyDone ? "Copied" : "Copy"}
                       </button>
                     </div>
-                    <button type="button" className="btn btn-ghost btn-xs" onClick={() => setCreatedKey(null)}>
+                    <label className="label cursor-pointer justify-start gap-2 p-0">
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-sm"
+                        checked={keyAcknowledged}
+                        onChange={(e) => setKeyAcknowledged(e.target.checked)}
+                      />
+                      <span className="label-text text-xs">I copied and stored this key securely.</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => setCreatedKey(null)}
+                      disabled={keyNeedsAcknowledgement}
+                    >
                       Dismiss
                     </button>
+                    {keyNeedsAcknowledgement && (
+                      <p className="text-xs opacity-90">
+                        Acknowledge or copy this one-time key before dismissing it.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -327,7 +366,7 @@ export const SettingsPage = () => {
                   </label>
                 </fieldset>
                 {submitError && <p className="text-sm text-error">{submitError}</p>}
-                <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
+                <button type="submit" className="btn btn-primary btn-sm" disabled={submitting || keyNeedsAcknowledgement}>
                   {submitting ? "Creating…" : "Create API key"}
                 </button>
               </form>
@@ -335,6 +374,44 @@ export const SettingsPage = () => {
           )}
         </section>
       </div>
+      <Modal
+        open={pendingWorkerRelease !== null}
+        onClose={() => setPendingWorkerRelease(null)}
+        title="Confirm worker release"
+        size="md"
+      >
+        <div className="space-y-3">
+          {pendingWorkerRelease && (
+            <p className="text-sm leading-relaxed opacity-90">
+              Release <strong>{workerTypeLabel[pendingWorkerRelease]}</strong> workers? This will clear
+              <strong> {pendingWorkerActiveCount}</strong> active lease
+              {pendingWorkerActiveCount === 1 ? "" : "s"} now.
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setPendingWorkerRelease(null)}
+              disabled={workerBusy}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-warning"
+              disabled={workerBusy || !pendingWorkerRelease || pendingWorkerActiveCount === 0}
+              onClick={() => {
+                if (!pendingWorkerRelease) return;
+                void releaseWorkers(pendingWorkerRelease);
+                setPendingWorkerRelease(null);
+              }}
+            >
+              {workerBusy ? "Releasing…" : "Release workers"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
