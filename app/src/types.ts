@@ -136,6 +136,10 @@ export type ApplicationListItem = Application & {
   applied_profiles: AppliedProfileName[];
 };
 
+export type ApplicationAppliedProfileFacets = {
+  profile_names: string[];
+};
+
 export type PerProfileApplicationDetail = PerProfileApplication & {
   profile_name: string;
   emails: Email[];

@@ -121,6 +121,30 @@ def _cold_email_plan_ready_for_applied_list(plan: ColdEmailPlan | dict | None) -
     return any(str(s or "").strip() for s in subs)
 
 
+def _normalized_optional_text_filter(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalized_nonempty_text_list(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = value.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
+
+
+APPLICATION_PROFILE_FACET_LIMIT = 500
+
+
 class BaseRepository:
     @contextmanager
     def bulk_persistence(self):
@@ -238,7 +262,23 @@ class BaseRepository:
         sort: str = "updated_at_desc",
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        applied_profile_names: list[str] | None = None,
     ) -> list[ApplicationListItem]:
+        raise NotImplementedError
+
+    def list_application_applied_profile_facets(
+        self,
+        *,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        limit: int = APPLICATION_PROFILE_FACET_LIMIT,
+    ) -> list[str]:
         raise NotImplementedError
 
     def list_applications_by_status(self, status: ApplicationStatus, limit: int) -> list[Application]:
@@ -874,6 +914,18 @@ class InMemoryRepository(BaseRepository):
         self, application_ids: list[str]
     ) -> dict[str, list[AppliedProfileName]]:
         """Show only the first PPA profile name for each application."""
+        first_profile_name_by_app = self._first_applied_profile_name_by_application_ids(application_ids)
+        return {
+            application_id: [AppliedProfileName(profile_name=profile_name)]
+            if profile_name
+            else []
+            for application_id in application_ids
+            for profile_name in [first_profile_name_by_app.get(application_id)]
+        }
+
+    def _first_applied_profile_name_by_application_ids(
+        self, application_ids: list[str]
+    ) -> dict[str, str]:
         if not application_ids:
             return {}
 
@@ -901,30 +953,27 @@ class InMemoryRepository(BaseRepository):
         #     if self._per_profile_shown_in_applied_profiles_column(ppa, ppa_ids_with_substantive_email):
         #         qualifying_profile_ids.add(ppa.profile_id)
 
-        out: dict[str, list[AppliedProfileName]] = {}
+        out: dict[str, str] = {}
         for aid in application_ids:
             rows = sorted(ppas_by_app[aid], key=lambda p: (p.order_index, p.created_at))
             first_ppa = rows[0] if rows else None
             if not first_ppa:
-                out[aid] = []
                 continue
             prof = self.get_profile(first_ppa.profile_id)
-            display = prof.name if prof else "Unknown profile"
-            out[aid] = [AppliedProfileName(profile_name=display)]
+            out[aid] = prof.name if prof else "Unknown profile"
         return out
 
-    def list_applications(
+    def _filter_applications_for_list(
         self,
-        skip: int,
-        limit: int,
+        *,
         status: ApplicationStatus | None,
         company_id: str | None = None,
         applied: bool | None = None,
         email_sent: bool | None = None,
-        sort: str = "updated_at_desc",
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
-    ) -> list[ApplicationListItem]:
+        company_search: str | None = None,
+    ) -> list[Application]:
         values = list(self.applications.values())
         if status:
             values = [a for a in values if a.status == status]
@@ -938,6 +987,50 @@ class InMemoryRepository(BaseRepository):
             values = [a for a in values if a.applied is applied]
         if email_sent is not None:
             values = [a for a in values if a.email_sent is email_sent]
+        normalized_company_search = _normalized_optional_text_filter(company_search)
+        if normalized_company_search:
+            needle = normalized_company_search.lower()
+            filtered_values: list[Application] = []
+            for application in values:
+                company = self.companies.get(application.company_id)
+                if company and needle in company.name.lower():
+                    filtered_values.append(application)
+            values = filtered_values
+        return values
+
+    def list_applications(
+        self,
+        skip: int,
+        limit: int,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        sort: str = "updated_at_desc",
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        applied_profile_names: list[str] | None = None,
+    ) -> list[ApplicationListItem]:
+        values = self._filter_applications_for_list(
+            status=status,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            created_by_user_id=created_by_user_id,
+            company_search=company_search,
+        )
+        selected_profile_names = set(_normalized_nonempty_text_list(applied_profile_names))
+        if selected_profile_names:
+            first_profile_name_by_app = self._first_applied_profile_name_by_application_ids(
+                [application.id for application in values]
+            )
+            values = [
+                application
+                for application in values
+                if first_profile_name_by_app.get(application.id) in selected_profile_names
+            ]
         values = _sort_applications(values, sort)
         sliced = values[skip : skip + limit]
         batch = self._batch_applied_profile_names_for_applications([a.id for a in sliced])
@@ -952,6 +1045,32 @@ class InMemoryRepository(BaseRepository):
             )
             for a in sliced
         ]
+
+    def list_application_applied_profile_facets(
+        self,
+        *,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        limit: int = APPLICATION_PROFILE_FACET_LIMIT,
+    ) -> list[str]:
+        values = self._filter_applications_for_list(
+            status=status,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            created_by_user_id=created_by_user_id,
+            company_search=company_search,
+        )
+        first_profile_name_by_app = self._first_applied_profile_name_by_application_ids(
+            [application.id for application in values]
+        )
+        return sorted(set(first_profile_name_by_app.values()), key=lambda name: name.lower())[:limit]
 
     def list_applications_by_status(self, status: ApplicationStatus, limit: int) -> list[Application]:
         rows = [a for a in self.applications.values() if a.status == status]
@@ -1950,49 +2069,79 @@ class MongoRepository(InMemoryRepository):
     def _mongo_batch_applied_profile_names_for_applications(
         self, application_ids: list[str]
     ) -> dict[str, list[AppliedProfileName]]:
-        if not application_ids:
-            return {}
-        ppas = self._mongo_find_page(
-            "per_profile_applications",
-            {"application_id": {"$in": application_ids}},
-            PerProfileApplication,
-            sort=[("application_id", 1), ("order_index", 1), ("created_at", 1)],
+        first_profile_name_by_app = self._mongo_first_applied_profile_name_by_application_ids(
+            application_ids
         )
-        first_by_app: dict[str, PerProfileApplication] = {}
-        for ppa in ppas:
-            first_by_app.setdefault(ppa.application_id, ppa)
-        profile_ids = list({ppa.profile_id for ppa in first_by_app.values()})
-        profiles = self._mongo_find_page(
-            "profiles",
-            {"_id": {"$in": profile_ids}},
-            Profile,
-        )
-        profile_name_by_id = {profile.id: profile.name for profile in profiles}
         return {
-            application_id: [
-                AppliedProfileName(
-                    profile_name=profile_name_by_id.get(ppa.profile_id, "Unknown profile")
-                )
-            ]
-            for application_id, ppa in first_by_app.items()
-        } | {
-            application_id: []
+            application_id: [AppliedProfileName(profile_name=profile_name)]
+            if profile_name
+            else []
             for application_id in application_ids
-            if application_id not in first_by_app
+            for profile_name in [first_profile_name_by_app.get(application_id)]
         }
 
-    def list_applications(
+    def _mongo_first_applied_profile_name_by_application_ids(
+        self, application_ids: list[str]
+    ) -> dict[str, str]:
+        if not application_ids:
+            return {}
+        ppa_docs = self._mongo_find_docs(
+            "per_profile_applications",
+            {"application_id": {"$in": application_ids}},
+            sort=[("application_id", 1), ("order_index", 1), ("created_at", 1)],
+            projection={
+                "_id": 1,
+                "application_id": 1,
+                "profile_id": 1,
+                "order_index": 1,
+                "created_at": 1,
+            },
+        )
+        first_profile_id_by_app: dict[str, str] = {}
+        for doc in ppa_docs:
+            application_id = str(doc["application_id"])
+            if application_id in first_profile_id_by_app:
+                continue
+            profile_id = doc.get("profile_id")
+            if profile_id is None:
+                continue
+            first_profile_id_by_app[application_id] = str(profile_id)
+        profile_ids = list(dict.fromkeys(first_profile_id_by_app.values()))
+        if not profile_ids:
+            return {}
+        profile_docs = self._mongo_find_docs(
+            "profiles",
+            {"_id": {"$in": profile_ids}},
+            projection={"_id": 1, "name": 1},
+        )
+        profile_name_by_id = {str(doc["_id"]): doc["name"] for doc in profile_docs}
+        return {
+            application_id: profile_name_by_id.get(profile_id, "Unknown profile")
+            for application_id, profile_id in first_profile_id_by_app.items()
+        }
+
+    def _mongo_matching_company_ids_for_search(self, company_search: str) -> list[str]:
+        normalized_company_search = _normalized_optional_text_filter(company_search)
+        if not normalized_company_search:
+            return []
+        docs = self._mongo_find_docs(
+            "companies",
+            {"name": self._literal_contains_filter(normalized_company_search)},
+            projection={"_id": 1},
+        )
+        return [str(doc["_id"]) for doc in docs]
+
+    def _mongo_application_query(
         self,
-        skip: int,
-        limit: int,
+        *,
         status: ApplicationStatus | None,
         company_id: str | None = None,
         applied: bool | None = None,
         email_sent: bool | None = None,
-        sort: str = "updated_at_desc",
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
-    ) -> list[ApplicationListItem]:
+        company_search: str | None = None,
+    ) -> dict[str, object] | None:
         query: dict[str, object] = {}
         if status and exclude_status:
             query["$and"] = [
@@ -2005,6 +2154,18 @@ class MongoRepository(InMemoryRepository):
             query["status"] = {"$nin": self._application_status_values_for_query(exclude_status)}
         if company_id:
             query["company_id"] = company_id
+        normalized_company_search = _normalized_optional_text_filter(company_search)
+        if normalized_company_search:
+            matching_company_ids = self._mongo_matching_company_ids_for_search(
+                normalized_company_search
+            )
+            if not matching_company_ids:
+                return None
+            if company_id:
+                if company_id not in matching_company_ids:
+                    return None
+            else:
+                query["company_id"] = {"$in": matching_company_ids}
         if created_by_user_id is not None:
             query["created_by_user_id"] = created_by_user_id
         if applied is True:
@@ -2013,14 +2174,151 @@ class MongoRepository(InMemoryRepository):
             query = {"$and": [query, {"applied": {"$ne": True}}, {"status": {"$ne": "applied"}}]}
         if email_sent is not None:
             query["email_sent"] = email_sent
-        applications = self._mongo_find_page(
-            "applications",
-            query,
-            Application,
-            sort=self._application_sort_spec(sort),
-            skip=skip,
-            limit=limit,
+        return query
+
+    def _mongo_application_ids_matching_applied_profile_names(
+        self, query: dict[str, object], applied_profile_names: list[str]
+    ) -> list[str]:
+        selected_profile_names = set(_normalized_nonempty_text_list(applied_profile_names))
+        if not selected_profile_names:
+            return []
+        application_ids = [str(value) for value in self.db.applications.distinct("_id", query)]
+        if not application_ids:
+            return []
+        first_profile_name_by_app = self._mongo_first_applied_profile_name_by_application_ids(
+            application_ids
         )
+        return [
+            application_id
+            for application_id, profile_name in first_profile_name_by_app.items()
+            if profile_name in selected_profile_names
+        ]
+
+    def _mongo_application_first_profile_lookup_stages(self) -> list[dict[str, object]]:
+        return [
+            {
+                "$lookup": {
+                    "from": "per_profile_applications",
+                    "let": {"application_id": "$_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$application_id", "$$application_id"]}}},
+                        {"$sort": {"order_index": 1, "created_at": 1}},
+                        {"$limit": 1},
+                        {"$project": {"_id": 1, "application_id": 1, "profile_id": 1}},
+                    ],
+                    "as": "first_ppa",
+                }
+            },
+            {"$unwind": "$first_ppa"},
+            {
+                "$lookup": {
+                    "from": "profiles",
+                    "localField": "first_ppa.profile_id",
+                    "foreignField": "_id",
+                    "as": "first_profile",
+                }
+            },
+            {"$unwind": "$first_profile"},
+        ]
+
+    def _mongo_aggregate_application_docs_by_first_profile(
+        self,
+        *,
+        query: dict[str, object],
+        profile_names: list[str],
+        sort: str,
+        skip: int,
+        limit: int,
+    ) -> list[dict] | None:
+        aggregate = getattr(self.db.applications, "aggregate", None)
+        if not callable(aggregate):
+            return None
+        pipeline: list[dict[str, object]] = [
+            {"$match": query},
+            *self._mongo_application_first_profile_lookup_stages(),
+            {"$match": {"first_profile.name": {"$in": profile_names}}},
+            {"$sort": dict(self._application_sort_spec(sort))},
+        ]
+        if skip:
+            pipeline.append({"$skip": skip})
+        pipeline.append({"$limit": limit})
+        return list(aggregate(pipeline))
+
+    def _mongo_application_profile_facets_with_aggregation(
+        self, *, query: dict[str, object], limit: int
+    ) -> list[str] | None:
+        aggregate = getattr(self.db.applications, "aggregate", None)
+        if not callable(aggregate):
+            return None
+        pipeline: list[dict[str, object]] = [
+            {"$match": query},
+            *self._mongo_application_first_profile_lookup_stages(),
+            {"$group": {"_id": "$first_profile.name"}},
+            {"$sort": {"_id": 1}},
+            {"$limit": limit},
+        ]
+        return [str(doc["_id"]) for doc in aggregate(pipeline) if doc.get("_id")]
+
+    def list_applications(
+        self,
+        skip: int,
+        limit: int,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        sort: str = "updated_at_desc",
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        applied_profile_names: list[str] | None = None,
+    ) -> list[ApplicationListItem]:
+        query = self._mongo_application_query(
+            status=status,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            created_by_user_id=created_by_user_id,
+            company_search=company_search,
+        )
+        if query is None:
+            return []
+        selected_profile_names = _normalized_nonempty_text_list(applied_profile_names)
+        if selected_profile_names:
+            application_docs = self._mongo_aggregate_application_docs_by_first_profile(
+                query=query,
+                profile_names=selected_profile_names,
+                sort=sort,
+                skip=skip,
+                limit=limit,
+            )
+            if application_docs is not None:
+                applications = self._models_from_mongo_rows(application_docs, Application)
+            else:
+                matching_application_ids = self._mongo_application_ids_matching_applied_profile_names(
+                    query, selected_profile_names
+                )
+                if not matching_application_ids:
+                    return []
+                query = {"$and": [query, {"_id": {"$in": matching_application_ids}}]}
+                applications = self._mongo_find_page(
+                    "applications",
+                    query,
+                    Application,
+                    sort=self._application_sort_spec(sort),
+                    skip=skip,
+                    limit=limit,
+                )
+        else:
+            applications = self._mongo_find_page(
+                "applications",
+                query,
+                Application,
+                sort=self._application_sort_spec(sort),
+                skip=skip,
+                limit=limit,
+            )
         company_ids = list({application.company_id for application in applications})
         companies = self._mongo_find_page("companies", {"_id": {"$in": company_ids}}, Company)
         company_name_by_id = {company.id: company.name for company in companies}
@@ -2035,6 +2333,43 @@ class MongoRepository(InMemoryRepository):
             )
             for application in applications
         ]
+
+    def list_application_applied_profile_facets(
+        self,
+        *,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        limit: int = APPLICATION_PROFILE_FACET_LIMIT,
+    ) -> list[str]:
+        query = self._mongo_application_query(
+            status=status,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            created_by_user_id=created_by_user_id,
+            company_search=company_search,
+        )
+        if query is None:
+            return []
+        aggregated_names = self._mongo_application_profile_facets_with_aggregation(
+            query=query,
+            limit=limit,
+        )
+        if aggregated_names is not None:
+            return aggregated_names
+        application_ids = [str(value) for value in self.db.applications.distinct("_id", query)]
+        if not application_ids:
+            return []
+        first_profile_name_by_app = self._mongo_first_applied_profile_name_by_application_ids(
+            application_ids
+        )
+        return sorted(set(first_profile_name_by_app.values()), key=lambda name: name.lower())[:limit]
 
     def list_agent_application_tasks(
         self, status: ApplicationStatus, limit: int

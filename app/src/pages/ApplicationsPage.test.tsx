@@ -23,17 +23,8 @@ describe("ApplicationsPage", () => {
   });
 
   const isApplicationsListRequest = (url: string) => url.split("?")[0].endsWith("/applications");
-
-  const profileListItem = (id: string, name: string) => ({
-    id,
-    name,
-    frozen: false,
-    location: null as null,
-    email: null,
-    phone: null,
-    created_at: "",
-    updated_at: ""
-  });
+  const isApplicationsFacetRequest = (url: string) =>
+    url.split("?")[0].endsWith("/applications/applied-profile-facets");
 
   const companyRow = {
     id: "c1",
@@ -180,6 +171,46 @@ describe("ApplicationsPage", () => {
       expect(companyCalls.every((url) => url.includes("limit=20"))).toBe(true);
     });
     expect(await screen.findByRole("button", { name: /Beta Labs/ })).toBeInTheDocument();
+  });
+
+  it("sends company search to the application list API instead of filtering the current page", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const betaRow = { ...applicationRow, id: "a2", company_id: "c2", company_name: "Beta" };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsFacetRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify({ profile_names: [] }), { status: 200 }));
+      }
+      if (isApplicationsListRequest(url)) {
+        const params = new URL(url).searchParams;
+        if (params.get("company_search") === "Beta") {
+          return Promise.resolve(new Response(JSON.stringify([betaRow]), { status: 200 }));
+        }
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("textbox", { name: "Filter applications by company name" }), "Beta");
+
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => isApplicationsListRequest(url));
+      expect(listCalls.some((url) => url.includes("company_search=Beta"))).toBe(true);
+    });
+    expect(await screen.findByRole("cell", { name: "Beta" })).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
   });
 
   it("shows mark applied button and marks as applied", async () => {
@@ -346,7 +377,7 @@ describe("ApplicationsPage", () => {
     expect(screen.getByText("Unmark Applied")).toBeInTheDocument();
   });
 
-  it("switches to Applied tab after marking an application as applied", async () => {
+  it("keeps the current tab stable after marking an application as applied", async () => {
     const fetchMock = vi.mocked(fetch);
     const pendingApp = { ...applicationRow, applied: false, status: "application_ready" };
     const appliedApp = {
@@ -362,12 +393,12 @@ describe("ApplicationsPage", () => {
         return Promise.resolve(new Response(JSON.stringify(appliedApp), { status: 200 }));
       }
       if (isApplicationsListRequest(url)) {
-        const params = url.split("?")[1] ?? "";
-        if (params.includes("applied=true")) {
-          return Promise.resolve(new Response(JSON.stringify([appliedApp]), { status: 200 }));
-        }
-        if (params.includes("applied=false")) {
-          return Promise.resolve(new Response(JSON.stringify([pendingApp]), { status: 200 }));
+        const params = new URL(url).searchParams;
+        const appliedWasMarked = fetchMock.mock.calls.some(([input]) =>
+          String(input).includes("/mark-applied")
+        );
+        if (params.get("applied") === "false" && appliedWasMarked) {
+          return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
         }
         return Promise.resolve(new Response(JSON.stringify([pendingApp]), { status: 200 }));
       }
@@ -388,11 +419,14 @@ describe("ApplicationsPage", () => {
 
     expect(await screen.findByText("Mark Applied")).toBeInTheDocument();
     await userEvent.click(screen.getByText("Mark Applied"));
+    expect(await screen.findByText("No applications in this view.")).toBeInTheDocument();
 
     const listCalls = fetchMock.mock.calls
       .map(([input]) => (typeof input === "string" ? input : input.toString()))
       .filter((url) => isApplicationsListRequest(url));
-    expect(listCalls.some((url) => url.includes("applied=true"))).toBe(true);
+    expect(listCalls.filter((url) => url.includes("applied=false")).length).toBeGreaterThan(1);
+    expect(listCalls.every((url) => !url.includes("applied=true"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Pending" })).toHaveClass("btn-active");
   });
 
   it("does not fetch companies when switching application list modes", async () => {
@@ -521,7 +555,38 @@ describe("ApplicationsPage", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsFacetRequest(url)) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ profile_names: ["Alice Park", "Bob Stone", "Carla Kim"] }), {
+            status: 200
+          })
+        );
+      }
       if (isApplicationsListRequest(url)) {
+        const params = new URL(url).searchParams;
+        if (params.getAll("applied_profile_names").includes("Bob Stone")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  ...applicationRow,
+                  id: "a1",
+                  company_id: "c1",
+                  company_name: "Acme",
+                  applied_profiles: [{ profile_name: "Alice Park" }, { profile_name: "Bob Stone" }]
+                },
+                {
+                  ...applicationRow,
+                  id: "a2",
+                  company_id: "c2",
+                  company_name: "Beta",
+                  applied_profiles: [{ profile_name: "Bob Stone" }]
+                }
+              ]),
+              { status: 200 }
+            )
+          );
+        }
         return Promise.resolve(
           new Response(
             JSON.stringify([
@@ -546,18 +611,6 @@ describe("ApplicationsPage", () => {
                 company_name: "Core",
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
-            ]),
-            { status: 200 }
-          )
-        );
-      }
-      if (url.includes("/profiles/summary")) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify([
-              profileListItem("p1", "Alice Park"),
-              profileListItem("p2", "Bob Stone"),
-              profileListItem("p3", "Carla Kim")
             ]),
             { status: 200 }
           )
@@ -595,16 +648,30 @@ describe("ApplicationsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Bob Stone" }));
 
-    expect(screen.getByRole("cell", { name: "Acme" })).toBeInTheDocument();
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((requestUrl) => isApplicationsListRequest(requestUrl));
+      expect(listCalls.some((requestUrl) => requestUrl.includes("applied_profile_names=Bob+Stone"))).toBe(true);
+      expect(listCalls.every((requestUrl) => !requestUrl.includes("/profiles/summary"))).toBe(true);
+    });
+    expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
     expect(screen.queryByRole("cell", { name: "Core" })).not.toBeInTheDocument();
   });
 
-  it("shows applications without applied profiles when all or none are selected", async () => {
+  it("sends an empty-match profile filter when all profile names are unselected", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsFacetRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify({ profile_names: ["Alice Park"] }), { status: 200 }));
+      }
       if (isApplicationsListRequest(url)) {
+        const params = new URL(url).searchParams;
+        if (params.getAll("applied_profile_names").includes("__jobcrm_no_applied_profile_match__")) {
+          return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+        }
         return Promise.resolve(
           new Response(
             JSON.stringify([
@@ -625,11 +692,6 @@ describe("ApplicationsPage", () => {
             ]),
             { status: 200 }
           )
-        );
-      }
-      if (url.includes("/profiles/summary")) {
-        return Promise.resolve(
-          new Response(JSON.stringify([profileListItem("p1", "Alice Park")]), { status: 200 })
         );
       }
       if (url.endsWith("/companies")) {
@@ -661,15 +723,44 @@ describe("ApplicationsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
     await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
 
-    expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
-    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((requestUrl) => isApplicationsListRequest(requestUrl));
+      expect(
+        listCalls.some((requestUrl) =>
+          requestUrl.includes("applied_profile_names=__jobcrm_no_applied_profile_match__")
+        )
+      ).toBe(true);
+    });
+    expect(await screen.findByText("No applications in this view.")).toBeInTheDocument();
   });
 
   it("preserves applied profile filter selection when page is revisited", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsFacetRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify({ profile_names: ["Alice Park", "Carla Kim"] }), { status: 200 }));
+      }
       if (isApplicationsListRequest(url)) {
+        const params = new URL(url).searchParams;
+        if (params.getAll("applied_profile_names").includes("Carla Kim")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  ...applicationRow,
+                  id: "a2",
+                  company_id: "c2",
+                  company_name: "Core",
+                  applied_profiles: [{ profile_name: "Carla Kim" }]
+                }
+              ]),
+              { status: 200 }
+            )
+          );
+        }
         return Promise.resolve(
           new Response(
             JSON.stringify([
@@ -688,14 +779,6 @@ describe("ApplicationsPage", () => {
                 applied_profiles: [{ profile_name: "Carla Kim" }]
               }
             ]),
-            { status: 200 }
-          )
-        );
-      }
-      if (url.includes("/profiles/summary")) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify([profileListItem("p1", "Alice Park"), profileListItem("p2", "Carla Kim")]),
             { status: 200 }
           )
         );
@@ -729,8 +812,8 @@ describe("ApplicationsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
     await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Carla Kim" }));
+    expect(await screen.findByRole("cell", { name: "Core" })).toBeInTheDocument();
     expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
-    expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
     firstMount.unmount();
 
