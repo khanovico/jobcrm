@@ -41,5 +41,5 @@ Clear the next critical backend performance tickets:
 - [x] Run full backend API suite.
 - [x] Run code-reviewer and scalability-reviewer with longer waits.
 - [x] Update audit checkboxes for UXPERF-001 and UXPERF-002.
-- [ ] Commit work branch.
-- [ ] Merge batch branch back into `codex/ux-performance-audit`.
+- [x] Commit work branch.
+- [x] Merge batch branch back into `codex/ux-performance-audit`.
