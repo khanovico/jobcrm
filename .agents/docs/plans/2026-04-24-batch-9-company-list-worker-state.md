@@ -50,7 +50,7 @@ Out of scope:
 - [x] Run backend `crm/tests/test_api.py`.
 - [x] Run targeted frontend tests and `npm run build`.
 - [x] Run code-reviewer and scalability-reviewer, then address actionable findings.
-- [ ] Commit Batch 9 and merge back into `codex/ux-performance-audit`.
+- [x] Commit Batch 9 and merge back into `codex/ux-performance-audit`.
 
 ## Success Criteria
 
