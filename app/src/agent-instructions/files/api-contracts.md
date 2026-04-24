@@ -33,7 +33,7 @@ OpenAPI with interactive schemas: `**GET {API_ORIGIN}/docs`**.
 
 **Query**: `limit` (default 5, max 50).
 
-**Response 200** — JSON array of **Application** with `status=company_research_pending`, FIFO oldest `created_at` first.
+**Response 200** — JSON array of compact **AgentApplicationTaskSummary** rows with `status=company_research_pending`, FIFO oldest `created_at` first. Each row includes `id`, `status`, `company_id`, `company_name`, `company_website`, `job_link`, `created_at`, and `updated_at`. Fetch `GET /api/v1/agent/applications/{id}` for the full application before mutating.
 
 ---
 
@@ -41,7 +41,7 @@ OpenAPI with interactive schemas: `**GET {API_ORIGIN}/docs`**.
 
 **Query**: `limit` (default 5, max 50).
 
-**Response 200** — JSON array of **Application** with `status=ppa_pending`, FIFO oldest `created_at` first.
+**Response 200** — JSON array of compact **AgentApplicationTaskSummary** rows with `status=ppa_pending`, FIFO oldest `created_at` first. Fetch `GET /api/v1/agent/applications/{id}` and `GET /api/v1/agent/applications/{id}/per-profile-applications` for detail work.
 
 ---
 
@@ -49,7 +49,7 @@ OpenAPI with interactive schemas: `**GET {API_ORIGIN}/docs`**.
 
 **Query**: `limit` (default 5, max 50).
 
-**Response 200** — JSON array of **Application** with `status=application_pending`, FIFO oldest `created_at` first.
+**Response 200** — JSON array of compact **AgentApplicationTaskSummary** rows with `status=application_pending`, FIFO oldest `created_at` first. Fetch `GET /api/v1/agent/applications/{id}` for the full application before drafting.
 
 ---
 
@@ -173,7 +173,7 @@ Paths use **kebab-case** worker kinds (no JSON `worker_type` on assign):
 | `limit` | int  | 5       | 5   |
 
 
-**Response 200** — JSON array of **Company** with `research_status=pending`, oldest first.
+**Response 200** — JSON array of compact **AgentCompanyResearchTaskSummary** rows with `id`, `name`, `website`, `research_status`, `has_application`, `created_at`, and `updated_at`, oldest first. Fetch `GET /api/v1/agent/companies/{id}` for the full company record before enrichment.
 
 ---
 
@@ -182,6 +182,14 @@ Paths use **kebab-case** worker kinds (no JSON `worker_type` on assign):
 **Query**: `skip`, `limit` (pagination).
 
 **Response 200** — JSON array of **Company**.
+
+---
+
+### `GET /api/v1/agent/companies/{company_id}`
+
+**Response 200** — full **Company** record for one company id.
+
+**Response 404** — company not found.
 
 ---
 

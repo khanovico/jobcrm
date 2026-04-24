@@ -628,6 +628,31 @@ class ApplicationListItem(Application):
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
 
 
+class AgentApplicationTaskSummary(BaseModel):
+    """Compact queue item for polling agents; fetch full detail by id when claiming work."""
+
+    id: str
+    status: ApplicationStatus
+    company_id: str
+    company_name: str
+    company_website: str | None = None
+    job_link: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentCompanyResearchTaskSummary(BaseModel):
+    """Compact company research queue item for polling agents."""
+
+    id: str
+    name: str
+    website: str | None = None
+    research_status: CompanyResearchStatus
+    has_application: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
 class PerProfileApplicationDetail(PerProfileApplication):
     """Per-profile row with resolved display name and nested emails for detail view."""
 

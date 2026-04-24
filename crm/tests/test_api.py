@@ -531,7 +531,34 @@ def test_clear_company_research_detail_reset_related_applications() -> None:
 
 
 def test_application_detail_endpoint_batches_company_ppas_profiles_and_emails() -> None:
-    repo = InMemoryRepository()
+    class BatchEmailRepository(InMemoryRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.email_batch_calls: list[list[str]] = []
+            self.profile_batch_calls: list[list[str]] = []
+            self.reject_single_profile_lookup = False
+
+        def list_emails_for_ppa(self, per_profile_application_id: str):  # type: ignore[no-untyped-def]
+            raise AssertionError("detail endpoint must batch load PPA emails")
+
+        def list_emails_for_ppas(self, per_profile_application_ids: list[str]):  # type: ignore[no-untyped-def]
+            self.email_batch_calls.append(list(per_profile_application_ids))
+            return super().list_emails_for_ppas(per_profile_application_ids)
+
+        def get_profile(self, profile_id: str):  # type: ignore[no-untyped-def]
+            if self.reject_single_profile_lookup:
+                raise AssertionError("detail endpoint must batch load profile names")
+            return super().get_profile(profile_id)
+
+        def list_profile_names_by_ids(self, profile_ids: list[str]):  # type: ignore[no-untyped-def]
+            self.profile_batch_calls.append(list(profile_ids))
+            return {
+                profile_id: self.profiles[profile_id].name
+                for profile_id in dict.fromkeys(profile_ids)
+                if profile_id in self.profiles
+            }
+
+    repo = BatchEmailRepository()
     app.dependency_overrides[get_repository] = lambda: repo
     client = TestClient(app)
     token = _register_and_login(client)
@@ -568,6 +595,7 @@ def test_application_detail_endpoint_batches_company_ppas_profiles_and_emails() 
         headers=headers,
     ).json()
 
+    repo.reject_single_profile_lookup = True
     detail = client.get(f"/api/v1/applications/{application['id']}/detail", headers=headers)
     assert detail.status_code == 200
     payload = detail.json()
@@ -577,6 +605,8 @@ def test_application_detail_endpoint_batches_company_ppas_profiles_and_emails() 
     assert payload["per_profile_applications"][0]["id"] == ppa["id"]
     assert payload["per_profile_applications"][0]["profile_name"] == profile["name"]
     assert payload["per_profile_applications"][0]["emails"] == [email]
+    assert repo.email_batch_calls == [[ppa["id"]]]
+    assert repo.profile_batch_calls == [[profile["id"]]]
 
 
 def test_ppa_cold_email_recipient_timezone_round_trips_in_application_detail() -> None:
@@ -1547,6 +1577,7 @@ class _FakeMongoCollection:
         self.collations: list[dict] = []
         self.distinct_calls: list[tuple[str, dict]] = []
         self.indexes: list[tuple[list[tuple[str, int]], dict]] = []
+        self.projections: list[dict[str, int] | None] = []
 
     def replace_one(self, query: dict, payload: dict, upsert: bool = False) -> None:
         self.replacements.append((query, payload, upsert))
@@ -1562,12 +1593,31 @@ class _FakeMongoCollection:
     def insert_many(self, docs: list[dict]) -> None:
         self.inserts.append(docs)
 
-    def find(self, query: dict | None = None):
+    def find(self, query: dict | None = None, projection: dict[str, int] | None = None):
         query = query or {}
         self.find_queries.append(query)
+        self.projections.append(projection)
+        rows = [row for row in self.docs if _matches_mongo_query(row, query)]
+        if projection:
+            include_keys = {key for key, value in projection.items() if value and key != "_id"}
+            include_id = projection.get("_id", 1) != 0
+            projected_rows = []
+            for row in rows:
+                projected = {"_id": row["_id"]} if include_id and "_id" in row else {}
+                for key in include_keys:
+                    if "." not in key:
+                        if key in row:
+                            projected[key] = row[key]
+                        continue
+                    parent, child = key.split(".", 1)
+                    parent_value = row.get(parent)
+                    if isinstance(parent_value, dict) and child in parent_value:
+                        projected.setdefault(parent, {})[child] = parent_value[child]
+                projected_rows.append(projected)
+            rows = projected_rows
         return _FakeMongoCursor(
             self,
-            [row for row in self.docs if _matches_mongo_query(row, query)],
+            rows,
         )
 
     def find_one(self, query: dict) -> dict | None:
@@ -1614,6 +1664,7 @@ class _FakeMongoDb:
             collection.collations.clear()
             collection.distinct_calls.clear()
             collection.indexes.clear()
+            collection.projections.clear()
 
     def assert_no_full_rewrites(self) -> None:
         rewritten = {
@@ -1656,8 +1707,13 @@ def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
         {"collation": {"locale": "en", "strength": 2}},
     ) in db.profiles.indexes
     assert ([("status", 1), ("updated_at", -1)], {}) in db.applications.indexes
+    assert ([("status", 1), ("created_at", 1)], {}) in db.applications.indexes
     assert ([("company_id", 1), ("updated_at", -1)], {}) in db.applications.indexes
     assert ([("user_id", 1), ("read_at", 1), ("timestamp", -1)], {}) in db.notifications.indexes
+    assert (
+        [("archived", 1), ("research_status", 1), ("created_at", 1)],
+        {},
+    ) in db.companies.indexes
     assert (
         [("actor_type", 1), ("entity_type", 1), ("created_at", -1)],
         {},
@@ -1666,6 +1722,7 @@ def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
         [("application_id", 1), ("order_index", 1), ("created_at", 1)],
         {},
     ) in db.per_profile_applications.indexes
+    assert ([("per_profile_application_id", 1), ("created_at", 1)], {}) in db.emails.indexes
 
 
 class _FakeBulkMongoCollection(_FakeMongoCollection):
@@ -1841,6 +1898,152 @@ def test_mongo_repository_list_applications_uses_query_page_and_bounded_enrichme
             {"status": {"$nin": ["archived"]}},
         ]
     }
+
+
+def test_mongo_repository_agent_queue_tasks_use_indexed_compact_queries() -> None:
+    seed = InMemoryRepository()
+    first_company = seed.create_company(
+        CompanyCreate(name="First Co", website="https://first.example")
+    )
+    second_company = seed.create_company(CompanyCreate(name="Second Co"))
+    first = seed.create_application(
+        ApplicationCreate(
+            company_id=first_company.id,
+            status=ApplicationStatus.company_research_pending,
+            job_post={"job_link": "https://jobs.example/first"},
+            notes="large internal note",
+        ),
+        created_by_user_id="u1",
+    )
+    second = seed.create_application(
+        ApplicationCreate(
+            company_id=second_company.id,
+            status=ApplicationStatus.company_research_pending,
+        ),
+        created_by_user_id="u1",
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.applications.docs = [_mongo_doc(second), _mongo_doc(first)]
+    db.companies.docs = [_mongo_doc(first_company), _mongo_doc(second_company)]
+
+    rows = repo.list_agent_application_tasks(ApplicationStatus.company_research_pending, limit=1)
+
+    assert len(rows) == 1
+    assert rows[0].id == first.id
+    assert rows[0].company_name == first_company.name
+    assert rows[0].company_website == first_company.website
+    assert rows[0].job_link == "https://jobs.example/first"
+    assert not hasattr(rows[0], "notes")
+    assert db.applications.find_queries[-1] == {
+        "status": {"$in": ["company_research_pending", "draft", "pending_preparation"]}
+    }
+    assert db.applications.sorts[-1] == [("created_at", 1)]
+    assert db.applications.limits[-1] == 1
+    assert db.applications.projections[-1] == {
+        "_id": 1,
+        "status": 1,
+        "company_id": 1,
+        "job_post.job_link": 1,
+        "created_at": 1,
+        "updated_at": 1,
+    }
+    assert db.companies.find_queries[-1] == {"_id": {"$in": [first_company.id]}}
+    assert db.companies.projections[-1] == {"_id": 1, "name": 1, "website": 1}
+
+
+def test_mongo_repository_company_research_tasks_use_compact_query_and_annotation() -> None:
+    seed = InMemoryRepository()
+    pending = seed.create_company(CompanyCreate(name="Pending Co"))
+    indexed = seed.create_company(CompanyCreate(name="Indexed Co", research_status=CompanyResearchStatus.indexed))
+    archived = seed.create_company(CompanyCreate(name="Archived Co"))
+    seed.archive_company(archived.id, "done")
+    app_row = seed.create_application(
+        ApplicationCreate(company_id=pending.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.companies.docs = [_mongo_doc(indexed), _mongo_doc(pending), _mongo_doc(seed.companies[archived.id])]
+    db.applications.docs = [_mongo_doc(app_row)]
+
+    rows = repo.list_company_research_tasks(limit=5)
+
+    assert [row.id for row in rows] == [pending.id]
+    assert rows[0].name == pending.name
+    assert rows[0].research_status == CompanyResearchStatus.pending
+    assert rows[0].has_application is True
+    assert db.companies.find_queries[-1] == {
+        "$and": [
+            {"archived": {"$ne": True}},
+            {
+                "$or": [
+                    {"research_status": "pending"},
+                    {"research_status": {"$exists": False}, "indexed": {"$ne": True}},
+                ]
+            },
+        ]
+    }
+    assert db.companies.projections[-1] == {
+        "_id": 1,
+        "name": 1,
+        "website": 1,
+        "research_status": 1,
+        "created_at": 1,
+        "updated_at": 1,
+    }
+    assert db.companies.sorts[-1] == [("created_at", 1)]
+    assert db.applications.distinct_calls == [("company_id", {"company_id": {"$in": [pending.id]}})]
+
+
+def test_mongo_repository_batch_loads_emails_for_ppas_with_one_query() -> None:
+    seed = InMemoryRepository()
+    company = seed.create_company(CompanyCreate(name="Acme"))
+    profile = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    application = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    ppa_one = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+    )
+    ppa_two = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+    )
+    first = seed.create_email(
+        EmailCreate(per_profile_application_id=ppa_one.id, kind=EmailKind.cold, content="First")
+    )
+    second = seed.create_email(
+        EmailCreate(per_profile_application_id=ppa_one.id, kind=EmailKind.follow_up, content="Second")
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.emails.docs = [_mongo_doc(second), _mongo_doc(first)]
+
+    grouped = repo.list_emails_for_ppas([ppa_one.id, ppa_two.id, ppa_one.id])
+
+    assert {email.id for email in grouped[ppa_one.id]} == {first.id, second.id}
+    assert grouped[ppa_two.id] == []
+    assert list(grouped) == [ppa_one.id, ppa_two.id]
+    assert db.emails.find_queries == [
+        {"per_profile_application_id": {"$in": [ppa_one.id, ppa_two.id]}}
+    ]
+    assert db.emails.sorts[-1] == [("per_profile_application_id", 1), ("created_at", 1)]
+
+
+def test_mongo_repository_batch_loads_profile_names_with_projection() -> None:
+    seed = InMemoryRepository()
+    profile = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    other = seed.create_profile(
+        ProfileCreate.model_validate(
+            {**_valid_profile_create_payload(), "name": "Other", "email": "other@example.com"}
+        )
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.profiles.docs = [_mongo_doc(profile), _mongo_doc(other)]
+
+    names = repo.list_profile_names_by_ids([profile.id, "missing-id", profile.id])
+
+    assert names == {profile.id: profile.name}
+    assert db.profiles.find_queries == [{"_id": {"$in": [profile.id, "missing-id"]}}]
+    assert db.profiles.projections == [{"_id": 1, "name": 1}]
 
 
 def test_mongo_repository_list_queries_include_legacy_normalized_records() -> None:
