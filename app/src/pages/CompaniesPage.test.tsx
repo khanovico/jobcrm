@@ -54,7 +54,8 @@ describe("CompaniesPage", () => {
 
     expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
     expect(screen.getAllByText("Indexed").some((el) => el.tagName === "SPAN")).toBe(true);
-    expect(screen.getAllByText("Has applications").some((el) => el.classList.contains("badge"))).toBe(true);
+    expect(screen.getAllByText("Has application records").some((el) => el.classList.contains("badge"))).toBe(true);
+    expect(screen.getAllByText("Applications").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("row", { name: /Acme Corp/i }));
     expect(await screen.findByTestId("company-detail")).toBeInTheDocument();
@@ -141,5 +142,9 @@ describe("CompaniesPage", () => {
         .filter((url) => url.includes("/api/v1/companies"));
       expect(calls.some((url) => new URL(url).searchParams.get("sort") === "updated_at_desc")).toBe(true);
     });
+
+    expect(screen.getAllByText("No application records").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "No application records" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "Has application records" }).length).toBeGreaterThan(0);
   });
 });

@@ -17,7 +17,7 @@ type CompanySort =
   | "updated_at_asc"
   | "name_asc";
 
-type AppliedColFilter = "all" | "never" | "once";
+type ApplicationRecordFilter = "all" | "never" | "once";
 
 const companySortLabel = (s: CompanySort): string => {
   switch (s) {
@@ -64,7 +64,7 @@ export const CompaniesPage = () => {
   const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
   const [sort, setSort] = useState<CompanySort>("updated_at_desc");
   const [researchFilter, setResearchFilter] = useState<CompanyResearchStatus | "all">("all");
-  const [appliedColFilter, setAppliedColFilter] = useState<AppliedColFilter>("all");
+  const [applicationRecordFilter, setApplicationRecordFilter] = useState<ApplicationRecordFilter>("all");
 
   const listExtraParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -72,13 +72,13 @@ export const CompaniesPage = () => {
     if (researchFilter !== "all") {
       p.set("research_status", researchFilter);
     }
-    if (appliedColFilter === "never") {
+    if (applicationRecordFilter === "never") {
       p.set("has_application", "false");
-    } else if (appliedColFilter === "once") {
+    } else if (applicationRecordFilter === "once") {
       p.set("has_application", "true");
     }
     return p;
-  }, [sort, researchFilter, appliedColFilter]);
+  }, [sort, researchFilter, applicationRecordFilter]);
   const [archiveTarget, setArchiveTarget] = useState<Company | null>(null);
   const [awaitingArchivedRestore, setAwaitingArchivedRestore] = useState(false);
 
@@ -110,7 +110,7 @@ export const CompaniesPage = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [sort, researchFilter, appliedColFilter]);
+  }, [sort, researchFilter, applicationRecordFilter]);
 
   useEffect(() => {
     void load(page);
@@ -217,15 +217,15 @@ export const CompaniesPage = () => {
             </select>
           </label>
           <label className="form-control w-full min-w-[160px] max-w-xs">
-            <span className="label-text text-xs">Applied</span>
+            <span className="label-text text-xs">Applications</span>
             <select
               className="select select-bordered select-sm w-full"
-              value={appliedColFilter}
-              onChange={(e) => setAppliedColFilter(e.target.value as AppliedColFilter)}
+              value={applicationRecordFilter}
+              onChange={(e) => setApplicationRecordFilter(e.target.value as ApplicationRecordFilter)}
             >
               <option value="all">All</option>
-              <option value="never">None (no applications)</option>
-              <option value="once">Has applications</option>
+              <option value="never">No application records</option>
+              <option value="once">Has application records</option>
             </select>
           </label>
         </div>
@@ -235,7 +235,7 @@ export const CompaniesPage = () => {
               <tr>
                 <th>Name</th>
                 <th className="whitespace-nowrap">Research</th>
-                <th className="whitespace-nowrap">Applied</th>
+                <th className="whitespace-nowrap">Applications</th>
                 <th>Website</th>
                 <th className="whitespace-nowrap">Updated</th>
                 <th className="min-w-[140px] text-right">Actions</th>
@@ -256,9 +256,9 @@ export const CompaniesPage = () => {
                   </td>
                   <td className="whitespace-nowrap text-xs">
                     {company.has_application ? (
-                      <span className="badge badge-sm badge-success badge-outline">Has applications</span>
+                      <span className="badge badge-sm badge-success badge-outline">Has application records</span>
                     ) : (
-                      <span className="opacity-50">—</span>
+                      <span className="opacity-50">No application records</span>
                     )}
                   </td>
                   <td className="max-w-[200px] truncate text-xs opacity-80" title={company.website ?? undefined}>
