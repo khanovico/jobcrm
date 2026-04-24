@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
@@ -20,6 +20,31 @@ const NotificationsPage = lazy(async () => ({ default: (await import("./pages/No
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 const PageFallback = () => <div className="p-4 text-sm opacity-70">Loading page…</div>;
+const NotAuthorizedPage = () => (
+  <div className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+    <h2 className="text-2xl font-semibold">Not authorized</h2>
+    <p className="text-sm opacity-80">This page is available to admin accounts only.</p>
+    <div>
+      <Link className="btn btn-primary btn-sm" to="/">
+        Back to dashboard
+      </Link>
+    </div>
+  </div>
+);
+const NotFoundPage = () => (
+  <div className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+    <h2 className="text-2xl font-semibold">Page not found</h2>
+    <p className="text-sm opacity-80">The page you requested does not exist.</p>
+    <div className="flex flex-wrap gap-2">
+      <Link className="btn btn-primary btn-sm" to="/">
+        Dashboard
+      </Link>
+      <Link className="btn btn-outline btn-sm" to="/applications">
+        Applications
+      </Link>
+    </div>
+  </div>
+);
 
 const PrivateOutlet = () => {
   const { token, isUserLoading } = useAuth();
@@ -31,7 +56,7 @@ const PrivateOutlet = () => {
 const AdminOnlyOutlet = () => {
   const { user, isUserLoading } = useAuth();
   if (isUserLoading) return <div className="p-4 text-sm opacity-70">Loading account…</div>;
-  if (!user || user.role !== "admin") return <Navigate to="/" replace />;
+  if (!user || user.role !== "admin") return <Navigate to="/not-authorized" replace />;
   return <Outlet />;
 };
 
@@ -56,11 +81,13 @@ export default function App() {
           <Route path="/applications" element={<ApplicationsPage />} />
           <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
           <Route path="/industries" element={<IndustriesPage />} />
+          <Route path="/not-authorized" element={<NotAuthorizedPage />} />
           <Route element={<AdminOnlyOutlet />}>
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
     </Routes>

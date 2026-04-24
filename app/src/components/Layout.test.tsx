@@ -236,4 +236,33 @@ describe("Layout", () => {
     expect(await screen.findByText("Applications page")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
   });
+
+  it("persists theme preference and exposes current theme state", async () => {
+    localStorage.setItem("jobcrm-theme", "dark");
+    getUnreadNotificationsCount.mockResolvedValue({ count: 0 });
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <AuthProvider>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Placeholder title="Home" />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    const themeButton = await screen.findByRole("button", { name: /Theme is dark/i });
+    expect(themeButton).toHaveAttribute("aria-pressed", "true");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+
+    await act(async () => {
+      themeButton.click();
+    });
+
+    expect(screen.getByRole("button", { name: /Theme is light/i })).toHaveAttribute("aria-pressed", "false");
+    expect(localStorage.getItem("jobcrm-theme")).toBe("light");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+  });
 });
