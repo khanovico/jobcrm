@@ -337,6 +337,12 @@ class BaseRepository:
     def create_agent_api_key(self, payload: AgentApiKeyCreate, key_hash: str) -> AgentApiKeyInDB:
         raise NotImplementedError
 
+    def list_agent_api_keys(self) -> list[AgentApiKeyInDB]:
+        raise NotImplementedError
+
+    def revoke_agent_api_key(self, key_id: str) -> bool:
+        raise NotImplementedError
+
     def get_agent_api_key_by_hash(self, key_hash: str) -> AgentApiKeyInDB | None:
         raise NotImplementedError
 
@@ -1247,6 +1253,12 @@ class InMemoryRepository(BaseRepository):
         self.agent_api_keys[rec.id] = rec
         return rec
 
+    def list_agent_api_keys(self) -> list[AgentApiKeyInDB]:
+        return sorted(self.agent_api_keys.values(), key=lambda k: k.created_at, reverse=True)
+
+    def revoke_agent_api_key(self, key_id: str) -> bool:
+        return self.agent_api_keys.pop(key_id, None) is not None
+
     def get_agent_api_key_by_hash(self, key_hash: str) -> AgentApiKeyInDB | None:
         return next((k for k in self.agent_api_keys.values() if k.key_hash == key_hash), None)
 
@@ -1683,6 +1695,12 @@ class MongoRepository(InMemoryRepository):
         rec = super().create_agent_api_key(payload, key_hash)
         self._sync()
         return rec
+
+    def revoke_agent_api_key(self, key_id: str) -> bool:
+        revoked = super().revoke_agent_api_key(key_id)
+        if revoked:
+            self._sync()
+        return revoked
 
     def touch_agent_api_key_used(self, key_id: str) -> None:
         # Hot path: update in-memory only (avoid full Mongo resync on every agent request).

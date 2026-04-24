@@ -2,6 +2,7 @@ import {
   Application,
   ApplicationDetailResponse,
   AgentApiKeyCreated,
+  AgentApiKeyPublic,
   ApplicationListItem,
   AuditEvent,
   Company,
@@ -104,6 +105,11 @@ export const api = {
     request<AgentApiKeyCreated>("/api/v1/admin/agent-keys", {
       method: "POST",
       body: JSON.stringify(payload)
+    }),
+  listAgentApiKeys: () => request<AgentApiKeyPublic[]>("/api/v1/admin/agent-keys"),
+  revokeAgentApiKey: (id: string) =>
+    request<void>(`/api/v1/admin/agent-keys/${id}`, {
+      method: "DELETE"
     }),
   getDashboardMetrics: () => request<DashboardMetrics>("/api/v1/metrics/dashboard"),
   globalSearch: (q: string, limit = 20) =>

@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { api } from "../api";
 import { Modal } from "../components/Modal";
-import { AgentApiKeyCreated, UserPublic, WorkerStateResponse, WorkerType } from "../types";
+import { AgentApiKeyCreated, AgentApiKeyPublic, UserPublic, WorkerStateResponse, WorkerType } from "../types";
 
 export const SettingsPage = () => {
   const [user, setUser] = useState<UserPublic | null>(null);
@@ -14,6 +14,11 @@ export const SettingsPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [createdKey, setCreatedKey] = useState<AgentApiKeyCreated | null>(null);
   const [copyDone, setCopyDone] = useState(false);
+  const [agentKeys, setAgentKeys] = useState<AgentApiKeyPublic[]>([]);
+  const [agentKeysLoading, setAgentKeysLoading] = useState(false);
+  const [agentKeyListError, setAgentKeyListError] = useState<string | null>(null);
+  const [pendingAgentKeyRevoke, setPendingAgentKeyRevoke] = useState<AgentApiKeyPublic | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [workerBusy, setWorkerBusy] = useState(false);
   const [workerError, setWorkerError] = useState<string | null>(null);
@@ -38,6 +43,23 @@ export const SettingsPage = () => {
       cancelled = true;
     };
   }, []);
+
+  const loadAgentKeys = async () => {
+    setAgentKeyListError(null);
+    setAgentKeysLoading(true);
+    try {
+      setAgentKeys(await api.listAgentApiKeys());
+    } catch (e) {
+      setAgentKeyListError((e as Error).message);
+    } finally {
+      setAgentKeysLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.admin) return;
+    void loadAgentKeys();
+  }, [user?.admin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +107,7 @@ export const SettingsPage = () => {
       setCreatedKey(result);
       setKeyName("");
       setKeyAcknowledged(false);
+      await loadAgentKeys();
     } catch (err) {
       setSubmitError((err as Error).message);
     } finally {
@@ -100,6 +123,21 @@ export const SettingsPage = () => {
       setKeyAcknowledged(true);
     } catch {
       setSubmitError("Could not copy to clipboard.");
+    }
+  };
+
+  const revokeAgentKey = async () => {
+    if (!pendingAgentKeyRevoke) return;
+    setSubmitError(null);
+    setRevokeBusy(true);
+    try {
+      await api.revokeAgentApiKey(pendingAgentKeyRevoke.id);
+      setAgentKeys((prev) => prev.filter((key) => key.id !== pendingAgentKeyRevoke.id));
+      setPendingAgentKeyRevoke(null);
+    } catch (err) {
+      setSubmitError((err as Error).message);
+    } finally {
+      setRevokeBusy(false);
     }
   };
 
@@ -169,6 +207,7 @@ export const SettingsPage = () => {
 
   const pendingWorkerActiveCount = pendingWorkerRelease ? getWorkerActiveCount(pendingWorkerRelease) : 0;
   const keyNeedsAcknowledgement = !!createdKey && !keyAcknowledged;
+  const formatDateTime = (value: string | null) => (value ? new Date(value).toLocaleString() : "Never");
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -370,6 +409,49 @@ export const SettingsPage = () => {
                   {submitting ? "Creating…" : "Create API key"}
                 </button>
               </form>
+
+              <div className="mt-5 border-t border-base-300 pt-4">
+                <h4 className="text-sm font-semibold">Active keys</h4>
+                {agentKeyListError && <p className="mt-2 text-sm text-error">{agentKeyListError}</p>}
+                {agentKeysLoading ? (
+                  <p className="mt-2 text-sm opacity-70">Loading keys…</p>
+                ) : agentKeys.length === 0 ? (
+                  <p className="mt-2 text-sm opacity-70">No active API keys.</p>
+                ) : (
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="table table-sm">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Scopes</th>
+                          <th>Created</th>
+                          <th>Last used</th>
+                          <th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agentKeys.map((key) => (
+                          <tr key={key.id}>
+                            <td className="font-medium">{key.name}</td>
+                            <td>{key.scopes.join(", ")}</td>
+                            <td>{formatDateTime(key.created_at)}</td>
+                            <td>{formatDateTime(key.last_used_at)}</td>
+                            <td className="text-right">
+                              <button
+                                type="button"
+                                className="btn btn-xs btn-outline btn-warning"
+                                onClick={() => setPendingAgentKeyRevoke(key)}
+                              >
+                                Revoke
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </section>
@@ -408,6 +490,38 @@ export const SettingsPage = () => {
               }}
             >
               {workerBusy ? "Releasing…" : "Release workers"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={pendingAgentKeyRevoke !== null}
+        onClose={() => (revokeBusy ? undefined : setPendingAgentKeyRevoke(null))}
+        title="Confirm API key revoke"
+        size="md"
+      >
+        <div className="space-y-3">
+          {pendingAgentKeyRevoke && (
+            <p className="text-sm leading-relaxed opacity-90">
+              Revoke API key <strong>{pendingAgentKeyRevoke.name}</strong>? Agent calls using this key will fail immediately.
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setPendingAgentKeyRevoke(null)}
+              disabled={revokeBusy}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-warning"
+              onClick={() => void revokeAgentKey()}
+              disabled={revokeBusy || !pendingAgentKeyRevoke}
+            >
+              {revokeBusy ? "Revoking…" : "Revoke key"}
             </button>
           </div>
         </div>

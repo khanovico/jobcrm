@@ -24,6 +24,7 @@ from app.models import (
     ActorType,
     AgentApiKeyCreate,
     AgentApiKeyCreated,
+    AgentApiKeyPublic,
     AgentCompaniesBulkUpdateRequest,
     AgentIndustriesBulkCreateRequest,
     AgentContext,
@@ -342,6 +343,44 @@ def create_agent_key(
         last_used_at=rec.last_used_at,
         raw_key=raw,
     )
+
+
+@app.get("/api/v1/admin/agent-keys", response_model=list[AgentApiKeyPublic])
+def list_agent_keys(
+    _: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[AgentApiKeyPublic]:
+    rows = repo.list_agent_api_keys()
+    return [
+        AgentApiKeyPublic(
+            id=row.id,
+            name=row.name,
+            scopes=row.scopes,
+            created_at=row.created_at,
+            last_used_at=row.last_used_at,
+        )
+        for row in rows
+    ]
+
+
+@app.delete("/api/v1/admin/agent-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_agent_key(
+    key_id: str,
+    admin: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> Response:
+    revoked = repo.revoke_agent_api_key(key_id)
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent API key not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=admin.id,
+        action="revoke_agent_key",
+        entity_type="agent_api_key",
+        entity_id=key_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/v1/companies", response_model=list[Company])

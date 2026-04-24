@@ -1722,6 +1722,70 @@ def test_delete_email_and_freeze_profile_hides_agent_profile_fetches() -> None:
     assert one.json()["detail"] == "Profile not found"
 
 
+def test_agent_key_list_omits_hash_and_raw_key_fields() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _create_user_and_login(
+        client,
+        name="Admin",
+        email="agent-key-list-admin@example.com",
+        role="admin",
+    )
+    headers = _auth_headers(token)
+
+    created = client.post("/api/v1/admin/agent-keys", json={"name": "list-check"}, headers=headers)
+    assert created.status_code == 201
+    created_body = created.json()
+    assert "raw_key" in created_body
+
+    listed = client.get("/api/v1/admin/agent-keys", headers=headers)
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert len(rows) == 1
+    assert rows[0]["id"] == created_body["id"]
+    assert rows[0]["name"] == "list-check"
+    assert rows[0]["scopes"] == ["read", "write"]
+    assert "raw_key" not in rows[0]
+    assert "key_hash" not in rows[0]
+
+
+def test_revoke_agent_key_removes_it_and_blocks_future_agent_access() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _create_user_and_login(
+        client,
+        name="Admin",
+        email="agent-key-revoke-admin@example.com",
+        role="admin",
+    )
+    headers = _auth_headers(token)
+    created = client.post("/api/v1/admin/agent-keys", json={"name": "revoke-check"}, headers=headers)
+    assert created.status_code == 201
+    key_id = created.json()["id"]
+    raw_key = created.json()["raw_key"]
+
+    before_revoke = client.get("/api/v1/admin/agent-keys", headers=headers)
+    assert before_revoke.status_code == 200
+    assert [row["id"] for row in before_revoke.json()] == [key_id]
+
+    revoke = client.delete(f"/api/v1/admin/agent-keys/{key_id}", headers=headers)
+    assert revoke.status_code == 204
+
+    after_revoke = client.get("/api/v1/admin/agent-keys", headers=headers)
+    assert after_revoke.status_code == 200
+    assert after_revoke.json() == []
+
+    agent_auth = client.get("/api/v1/agent/health", headers={"X-API-Key": raw_key})
+    assert agent_auth.status_code == 401
+    assert agent_auth.json()["detail"] == "Invalid API key"
+
+    missing = client.delete(f"/api/v1/admin/agent-keys/{key_id}", headers=headers)
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Agent API key not found"
+
+
 def test_agent_worker_path_assign_release_and_count() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo

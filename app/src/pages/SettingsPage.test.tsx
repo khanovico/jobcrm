@@ -45,6 +45,9 @@ describe("SettingsPage", () => {
           })
         );
       }
+      if (url.endsWith("/admin/agent-keys")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
       return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
     });
 
@@ -73,6 +76,9 @@ describe("SettingsPage", () => {
             status: 200
           })
         );
+      }
+      if (url.endsWith("/admin/agent-keys")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
       if (url.endsWith("/settings/workers/release-all")) {
         expect(init?.method).toBe("POST");
@@ -129,7 +135,10 @@ describe("SettingsPage", () => {
         );
       }
       if (url.endsWith("/admin/agent-keys")) {
-        expect(init?.method).toBe("POST");
+        if (!init?.method || init.method === "GET") {
+          return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+        }
+        expect(init.method).toBe("POST");
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -170,5 +179,63 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
     });
+  });
+
+  it("renders key list and revokes after confirmation", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve(new Response(JSON.stringify(adminUser), { status: 200 }));
+      }
+      if (url.endsWith("/settings/workers")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(workerState({ company_researcher: 0, ppa_analyser: 0, application_drafter: 0 })), {
+            status: 200
+          })
+        );
+      }
+      if (url.endsWith("/admin/agent-keys") && (!init?.method || init.method === "GET")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: "k1",
+                name: "prod-agent",
+                scopes: ["read", "write"],
+                created_at: "2026-01-01T00:00:00Z",
+                last_used_at: null
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.endsWith("/admin/agent-keys/k1")) {
+        expect(init?.method).toBe("DELETE");
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("heading", { name: "Settings" });
+    expect(await screen.findByText("prod-agent")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    expect(await screen.findByRole("heading", { name: "Confirm API key revoke" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Revoke key" }));
+
+    await waitFor(() => {
+      const deleteCalls = fetchMock.mock.calls.filter(([input]) =>
+        (typeof input === "string" ? input : input.toString()).endsWith("/admin/agent-keys/k1")
+      );
+      expect(deleteCalls).toHaveLength(1);
+    });
+    await waitFor(() => expect(screen.queryByText("prod-agent")).not.toBeInTheDocument());
   });
 });
