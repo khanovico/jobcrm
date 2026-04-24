@@ -20,6 +20,7 @@ import {
 import { ApplicationListItem, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 15;
+const EMPTY_APPLIED_PROFILE_MATCH = "__jobcrm_no_applied_profile_match__";
 
 const PlusIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -35,7 +36,7 @@ export const ApplicationsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
-  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[]>([]);
+  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(null);
   const appliedProfilesFilterButtonRef = useRef<HTMLButtonElement | null>(null);
   const [appliedProfilesFilterPosition, setAppliedProfilesFilterPosition] = useState<{ top: number; left: number } | null>(
     null
@@ -53,29 +54,21 @@ export const ApplicationsPage = () => {
   const [tableSort, setTableSort] = useState<ApplicationTableSort>("updated_at_desc");
   const [profileNamesForFilter, setProfileNamesForFilter] = useState<string[]>([]);
   const [companySearch, setCompanySearch] = useState("");
+  const [debouncedCompanySearch, setDebouncedCompanySearch] = useState("");
   const previousAvailableProfileNamesRef = useRef<string[]>([]);
 
-  const loadProfileNamesForFilter = useCallback(async () => {
-    try {
-      const summaries = await api.listAllProfileSummaries();
-      const names = Array.from(
-        new Set(summaries.map((row) => row.name.trim()).filter((n) => n.length > 0))
-      ).sort((a, b) => a.localeCompare(b));
-      setProfileNamesForFilter(names);
-    } catch {
-      setProfileNamesForFilter([]);
-    }
-  }, []);
-
   useEffect(() => {
-    void loadProfileNamesForFilter();
-  }, [loadProfileNamesForFilter]);
+    const timer = window.setTimeout(() => {
+      setDebouncedCompanySearch(companySearch.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [companySearch]);
 
   const availableAppliedProfileNames = profileNamesForFilter;
 
   useEffect(() => {
     if (availableAppliedProfileNames.length === 0) {
-      setSelectedAppliedProfileNamesState([]);
+      setSelectedAppliedProfileNamesState(null);
       previousAvailableProfileNamesRef.current = [];
       return;
     }
@@ -99,35 +92,10 @@ export const ApplicationsPage = () => {
     const sanitizedSelection = nextSelection.filter((name) => availableAppliedProfileNames.includes(name));
     setSelectedAppliedProfileNamesState(sanitizedSelection);
     setSelectedAppliedProfileNames(sanitizedSelection);
+    setPage(1);
   };
 
-  const companySearchFilteredItems = useMemo(() => {
-    const q = companySearch.trim().toLowerCase();
-    if (!q) {
-      return items;
-    }
-    return items.filter((a) => a.company_name.toLowerCase().includes(q));
-  }, [items, companySearch]);
-
-  const filteredItems = useMemo(() => {
-    const selectedNamesList = getSelectedAppliedProfileNames() ?? availableAppliedProfileNames;
-    if (availableAppliedProfileNames.length === 0) {
-      return companySearchFilteredItems;
-    }
-    const allSelected =
-      selectedNamesList.length === availableAppliedProfileNames.length &&
-      availableAppliedProfileNames.every((name) => selectedNamesList.includes(name));
-    const selectedNames = new Set(selectedNamesList);
-    return companySearchFilteredItems.filter((application) => {
-      const appliedProfiles = application.applied_profiles ?? [];
-      if (appliedProfiles.length === 0) {
-        return selectedNamesList.length === 0 || allSelected;
-      }
-      return appliedProfiles.some((profile) => selectedNames.has(profile.profile_name));
-    });
-  }, [companySearchFilteredItems, availableAppliedProfileNames, selectedAppliedProfileNames]);
-
-  const listParams = useMemo(() => {
+  const applicationFilterParams = useMemo(() => {
     const p = new URLSearchParams();
     if (listMode === "pending") {
       p.set("exclude_status", "archived");
@@ -138,15 +106,48 @@ export const ApplicationsPage = () => {
     } else if (listMode === "archived") {
       p.set("status_filter", "archived");
     }
-    p.set("sort", tableSort);
+    if (debouncedCompanySearch) {
+      p.set("company_search", debouncedCompanySearch);
+    }
     return p;
-  }, [listMode, tableSort]);
+  }, [debouncedCompanySearch, listMode]);
+
+  const loadProfileNamesForFilter = useCallback(async () => {
+    try {
+      const facets = await api.listApplicationAppliedProfileFacets(applicationFilterParams);
+      const names = Array.from(
+        new Set(facets.profile_names.map((name) => name.trim()).filter((name) => name.length > 0))
+      ).sort((a, b) => a.localeCompare(b));
+      setProfileNamesForFilter(names);
+    } catch {
+      setProfileNamesForFilter([]);
+    }
+  }, [applicationFilterParams]);
+
+  const listParamsKey = useMemo(() => {
+    const p = new URLSearchParams(applicationFilterParams);
+    const allProfilesSelected =
+      selectedAppliedProfileNames === null ||
+      (selectedAppliedProfileNames.length === availableAppliedProfileNames.length &&
+        availableAppliedProfileNames.every((name) => selectedAppliedProfileNames.includes(name)));
+    if (availableAppliedProfileNames.length > 0 && selectedAppliedProfileNames !== null && !allProfilesSelected) {
+      const namesToFilter =
+        selectedAppliedProfileNames.length > 0
+          ? selectedAppliedProfileNames
+          : [EMPTY_APPLIED_PROFILE_MATCH];
+      for (const profileName of namesToFilter) {
+        p.append("applied_profile_names", profileName);
+      }
+    }
+    p.set("sort", tableSort);
+    return p.toString();
+  }, [applicationFilterParams, availableAppliedProfileNames, selectedAppliedProfileNames, tableSort]);
 
   const load = useCallback(
     async (targetPage = page) => {
       setError(null);
       try {
-        const params = new URLSearchParams(listParams);
+        const params = new URLSearchParams(listParamsKey);
         params.set("skip", String((targetPage - 1) * PAGE_SIZE));
         params.set("limit", String(PAGE_SIZE));
         const [applicationItems, workers] = await Promise.all([
@@ -156,21 +157,24 @@ export const ApplicationsPage = () => {
         setItems(applicationItems);
         setHasNextPage(applicationItems.length === PAGE_SIZE);
         setWorkerState(workers);
-        void loadProfileNamesForFilter();
       } catch (e) {
         setError((e as Error).message);
       }
     },
-    [listParams, page, loadProfileNamesForFilter]
+    [listParamsKey, page]
   );
 
   useEffect(() => {
     setPage(1);
-  }, [listMode]);
+  }, [listMode, debouncedCompanySearch]);
 
   useEffect(() => {
     setPage(1);
   }, [tableSort]);
+
+  useEffect(() => {
+    void loadProfileNamesForFilter();
+  }, [loadProfileNamesForFilter]);
 
   useEffect(() => {
     void load(page);
@@ -296,7 +300,7 @@ export const ApplicationsPage = () => {
                 }
               }}
             >
-              All profile filters
+              Reset profile filter
             </button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page)}>
               Refresh
@@ -338,7 +342,7 @@ export const ApplicationsPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((application) => (
+              {items.map((application) => (
                 <tr
                   key={application.id}
                   className="cursor-pointer hover:bg-base-200"
@@ -394,11 +398,7 @@ export const ApplicationsPage = () => {
                               e.stopPropagation();
                               const nextApplied = !application.applied;
                               await api.markApplied(application.id, nextApplied);
-                              if (listMode === "all" || listMode === "archived") {
-                                await load(page);
-                                return;
-                              }
-                              setListMode(nextApplied ? "applied" : "pending");
+                              await load(page);
                             }}
                           >
                             {application.applied ? "Unmark Applied" : "Mark Applied"}
@@ -422,7 +422,7 @@ export const ApplicationsPage = () => {
               ))}
             </tbody>
           </table>
-          {filteredItems.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
+          {items.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
         </div>
         <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
         {appliedProfileFilterOpen && appliedProfilesFilterPosition ? (
@@ -461,20 +461,20 @@ export const ApplicationsPage = () => {
                 ) : (
                   availableAppliedProfileNames.map((profileName) => (
                     <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
-                      <input
-                        type="checkbox"
-                        className="checkbox checkbox-sm"
-                        checked={selectedAppliedProfileNames.includes(profileName)}
+	                      <input
+	                        type="checkbox"
+	                        className="checkbox checkbox-sm"
+	                        checked={(selectedAppliedProfileNames ?? []).includes(profileName)}
                         onChange={(event) => {
-                          if (event.target.checked) {
-                            updateAppliedProfileSelection(
-                              Array.from(new Set([...selectedAppliedProfileNames, profileName])).sort((a, b) =>
-                                a.localeCompare(b)
-                              )
-                            );
+	                          if (event.target.checked) {
+	                            updateAppliedProfileSelection(
+	                              Array.from(new Set([...(selectedAppliedProfileNames ?? []), profileName])).sort((a, b) =>
+	                                a.localeCompare(b)
+	                              )
+	                            );
                             return;
                           }
-                          updateAppliedProfileSelection(selectedAppliedProfileNames.filter((name) => name !== profileName));
+	                          updateAppliedProfileSelection((selectedAppliedProfileNames ?? []).filter((name) => name !== profileName));
                         }}
                       />
                       <span className="label-text text-xs">{profileName}</span>

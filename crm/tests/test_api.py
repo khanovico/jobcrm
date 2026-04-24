@@ -510,6 +510,44 @@ def test_application_applied_profile_facets_return_sorted_unique_names_for_match
     assert response.json() == {"profile_names": ["Alex Dev", "Blair Ops"]}
 
 
+def test_application_applied_profile_facets_cover_target_profile_count() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = repo.create_company(CompanyCreate(name="Scale Facets Co"))
+    for index in range(200):
+        profile = repo.create_profile(
+            ProfileCreate.model_validate(
+                {
+                    **_valid_profile_create_payload(),
+                    "name": f"Profile {index:03d}",
+                    "email": f"profile-{index:03d}@example.com",
+                }
+            )
+        )
+        application = repo.create_application(
+            ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+            created_by_user_id=None,
+        )
+        repo.create_per_profile_application(
+            PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+        )
+
+    response = client.get(
+        "/api/v1/applications/applied-profile-facets",
+        params={"status_filter": "ppa_pending"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    profile_names = response.json()["profile_names"]
+    assert len(profile_names) == 200
+    assert "Profile 150" in profile_names
+
+
 def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
@@ -2214,10 +2252,83 @@ def test_mongo_repository_applied_profile_facets_use_base_filters_and_projection
         "order_index": 1,
         "created_at": 1,
     }
-    assert db.profiles.find_queries[-1] == {
-        "_id": {"$in": [blair_profile.id, alex_profile.id]}
+    assert set(db.profiles.find_queries[-1]["_id"]["$in"]) == {
+        blair_profile.id,
+        alex_profile.id,
     }
     assert db.profiles.projections[-1] == {"_id": 1, "name": 1}
+
+
+def test_mongo_repository_application_profile_filter_uses_aggregation_when_available() -> None:
+    seed = InMemoryRepository()
+    company = seed.create_company(CompanyCreate(name="Acme Platform"))
+    profile = seed.create_profile(
+        ProfileCreate.model_validate({**_valid_profile_create_payload(), "name": "Alex Dev"})
+    )
+    application = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.applications.docs = [_mongo_doc(application)]
+    db.companies.docs = [_mongo_doc(company)]
+    db.profiles.docs = [_mongo_doc(profile)]
+    aggregate_pipelines: list[list[dict]] = []
+
+    def aggregate(pipeline: list[dict]) -> list[dict]:
+        aggregate_pipelines.append(pipeline)
+        return [_mongo_doc(application)]
+
+    db.applications.aggregate = aggregate  # type: ignore[attr-defined]
+
+    rows = repo.list_applications(
+        skip=5,
+        limit=10,
+        status=ApplicationStatus.ppa_pending,
+        applied_profile_names=["Alex Dev"],
+    )
+
+    assert [row.id for row in rows] == [application.id]
+    pipeline = aggregate_pipelines[-1]
+    assert pipeline[0] == {"$match": {"status": {"$in": ["analysis_ready", "ppa_pending"]}}}
+    assert any(stage.get("$lookup", {}).get("from") == "per_profile_applications" for stage in pipeline)
+    assert any(stage.get("$lookup", {}).get("from") == "profiles" for stage in pipeline)
+    assert {"$match": {"first_profile.name": {"$in": ["Alex Dev"]}}} in pipeline
+    assert {"$skip": 5} in pipeline
+    assert {"$limit": 10} in pipeline
+    assert db.applications.distinct_calls == []
+
+
+def test_mongo_repository_application_profile_facets_use_aggregation_when_available() -> None:
+    repo, db = _mongo_repo_for_query_tests()
+    aggregate_pipelines: list[list[dict]] = []
+
+    def aggregate(pipeline: list[dict]) -> list[dict]:
+        aggregate_pipelines.append(pipeline)
+        return [{"_id": "Alex Dev"}, {"_id": "Blair Ops"}]
+
+    db.applications.aggregate = aggregate  # type: ignore[attr-defined]
+
+    names = repo.list_application_applied_profile_facets(
+        status=ApplicationStatus.ppa_pending,
+        exclude_status=ApplicationStatus.archived,
+    )
+
+    assert names == ["Alex Dev", "Blair Ops"]
+    pipeline = aggregate_pipelines[-1]
+    assert pipeline[0] == {
+        "$match": {
+            "$and": [
+                {"status": {"$in": ["analysis_ready", "ppa_pending"]}},
+                {"status": {"$nin": ["archived"]}},
+            ]
+        }
+    }
+    assert any(stage.get("$lookup", {}).get("from") == "per_profile_applications" for stage in pipeline)
+    assert any(stage.get("$lookup", {}).get("from") == "profiles" for stage in pipeline)
+    assert {"$group": {"_id": "$first_profile.name"}} in pipeline
+    assert {"$limit": 500} in pipeline
+    assert db.applications.distinct_calls == []
 
 
 def test_mongo_repository_agent_queue_tasks_use_indexed_compact_queries() -> None:

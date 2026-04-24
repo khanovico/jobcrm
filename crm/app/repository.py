@@ -142,6 +142,9 @@ def _normalized_nonempty_text_list(values: list[str] | None) -> list[str]:
     return normalized
 
 
+APPLICATION_PROFILE_FACET_LIMIT = 500
+
+
 class BaseRepository:
     @contextmanager
     def bulk_persistence(self):
@@ -274,7 +277,7 @@ class BaseRepository:
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
         company_search: str | None = None,
-        limit: int = 100,
+        limit: int = APPLICATION_PROFILE_FACET_LIMIT,
     ) -> list[str]:
         raise NotImplementedError
 
@@ -1053,7 +1056,7 @@ class InMemoryRepository(BaseRepository):
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
         company_search: str | None = None,
-        limit: int = 100,
+        limit: int = APPLICATION_PROFILE_FACET_LIMIT,
     ) -> list[str]:
         values = self._filter_applications_for_list(
             status=status,
@@ -2191,6 +2194,71 @@ class MongoRepository(InMemoryRepository):
             if profile_name in selected_profile_names
         ]
 
+    def _mongo_application_first_profile_lookup_stages(self) -> list[dict[str, object]]:
+        return [
+            {
+                "$lookup": {
+                    "from": "per_profile_applications",
+                    "let": {"application_id": "$_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$application_id", "$$application_id"]}}},
+                        {"$sort": {"order_index": 1, "created_at": 1}},
+                        {"$limit": 1},
+                        {"$project": {"_id": 1, "application_id": 1, "profile_id": 1}},
+                    ],
+                    "as": "first_ppa",
+                }
+            },
+            {"$unwind": "$first_ppa"},
+            {
+                "$lookup": {
+                    "from": "profiles",
+                    "localField": "first_ppa.profile_id",
+                    "foreignField": "_id",
+                    "as": "first_profile",
+                }
+            },
+            {"$unwind": "$first_profile"},
+        ]
+
+    def _mongo_aggregate_application_docs_by_first_profile(
+        self,
+        *,
+        query: dict[str, object],
+        profile_names: list[str],
+        sort: str,
+        skip: int,
+        limit: int,
+    ) -> list[dict] | None:
+        aggregate = getattr(self.db.applications, "aggregate", None)
+        if not callable(aggregate):
+            return None
+        pipeline: list[dict[str, object]] = [
+            {"$match": query},
+            *self._mongo_application_first_profile_lookup_stages(),
+            {"$match": {"first_profile.name": {"$in": profile_names}}},
+            {"$sort": dict(self._application_sort_spec(sort))},
+        ]
+        if skip:
+            pipeline.append({"$skip": skip})
+        pipeline.append({"$limit": limit})
+        return list(aggregate(pipeline))
+
+    def _mongo_application_profile_facets_with_aggregation(
+        self, *, query: dict[str, object], limit: int
+    ) -> list[str] | None:
+        aggregate = getattr(self.db.applications, "aggregate", None)
+        if not callable(aggregate):
+            return None
+        pipeline: list[dict[str, object]] = [
+            {"$match": query},
+            *self._mongo_application_first_profile_lookup_stages(),
+            {"$group": {"_id": "$first_profile.name"}},
+            {"$sort": {"_id": 1}},
+            {"$limit": limit},
+        ]
+        return [str(doc["_id"]) for doc in aggregate(pipeline) if doc.get("_id")]
+
     def list_applications(
         self,
         skip: int,
@@ -2218,20 +2286,39 @@ class MongoRepository(InMemoryRepository):
             return []
         selected_profile_names = _normalized_nonempty_text_list(applied_profile_names)
         if selected_profile_names:
-            matching_application_ids = self._mongo_application_ids_matching_applied_profile_names(
-                query, selected_profile_names
+            application_docs = self._mongo_aggregate_application_docs_by_first_profile(
+                query=query,
+                profile_names=selected_profile_names,
+                sort=sort,
+                skip=skip,
+                limit=limit,
             )
-            if not matching_application_ids:
-                return []
-            query = {"$and": [query, {"_id": {"$in": matching_application_ids}}]}
-        applications = self._mongo_find_page(
-            "applications",
-            query,
-            Application,
-            sort=self._application_sort_spec(sort),
-            skip=skip,
-            limit=limit,
-        )
+            if application_docs is not None:
+                applications = self._models_from_mongo_rows(application_docs, Application)
+            else:
+                matching_application_ids = self._mongo_application_ids_matching_applied_profile_names(
+                    query, selected_profile_names
+                )
+                if not matching_application_ids:
+                    return []
+                query = {"$and": [query, {"_id": {"$in": matching_application_ids}}]}
+                applications = self._mongo_find_page(
+                    "applications",
+                    query,
+                    Application,
+                    sort=self._application_sort_spec(sort),
+                    skip=skip,
+                    limit=limit,
+                )
+        else:
+            applications = self._mongo_find_page(
+                "applications",
+                query,
+                Application,
+                sort=self._application_sort_spec(sort),
+                skip=skip,
+                limit=limit,
+            )
         company_ids = list({application.company_id for application in applications})
         companies = self._mongo_find_page("companies", {"_id": {"$in": company_ids}}, Company)
         company_name_by_id = {company.id: company.name for company in companies}
@@ -2257,7 +2344,7 @@ class MongoRepository(InMemoryRepository):
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
         company_search: str | None = None,
-        limit: int = 100,
+        limit: int = APPLICATION_PROFILE_FACET_LIMIT,
     ) -> list[str]:
         query = self._mongo_application_query(
             status=status,
@@ -2270,6 +2357,12 @@ class MongoRepository(InMemoryRepository):
         )
         if query is None:
             return []
+        aggregated_names = self._mongo_application_profile_facets_with_aggregation(
+            query=query,
+            limit=limit,
+        )
+        if aggregated_names is not None:
+            return aggregated_names
         application_ids = [str(value) for value in self.db.applications.distinct("_id", query)]
         if not application_ids:
             return []

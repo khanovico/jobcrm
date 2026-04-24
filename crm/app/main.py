@@ -705,6 +705,7 @@ def list_application_applied_profile_facets(
     company_search: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
+    limit: int = Query(default=500, ge=1, le=500),
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> ApplicationAppliedProfileFacetsResponse:
@@ -716,6 +717,7 @@ def list_application_applied_profile_facets(
             email_sent=email_sent,
             exclude_status=exclude_status,
             company_search=_normalized_query_text(company_search),
+            limit=limit,
         )
     )
 
