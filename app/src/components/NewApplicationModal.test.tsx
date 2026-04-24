@@ -56,7 +56,13 @@ describe("NewApplicationModal", () => {
 
   it("creates an application from a typed company name without a preexisting company", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValue(new Response(JSON.stringify(applicationResponse), { status: 201 }));
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify(applicationResponse), { status: 201 }));
+    });
     const { onSuccess } = renderModal();
 
     await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "New Co");
@@ -65,10 +71,14 @@ describe("NewApplicationModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0];
+    const createCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes("/api/v1/applications/bootstrap")
+    );
+    expect(createCall).toBeTruthy();
+    const [url, init] = createCall!;
     expect(String(url)).toContain("/api/v1/applications/bootstrap");
     expect((init as RequestInit).method).toBe("POST");
-    expect(requestBody(fetchMock.mock.calls[0])).toMatchObject({
+    expect(requestBody(createCall!)).toMatchObject({
       company_name: "New Co",
       company_website: "https://new.example",
       job_post: { job_link: "https://jobs.example/new", job_description: null }
@@ -115,7 +125,7 @@ describe("NewApplicationModal", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(
           new Response(JSON.stringify([{ id: "c2", name: "Beta Labs", created_at: "", updated_at: "" }]), {
             status: 200
@@ -146,7 +156,7 @@ describe("NewApplicationModal", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(
           new Response(
             JSON.stringify([{ id: "c2", name: "Beta Labs", website: "https://beta.example", created_at: "", updated_at: "" }]),
@@ -174,7 +184,7 @@ describe("NewApplicationModal", () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(
           new Response(
             JSON.stringify([{ id: "c2", name: "Beta Labs", website: "https://beta.example", created_at: "", updated_at: "" }]),
@@ -272,7 +282,7 @@ describe("NewApplicationModal", () => {
     const fetchMock = vi.mocked(fetch);
     const pendingSearch = deferredResponse();
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
-      if (String(input).includes("/api/v1/companies")) return pendingSearch.promise;
+      if (String(input).includes("/api/v1/companies/summary")) return pendingSearch.promise;
       return Promise.resolve(new Response(JSON.stringify(applicationResponse), { status: 201 }));
     });
     renderModal();
@@ -297,7 +307,7 @@ describe("NewApplicationModal", () => {
     const fetchMock = vi.mocked(fetch);
     const pendingSearch = deferredResponse();
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
-      if (String(input).includes("/api/v1/companies")) return pendingSearch.promise;
+      if (String(input).includes("/api/v1/companies/summary")) return pendingSearch.promise;
       return Promise.resolve(new Response(JSON.stringify(applicationResponse), { status: 201 }));
     });
 

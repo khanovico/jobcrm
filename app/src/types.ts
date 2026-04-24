@@ -27,6 +27,17 @@ export type Company = {
   archive_reason?: string | null;
 };
 
+export type CompanyListItem = {
+  id: string;
+  name: string;
+  has_application?: boolean;
+  research_status: CompanyResearchStatus;
+  website?: string | null;
+  created_at: string;
+  updated_at: string;
+  archived?: boolean;
+};
+
 export type Industry = {
   id: string;
   name: string;

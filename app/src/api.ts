@@ -7,6 +7,7 @@ import {
   ApplicationListItem,
   AuditEvent,
   Company,
+  CompanyListItem,
   DashboardMetrics,
   WorkerSettings,
   WorkerStateResponse,
@@ -132,6 +133,8 @@ export const api = {
   deleteIndustry: (id: string) => request<void>(`/api/v1/industries/${id}`, { method: "DELETE" }),
   listCompanies: (params?: URLSearchParams) =>
     request<Company[]>(`/api/v1/companies${params ? `?${params.toString()}` : ""}`),
+  listCompanySummaries: (params?: URLSearchParams) =>
+    request<CompanyListItem[]>(`/api/v1/companies/summary${params ? `?${params.toString()}` : ""}`),
   createCompany: (
     payload: Partial<Company> & { name: string; acknowledge_reuse_of_archived_company?: boolean }
   ) => request<Company>("/api/v1/companies", { method: "POST", body: JSON.stringify(payload) }),
@@ -206,6 +209,7 @@ export const api = {
       body: JSON.stringify(payload ?? { related_applications: "none" })
     }),
   getWorkerState: () => request<WorkerStateResponse>("/api/v1/settings/workers"),
+  getWorkerSummary: () => request<WorkerStateResponse>("/api/v1/workers/summary"),
   patchWorkerSettings: (payload: WorkerSettingsUpdatePayload) =>
     request<WorkerSettings>("/api/v1/settings/workers", {
       method: "PATCH",
