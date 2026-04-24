@@ -34,7 +34,7 @@ Out of scope for this batch:
 - [x] Add focused API/repository tests.
 - [x] Run targeted backend tests; full backend tests remain for after merge.
 - [x] Run code review and scalability review; address findings.
-- [ ] Commit batch branch, merge into `codex/ux-performance-audit`, update audit checkboxes, and commit docs.
+- [x] Commit batch branch, merge into `codex/ux-performance-audit`, update audit checkboxes, and commit docs.
 
 ## Parallel Work
 
@@ -51,6 +51,7 @@ Out of scope for this batch:
 
 - Focused queue/detail regressions: passed.
 - Affected API/agent suites: `88 passed`.
+- Full backend suite after merge: `108 passed`.
 - `python -m compileall -q crm/app`: passed.
 - Code review: pass for `UXPERF-008/009`.
 - Scalability review: pass for `UXPERF-008/009`; non-blocking follow-ups are legacy Mongo normalization and future summary-first email body loading.
