@@ -43,7 +43,7 @@ Out of scope:
 - [x] Update frontend tests for server-backed filters and stable mark-applied mode.
 - [x] Run targeted backend and frontend tests plus frontend build.
 - [x] Run code review and scalability review.
-- [ ] Mark audit rows checked, commit, merge to `codex/ux-performance-audit`, and re-run final verification.
+- [x] Mark audit rows checked, commit, merge to `codex/ux-performance-audit`, and re-run final verification.
 
 ## Parallel Work
 

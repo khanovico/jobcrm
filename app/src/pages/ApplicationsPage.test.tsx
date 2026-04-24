@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -161,7 +161,9 @@ describe("ApplicationsPage", () => {
       .filter((url) => url.includes("/api/v1/companies"));
     expect(initialCompanyCalls).toHaveLength(0);
 
-    await userEvent.type(screen.getByRole("textbox", { name: "Use an existing company (optional)" }), "Beta");
+    fireEvent.change(screen.getByRole("textbox", { name: "Use an existing company (optional)" }), {
+      target: { value: "Beta" }
+    });
 
     await waitFor(() => {
       const companyCalls = fetchMock.mock.calls
@@ -201,7 +203,9 @@ describe("ApplicationsPage", () => {
     );
 
     expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
-    await userEvent.type(screen.getByRole("textbox", { name: "Filter applications by company name" }), "Beta");
+    fireEvent.change(screen.getByRole("textbox", { name: "Filter applications by company name" }), {
+      target: { value: "Beta" }
+    });
 
     await waitFor(() => {
       const listCalls = fetchMock.mock.calls
