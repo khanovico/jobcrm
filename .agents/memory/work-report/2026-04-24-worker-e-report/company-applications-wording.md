@@ -22,7 +22,7 @@
 - No backend/API contract changes.
 
 ### Commit Hash
-- `eca8d33`
+- `e6adc77`
 
 ### Handoff Notes
 - UXPERF-038 scope complete in `CompaniesPage` and focused tests only.
