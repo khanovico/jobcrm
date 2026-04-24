@@ -231,8 +231,10 @@ describe("ApplicationsPage", () => {
 
     await screen.findByRole("heading", { name: "Applications" });
     await userEvent.click(screen.getByRole("button", { name: "New application" }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "Acme");
-    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Company name" }), {
+      target: { value: "Acme" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
 
     await waitFor(() => {
       expect(
