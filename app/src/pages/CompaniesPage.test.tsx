@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +17,7 @@ describe("CompaniesPage", () => {
     vi.stubGlobal("fetch", vi.fn());
   });
   afterEach(() => {
+    cleanup();
     resetCompanySummariesCacheForTests();
     vi.unstubAllGlobals();
   });
@@ -146,5 +147,65 @@ describe("CompaniesPage", () => {
     expect(screen.getAllByText("No application records").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: "No application records" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: "Has application records" }).length).toBeGreaterThan(0);
+  });
+
+  it("creates an application from the company row Apply action", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const companyRow = {
+      id: "c1",
+      name: "Acme Corp",
+      has_application: false,
+      research_status: "indexed",
+      website: "https://acme.example",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    };
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/api/v1/applications") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "a1",
+              company_id: "c1",
+              status: "ppa_pending",
+              applied: false,
+              email_sent: false,
+              created_at: "2026-01-03T00:00:00Z",
+              updated_at: "2026-01-03T00:00:00Z"
+            }),
+            { status: 201 }
+          )
+        );
+      }
+      if (url.includes("/api/v1/companies")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/settings/workers")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText("Using existing company: Acme Corp")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(([input]) =>
+        String(input).endsWith("/api/v1/applications")
+      );
+      expect(createCall).toBeTruthy();
+      expect(JSON.parse((createCall![1] as RequestInit).body as string)).toMatchObject({
+        company_id: "c1"
+      });
+    });
   });
 });
