@@ -131,7 +131,7 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("heading", { name: "Set application status" })).toBeInTheDocument();
   });
 
-  it("opens new application modal with bounded company search", async () => {
+  it("opens new application modal with typed company name and explicit bounded company search", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -162,26 +162,24 @@ describe("ApplicationsPage", () => {
     await screen.findByRole("heading", { name: "Applications" });
     await userEvent.click(screen.getByRole("button", { name: "New application" }));
     expect(await screen.findByRole("heading", { name: "New application", level: 3 })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Search companies" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Company" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Company name" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Use an existing company (optional)" })).toBeInTheDocument();
 
-    await waitFor(() => {
-      const companyCalls = fetchMock.mock.calls
-        .map(([input]) => (typeof input === "string" ? input : input.toString()))
-        .filter((url) => url.includes("/api/v1/companies"));
-      expect(companyCalls).toHaveLength(1);
-      expect(companyCalls[0]).toContain("limit=20");
-    });
+    const initialCompanyCalls = fetchMock.mock.calls
+      .map(([input]) => (typeof input === "string" ? input : input.toString()))
+      .filter((url) => url.includes("/api/v1/companies"));
+    expect(initialCompanyCalls).toHaveLength(0);
 
-    await userEvent.type(screen.getByRole("textbox", { name: "Search companies" }), "Beta");
+    await userEvent.type(screen.getByRole("textbox", { name: "Use an existing company (optional)" }), "Beta");
 
     await waitFor(() => {
       const companyCalls = fetchMock.mock.calls
         .map(([input]) => (typeof input === "string" ? input : input.toString()))
         .filter((url) => url.includes("/api/v1/companies"));
       expect(companyCalls.some((url) => url.includes("search=Beta"))).toBe(true);
+      expect(companyCalls.every((url) => url.includes("limit=20"))).toBe(true);
     });
-    expect(await screen.findByRole("option", { name: "Beta Labs" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Beta Labs/ })).toBeInTheDocument();
   });
 
   it("shows mark applied button and marks as applied", async () => {
