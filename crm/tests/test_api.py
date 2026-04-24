@@ -1,14 +1,25 @@
+from contextvars import copy_context
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import hash_password
 from app.deps import get_repository
 from app.main import app
 from app.models import (
+    ApplicationCreate,
     ApplicationStatus,
+    CompanyCreate,
+    CompanyResearchStatus,
+    CompanyUpdate,
+    EmailCreate,
+    EmailKind,
     NotificationKind,
     NotificationPayload,
     NotificationSeverity,
     PerProfileApplication,
+    PerProfileApplicationCreate,
+    ProfileCreate,
     UserCreate,
 )
 from app.repository import (
@@ -1428,6 +1439,286 @@ def test_mongo_dashboard_application_counts_uses_count_queries() -> None:
             "applied": False,
         },
     ]
+
+
+class _FakeMongoCollection:
+    def __init__(self) -> None:
+        self.replacements: list[tuple[dict, dict, bool]] = []
+        self.deletes: list[dict] = []
+        self.full_rewrites: list[dict] = []
+        self.inserts: list[list[dict]] = []
+
+    def replace_one(self, query: dict, payload: dict, upsert: bool = False) -> None:
+        self.replacements.append((query, payload, upsert))
+
+    def delete_one(self, query: dict) -> None:
+        self.deletes.append(query)
+
+    def delete_many(self, query: dict) -> None:
+        if query == {}:
+            self.full_rewrites.append(query)
+        self.deletes.append(query)
+
+    def insert_many(self, docs: list[dict]) -> None:
+        self.inserts.append(docs)
+
+    def find(self) -> list[dict]:
+        return []
+
+    def find_one(self, query: dict) -> None:
+        return None
+
+    def count_documents(self, query: dict) -> int:
+        return 0
+
+
+class _FakeMongoDb:
+    def __init__(self) -> None:
+        self._collections: dict[str, _FakeMongoCollection] = {}
+
+    def __getitem__(self, name: str) -> _FakeMongoCollection:
+        return self._collections.setdefault(name, _FakeMongoCollection())
+
+    def __getattr__(self, name: str) -> _FakeMongoCollection:
+        return self[name]
+
+    def clear_ops(self) -> None:
+        for collection in self._collections.values():
+            collection.replacements.clear()
+            collection.deletes.clear()
+            collection.full_rewrites.clear()
+            collection.inserts.clear()
+
+    def assert_no_full_rewrites(self) -> None:
+        rewritten = {
+            name: collection.full_rewrites
+            for name, collection in self._collections.items()
+            if collection.full_rewrites
+        }
+        assert rewritten == {}
+
+
+def _mongo_repo_for_write_tests() -> tuple[MongoRepository, _FakeMongoDb]:
+    repo = object.__new__(MongoRepository)
+    InMemoryRepository.__init__(repo)
+    db = _FakeMongoDb()
+    repo.db = db
+    return repo, db
+
+
+class _FakeBulkMongoCollection(_FakeMongoCollection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.bulk_writes: list[tuple[list[object], bool]] = []
+
+    def bulk_write(self, operations: list[object], ordered: bool = True) -> None:
+        self.bulk_writes.append((operations, ordered))
+
+
+class _FakeBulkMongoDb(_FakeMongoDb):
+    def __getitem__(self, name: str) -> _FakeBulkMongoCollection:
+        collection = self._collections.get(name)
+        if collection is None:
+            collection = _FakeBulkMongoCollection()
+            self._collections[name] = collection
+        return collection
+
+
+def test_mongo_repository_updates_company_and_related_apps_without_full_sync() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    company = repo.create_company(CompanyCreate(name="Acme"))
+    application = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    db.clear_ops()
+
+    overview_only = repo.update_company(company.id, CompanyUpdate(overview="Ready"))
+
+    assert overview_only is not None
+    assert db.companies.replacements[-1][0] == {"_id": company.id}
+    assert db.applications.replacements == []
+    db.assert_no_full_rewrites()
+    db.clear_ops()
+
+    updated = repo.update_company(
+        company.id,
+        CompanyUpdate(research_status=CompanyResearchStatus.indexed),
+    )
+
+    assert updated is not None
+    assert db.companies.replacements[-1][0] == {"_id": company.id}
+    assert db.companies.replacements[-1][2] is True
+    assert db.applications.replacements[-1][0] == {"_id": application.id}
+    assert db.applications.replacements[-1][1]["status"] == ApplicationStatus.ppa_pending.value
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_bulk_persistence_uses_collection_bulk_write_when_available() -> None:
+    repo = object.__new__(MongoRepository)
+    InMemoryRepository.__init__(repo)
+    db = _FakeBulkMongoDb()
+    repo.db = db
+
+    with repo.bulk_persistence():
+        first = repo.create_company(CompanyCreate(name="First"))
+        second = repo.create_company(CompanyCreate(name="Second"))
+
+    assert len(db.companies.bulk_writes) == 1
+    operations, ordered = db.companies.bulk_writes[0]
+    assert ordered is False
+    assert len(operations) == 2
+    assert db.companies.replacements == []
+    assert db.companies.deletes == []
+    assert {op._filter["_id"] for op in operations} == {first.id, second.id}
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_repository_clears_application_with_targeted_related_deletes() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    company = repo.create_company(CompanyCreate(name="Acme"))
+    profile = repo.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    application = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    ppa = repo.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+    )
+    email = repo.create_email(
+        EmailCreate(per_profile_application_id=ppa.id, kind=EmailKind.cold, content="Hello")
+    )
+    db.clear_ops()
+
+    reset = repo.clear_application_to_company_research_pending(application.id)
+
+    assert reset is not None
+    assert db.applications.replacements[-1][0] == {"_id": application.id}
+    assert {"_id": ppa.id} in db.per_profile_applications.deletes
+    assert {"_id": email.id} in db.emails.deletes
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_repository_clear_company_reset_persists_targeted_cascade() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    company = repo.create_company(CompanyCreate(name="Acme", overview="Old"))
+    profile = repo.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    application = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    ppa = repo.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+    )
+    email = repo.create_email(
+        EmailCreate(per_profile_application_id=ppa.id, kind=EmailKind.cold, content="Hello")
+    )
+    db.clear_ops()
+
+    cleared = repo.clear_company_research_detail(company.id, related_applications="reset")
+
+    assert cleared is not None
+    assert db.companies.replacements[-1][0] == {"_id": company.id}
+    assert db.applications.replacements[-1][0] == {"_id": application.id}
+    assert db.applications.replacements[-1][1]["status"] == ApplicationStatus.company_research_pending.value
+    assert {"_id": ppa.id} in db.per_profile_applications.deletes
+    assert {"_id": email.id} in db.emails.deletes
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_repository_clear_company_archive_persists_targeted_apps_only() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    company = repo.create_company(CompanyCreate(name="Acme", overview="Old"))
+    application = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    db.clear_ops()
+
+    cleared = repo.clear_company_research_detail(company.id, related_applications="archive")
+
+    assert cleared is not None
+    assert db.companies.replacements[-1][0] == {"_id": company.id}
+    assert db.applications.replacements[-1][0] == {"_id": application.id}
+    assert db.applications.replacements[-1][1]["status"] == ApplicationStatus.archived.value
+    assert db.per_profile_applications.deletes == []
+    assert db.emails.deletes == []
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_repository_bulk_notifications_touch_only_changed_owned_rows() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    own = repo.create_notification(
+        user_id="u1",
+        notification=NotificationKind.COMPANY_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(message="Own"),
+    )
+    other = repo.create_notification(
+        user_id="u2",
+        notification=NotificationKind.COMPANY_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(message="Other"),
+    )
+    db.clear_ops()
+
+    marked = repo.mark_notifications_read_bulk("u1", [own.id, own.id, other.id, "missing"])
+
+    assert marked == 1
+    assert [row[0] for row in db.notifications.replacements] == [{"_id": own.id}]
+    assert db.notifications.deletes == []
+    db.assert_no_full_rewrites()
+    db.clear_ops()
+
+    marked_again = repo.mark_notifications_read_bulk("u1", [own.id, own.id])
+
+    assert marked_again == 0
+    assert db.notifications.replacements == []
+    assert db.notifications.deletes == []
+    db.assert_no_full_rewrites()
+    db.clear_ops()
+
+    deleted = repo.delete_notifications_bulk("u1", [own.id, other.id, "missing"])
+
+    assert deleted == 1
+    assert db.notifications.replacements == []
+    assert db.notifications.deletes == [{"_id": own.id}]
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_bulk_persistence_uses_request_local_state_and_flushes_on_exception() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    first_context = copy_context()
+    second_context = copy_context()
+
+    def enter_batch():
+        manager = repo.bulk_persistence()
+        manager.__enter__()
+        return manager
+
+    first_manager = first_context.run(enter_batch)
+    first = first_context.run(lambda: repo.create_company(CompanyCreate(name="First")))
+    assert db.companies.replacements == []
+
+    second_manager = second_context.run(enter_batch)
+    second = second_context.run(lambda: repo.create_company(CompanyCreate(name="Second")))
+    second_context.run(second_manager.__exit__, None, None, None)
+
+    assert [row[0] for row in db.companies.replacements] == [{"_id": second.id}]
+    first_context.run(first_manager.__exit__, None, None, None)
+    assert [row[0] for row in db.companies.replacements] == [
+        {"_id": second.id},
+        {"_id": first.id},
+    ]
+
+    db.clear_ops()
+    with pytest.raises(RuntimeError):
+        with repo.bulk_persistence():
+            failed = repo.create_company(CompanyCreate(name="Partial"))
+            raise RuntimeError("after first queued write")
+
+    assert [row[0] for row in db.companies.replacements] == [{"_id": failed.id}]
+    db.assert_no_full_rewrites()
 
 
 def test_dashboard_metrics_counts_only_own_applications_for_regular_user() -> None:

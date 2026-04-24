@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 from fastapi.testclient import TestClient
 
 from app.auth import hash_password
@@ -35,6 +37,49 @@ def test_agent_requires_api_key() -> None:
     client = TestClient(app)
     response = client.get("/api/v1/agent/applications/company-research-pending")
     assert response.status_code == 422 or response.status_code == 401
+
+
+def test_agent_bulk_company_update_uses_single_persistence_batch() -> None:
+    class BulkTrackingRepository(InMemoryRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.bulk_entries = 0
+            self.bulk_exits = 0
+
+        @contextmanager
+        def bulk_persistence(self):
+            self.bulk_entries += 1
+            try:
+                yield
+            finally:
+                self.bulk_exits += 1
+
+    repo = BulkTrackingRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+
+    token = _register_admin(client)
+    headers = _headers(token)
+    key_resp = client.post("/api/v1/admin/agent-keys", json={"name": "batch"}, headers=headers)
+    assert key_resp.status_code == 201
+    agent_headers = {"X-API-Key": key_resp.json()["raw_key"]}
+    first = client.post("/api/v1/companies", json={"name": "First"}, headers=headers).json()
+    second = client.post("/api/v1/companies", json={"name": "Second"}, headers=headers).json()
+
+    response = client.patch(
+        "/api/v1/agent/companies/bulk",
+        json={
+            "updates": [
+                {"company_id": first["id"], "payload": {"indexed": True}},
+                {"company_id": second["id"], "payload": {"overview": "Done"}},
+            ]
+        },
+        headers=agent_headers,
+    )
+
+    assert response.status_code == 200
+    assert repo.bulk_entries == 1
+    assert repo.bulk_exits == 1
 
 
 def test_agent_pending_and_company_update() -> None:
