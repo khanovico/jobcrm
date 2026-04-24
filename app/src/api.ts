@@ -258,6 +258,11 @@ export const api = {
     request<{ count: number }>("/api/v1/notifications/unread-count"),
   markNotificationRead: (id: string) =>
     request<void>(`/api/v1/notifications/${id}/read`, { method: "POST" }),
+  markNotificationsReadBulk: (ids: string[]) =>
+    request<{ updated: number }>("/api/v1/notifications/read", {
+      method: "POST",
+      body: JSON.stringify({ ids })
+    }),
   deleteNotification: (id: string) =>
     request<void>(`/api/v1/notifications/${id}`, { method: "DELETE" }),
   deleteNotificationsBulk: (ids: string[]) =>

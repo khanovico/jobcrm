@@ -11,7 +11,11 @@ from app.models import (
     PerProfileApplication,
     UserCreate,
 )
-from app.repository import InMemoryRepository, RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
+from app.repository import (
+    InMemoryRepository,
+    MongoRepository,
+    RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON,
+)
 
 
 def _register_and_login(client: TestClient) -> str:
@@ -212,6 +216,27 @@ def test_auth_required_for_companies() -> None:
     client = TestClient(app)
     response = client.get("/api/v1/companies")
     assert response.status_code == 401
+
+
+def test_human_list_endpoints_reject_unbounded_limits() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    endpoints = [
+        "/api/v1/industries",
+        "/api/v1/companies",
+        "/api/v1/profiles",
+        "/api/v1/profiles/summary",
+        "/api/v1/applications",
+        "/api/v1/notifications",
+        "/api/v1/audit-events",
+    ]
+    for endpoint in endpoints:
+        response = client.get(endpoint, headers=headers, params={"limit": 201})
+        assert response.status_code == 422, endpoint
 
 
 def test_user_role_cannot_access_settings_or_audit() -> None:
@@ -1221,6 +1246,120 @@ def test_notifications_unread_count_endpoint_returns_only_unread_total() -> None
     assert response.json() == {"count": 2}
 
 
+def test_notifications_bulk_read_marks_only_selected_unread_rows() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    user = repo.get_user_by_email("test@example.com")
+    assert user is not None
+
+    first = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a1", message="One"),
+    )
+    second = repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a2", message="Two"),
+    )
+    other_user_token = _create_user_and_login(
+        client,
+        name="Other",
+        email="other-bulk-read@example.com",
+        role="user",
+    )
+    other_user = repo.get_user_by_email("other-bulk-read@example.com")
+    assert other_user is not None
+    other = repo.create_notification(
+        user_id=other_user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a3", message="Other"),
+    )
+    repo.mark_notification_read(user.id, second.id)
+
+    response = client.post(
+        "/api/v1/notifications/read",
+        json={"ids": [first.id, first.id, second.id, other.id]},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"updated": 1}
+    assert repo.notifications[first.id].read_at is not None
+    assert repo.notifications[second.id].read_at is not None
+    assert repo.notifications[other.id].read_at is None
+    other_response = client.post(
+        "/api/v1/notifications/read",
+        json={"ids": [other.id]},
+        headers=_auth_headers(other_user_token),
+    )
+    assert other_response.json() == {"updated": 1}
+
+
+def test_notifications_bulk_read_rejects_oversized_payload() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    response = client.post(
+        "/api/v1/notifications/read",
+        json={"ids": [f"n-{idx}" for idx in range(201)]},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_mongo_dashboard_application_counts_uses_count_queries() -> None:
+    class FakeApplications:
+        def __init__(self) -> None:
+            self.filters: list[dict] = []
+
+        def count_documents(self, query: dict) -> int:
+            self.filters.append(query)
+            return len(self.filters)
+
+    class FakeDb:
+        def __init__(self) -> None:
+            self.applications = FakeApplications()
+
+    repo = object.__new__(MongoRepository)
+    repo.db = FakeDb()
+
+    result = repo.dashboard_application_counts(created_by_user_id="u1")
+
+    assert result == {
+        "company_research_pipeline": 1,
+        "application_ready": 2,
+        "actions_need_review": 3,
+    }
+    assert repo.db.applications.filters == [
+        {
+            "status": {
+                "$in": ["company_research_pending", "company_researching"],
+            },
+            "created_by_user_id": "u1",
+        },
+        {
+            "status": "application_ready",
+            "created_by_user_id": "u1",
+        },
+        {
+            "status": "application_ready",
+            "created_by_user_id": "u1",
+            "applied": False,
+        },
+    ]
+
+
 def test_dashboard_metrics_counts_only_own_applications_for_regular_user() -> None:
     """Non-admin dashboard pipeline/ready/action metrics use applications created_by_user_id == user."""
     repo = InMemoryRepository()
@@ -1258,6 +1397,43 @@ def test_dashboard_metrics_counts_only_own_applications_for_regular_user() -> No
 
     assert dash_user["company_research_pipeline"] == 1
     assert dash_admin["company_research_pipeline"] >= 2
+
+
+def test_dashboard_metrics_uses_aggregate_counts_without_listing_applications() -> None:
+    class DashboardCountingRepo(InMemoryRepository):
+        def list_applications(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            raise AssertionError("dashboard must not list application rows")
+
+        def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
+            return {
+                "company_research_pipeline": 4,
+                "application_ready": 3,
+                "actions_need_review": 2,
+            }
+
+    repo = DashboardCountingRepo()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    user = repo.get_user_by_email("test@example.com")
+    assert user is not None
+    repo.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id="a1", message="One"),
+    )
+
+    response = client.get("/api/v1/metrics/dashboard", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "company_research_pipeline": 4,
+        "application_ready": 3,
+        "actions_need_review": 2,
+        "unread_notifications": 1,
+    }
 
 
 def test_notifications_bulk_delete_returns_deleted_count() -> None:

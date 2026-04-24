@@ -702,6 +702,10 @@ class NotificationBulkDelete(BaseModel):
     ids: list[str] = Field(min_length=1)
 
 
+class NotificationBulkRead(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
 class UserNotification(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 

@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NotificationsPage } from "./NotificationsPage";
 
-const { listNotifications, markNotificationRead, deleteNotificationsBulk } = vi.hoisted(() => ({
+const { listNotifications, markNotificationRead, markNotificationsReadBulk, deleteNotificationsBulk } = vi.hoisted(() => ({
   listNotifications: vi.fn(),
   markNotificationRead: vi.fn(),
+  markNotificationsReadBulk: vi.fn(),
   deleteNotificationsBulk: vi.fn()
 }));
 
@@ -15,6 +16,7 @@ vi.mock("../api", () => ({
   api: {
     listNotifications,
     markNotificationRead,
+    markNotificationsReadBulk,
     deleteNotificationsBulk
   }
 }));
@@ -27,7 +29,9 @@ describe("NotificationsPage", () => {
   beforeEach(() => {
     listNotifications.mockReset();
     markNotificationRead.mockReset();
+    markNotificationsReadBulk.mockReset();
     deleteNotificationsBulk.mockReset();
+    markNotificationsReadBulk.mockResolvedValue({ updated: 2 });
     deleteNotificationsBulk.mockResolvedValue({ deleted: 2 });
   });
 
@@ -230,6 +234,51 @@ describe("NotificationsPage", () => {
       expect(deleteNotificationsBulk).toHaveBeenCalledWith(["n1", "n2"]);
     });
     expect(screen.getByText("No active notifications.")).toBeInTheDocument();
+  });
+
+  it("bulk marks selected unread notifications with one request", async () => {
+    listNotifications.mockResolvedValueOnce([
+      {
+        id: "n1",
+        user_id: "u1",
+        notification: "APPLICATION_UPDATE",
+        type: "SUCCESS",
+        timestamp: "2026-01-01T00:00:00Z",
+        check: false,
+        payload: { id: "a1", message: "One" },
+        created_at: "2026-01-01T00:00:00Z",
+        read_at: null,
+        link: null
+      },
+      {
+        id: "n2",
+        user_id: "u1",
+        notification: "APPLICATION_UPDATE",
+        type: "SUCCESS",
+        timestamp: "2026-01-02T00:00:00Z",
+        check: false,
+        payload: { id: "a2", message: "Two" },
+        created_at: "2026-01-02T00:00:00Z",
+        read_at: null,
+        link: null
+      }
+    ]);
+
+    render(
+      <MemoryRouter>
+        <NotificationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("One");
+    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
+    await userEvent.click(screen.getByRole("button", { name: "Mark selected read" }));
+
+    await waitFor(() => {
+      expect(markNotificationsReadBulk).toHaveBeenCalledWith(["n1", "n2"]);
+    });
+    expect(markNotificationRead).not.toHaveBeenCalled();
+    expect(screen.getAllByText("Read")).toHaveLength(2);
   });
 
   it("select all toggles selection on current page", async () => {

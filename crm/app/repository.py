@@ -213,6 +213,9 @@ class BaseRepository:
     def list_applications_by_status(self, status: ApplicationStatus, limit: int) -> list[Application]:
         raise NotImplementedError
 
+    def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
+        raise NotImplementedError
+
     def get_worker_state(self) -> WorkerStateResponse:
         raise NotImplementedError
 
@@ -320,6 +323,9 @@ class BaseRepository:
         raise NotImplementedError
 
     def mark_notification_read(self, user_id: str, notification_id: str) -> UserNotification | None:
+        raise NotImplementedError
+
+    def mark_notifications_read_bulk(self, user_id: str, notification_ids: list[str]) -> int:
         raise NotImplementedError
 
     def delete_notification(self, user_id: str, notification_id: str) -> bool:
@@ -878,6 +884,29 @@ class InMemoryRepository(BaseRepository):
         rows = _sort_applications(rows, "created_at_asc")
         return rows[:limit]
 
+    def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
+        rows = self.applications.values()
+        if created_by_user_id is not None:
+            rows = [a for a in rows if a.created_by_user_id == created_by_user_id]
+        counts = {
+            "company_research_pipeline": 0,
+            "application_ready": 0,
+            "actions_need_review": 0,
+        }
+        for application in rows:
+            if application.status == ApplicationStatus.archived:
+                continue
+            if application.status in (
+                ApplicationStatus.company_research_pending,
+                ApplicationStatus.company_researching,
+            ):
+                counts["company_research_pipeline"] += 1
+            if application.status == ApplicationStatus.application_ready:
+                counts["application_ready"] += 1
+                if not application.applied:
+                    counts["actions_need_review"] += 1
+        return counts
+
     def create_application(self, payload: ApplicationCreate, created_by_user_id: str | None) -> Application:
         now = utcnow()
         payload_dict = _as_dict(payload)
@@ -1177,6 +1206,17 @@ class InMemoryRepository(BaseRepository):
         updated = note.model_copy(update={"read_at": utcnow()})
         self.notifications[notification_id] = updated
         return updated
+
+    def mark_notifications_read_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        updated_count = 0
+        ts = utcnow()
+        for notification_id in dict.fromkeys(notification_ids):
+            note = self.notifications.get(notification_id)
+            if not note or note.user_id != user_id or note.read_at is not None:
+                continue
+            self.notifications[notification_id] = note.model_copy(update={"read_at": ts})
+            updated_count += 1
+        return updated_count
 
     def delete_notification(self, user_id: str, notification_id: str) -> bool:
         note = self.notifications.get(notification_id)
@@ -1484,6 +1524,35 @@ class MongoRepository(InMemoryRepository):
             self._sync()
         return company
 
+    def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
+        base_filter: dict[str, object] = {
+            "status": {"$ne": ApplicationStatus.archived.value},
+        }
+        if created_by_user_id is not None:
+            base_filter["created_by_user_id"] = created_by_user_id
+        pipeline_filter = {
+            **base_filter,
+            "status": {
+                "$in": [
+                    ApplicationStatus.company_research_pending.value,
+                    ApplicationStatus.company_researching.value,
+                ]
+            },
+        }
+        ready_filter = {
+            **base_filter,
+            "status": ApplicationStatus.application_ready.value,
+        }
+        actions_filter = {
+            **ready_filter,
+            "applied": False,
+        }
+        return {
+            "company_research_pipeline": self.db.applications.count_documents(pipeline_filter),
+            "application_ready": self.db.applications.count_documents(ready_filter),
+            "actions_need_review": self.db.applications.count_documents(actions_filter),
+        }
+
     def create_profile(self, payload: ProfileCreate) -> Profile:
         profile = super().create_profile(payload)
         self._sync()
@@ -1591,6 +1660,12 @@ class MongoRepository(InMemoryRepository):
         note = super().mark_notification_read(user_id, notification_id)
         self._sync()
         return note
+
+    def mark_notifications_read_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        n = super().mark_notifications_read_bulk(user_id, notification_ids)
+        if n:
+            self._sync()
+        return n
 
     def delete_notification(self, user_id: str, notification_id: str) -> bool:
         ok = super().delete_notification(user_id, notification_id)

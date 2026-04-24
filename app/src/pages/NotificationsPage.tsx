@@ -121,6 +121,7 @@ export const NotificationsPage = () => {
   const handleBulkMarkRead = () => {
     const unreadSelected = items.filter((n) => selectedIds.has(n.id) && !n.read_at);
     if (unreadSelected.length === 0) return;
+    const ids = unreadSelected.map((n) => n.id);
     const ts = nowIso();
     setItems((prev) =>
       prev.map((n) =>
@@ -128,7 +129,7 @@ export const NotificationsPage = () => {
       )
     );
     dispatchNotificationsInboxChanged();
-    void Promise.all(unreadSelected.map((n) => api.markNotificationRead(n.id))).catch(() => {
+    void api.markNotificationsReadBulk(ids).catch(() => {
       void load(page, showOnlyActive);
     });
   };

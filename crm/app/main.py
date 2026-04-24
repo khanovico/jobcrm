@@ -59,6 +59,7 @@ from app.models import (
     IndustryCreate,
     IndustryUpdate,
     NotificationBulkDelete,
+    NotificationBulkRead,
     NotificationListQuery,
     PerProfileApplication,
     PerProfileApplicationCreate,
@@ -87,6 +88,8 @@ from app.models import (
 from app.repository import BaseRepository
 
 app = FastAPI(title=settings.app_name)
+
+HUMAN_LIST_MAX_LIMIT = 200
 
 
 def _resolve_company_create(repo: BaseRepository, payload: CompanyCreate) -> Company:
@@ -201,33 +204,12 @@ def dashboard_metrics(
     repo: BaseRepository = Depends(get_repository),
 ) -> DashboardMetrics:
     scope_user_id = user.id if user.role != UserRole.admin else None
-    apps = repo.list_applications(
-        skip=0,
-        limit=10_000,
-        status=None,
-        exclude_status=ApplicationStatus.archived,
-        created_by_user_id=scope_user_id,
-    )
-    pipeline = sum(
-        1
-        for a in apps
-        if a.status
-        in (ApplicationStatus.company_research_pending, ApplicationStatus.company_researching)
-    )
-    ready = sum(1 for a in apps if a.status == ApplicationStatus.application_ready)
-    actions = sum(
-        1
-        for a in apps
-        if a.status == ApplicationStatus.application_ready and not a.applied
-    )
-    notes = repo.list_notifications(
-        user.id, NotificationListQuery(skip=0, limit=200, unread_only=True)
-    )
+    counts = repo.dashboard_application_counts(created_by_user_id=scope_user_id)
     return DashboardMetrics(
-        company_research_pipeline=pipeline,
-        application_ready=ready,
-        actions_need_review=actions,
-        unread_notifications=len(notes),
+        company_research_pipeline=counts["company_research_pipeline"],
+        application_ready=counts["application_ready"],
+        actions_need_review=counts["actions_need_review"],
+        unread_notifications=repo.count_unread_notifications(user.id),
     )
 
 
@@ -243,8 +225,8 @@ def global_search(
 
 @app.get("/api/v1/industries", response_model=list[Industry])
 def list_industries(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
@@ -364,8 +346,8 @@ def create_agent_key(
 
 @app.get("/api/v1/companies", response_model=list[Company])
 def list_companies(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
     sort: Literal[
         "updated_at_desc",
@@ -510,8 +492,8 @@ def clear_company_research_detail_route(
 
 @app.get("/api/v1/profiles", response_model=list[Profile])
 def list_profiles(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
@@ -521,8 +503,8 @@ def list_profiles(
 
 @app.get("/api/v1/profiles/summary", response_model=list[ProfileListItem])
 def list_profile_summaries(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
@@ -616,8 +598,8 @@ def delete_profile(
 
 @app.get("/api/v1/applications", response_model=list[ApplicationListItem])
 def list_applications(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     status_filter: ApplicationStatus | None = None,
     exclude_status: ApplicationStatus | None = None,
     company_id: str | None = None,
@@ -1034,8 +1016,8 @@ def delete_email_route(
     response_model_by_alias=True,
 )
 def list_notifications_route(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     unread_only: bool = False,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
@@ -1066,6 +1048,16 @@ def read_notification(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@app.post("/api/v1/notifications/read", status_code=status.HTTP_200_OK)
+def read_notifications_bulk_route(
+    body: NotificationBulkRead,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> dict[str, int]:
+    updated = repo.mark_notifications_read_bulk(user.id, body.ids)
+    return {"updated": updated}
+
+
 @app.delete("/api/v1/notifications/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_notification_route(
     notification_id: str,
@@ -1090,8 +1082,8 @@ def delete_notifications_bulk_route(
 
 @app.get("/api/v1/audit-events", response_model=list[AuditEvent])
 def list_audit(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     actor_type: ActorType | None = None,
     entity_type: str | None = None,
     from_ts: str | None = None,
