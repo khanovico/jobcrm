@@ -6,6 +6,7 @@
 - `auth/` - login/account provisioning and role-based access rules (admin-only settings/audit, profile read-only for user role).
 - `auth/agent-key-revoke-worker-leases.md` - revoking agent API keys must clean up worker leases to avoid stranded capacity and 409 queue lockouts.
 - `performance/` - always-on scale discipline for fetch/render work (payload size, request frequency, pagination, bounded pickers, stable layout shells during lazy loading).
+- `performance/mongo-query-backed-lists.md` - bounded API/list review must verify Mongo overrides, not only FastAPI limits or frontend page size.
 - `review/` - code-review and audit-quality guardrails to keep status docs trustworthy and actionable.
 - `review/truncation-fix-verification.md` - when reviewing "truncation fixed" claims, verify expansion/detail access is tied to actual overflow behavior (not hardcoded char-length heuristics).
 - `ui/` - frontend UX conventions and review workflow (**no committed screenshots** unless requested; in **cloud/remote** mode, **show chat screenshots** for UI validation after feature work).

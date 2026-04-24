@@ -2233,14 +2233,17 @@ def test_mongo_repository_industry_picker_helpers_use_query_paths() -> None:
     repo, db = _mongo_repo_for_query_tests()
     db.industries.docs = [_mongo_doc(retail), _mongo_doc(agriculture), _mongo_doc(analytics)]
 
+    listed = repo.list_industries(skip=1, limit=1, search="a")
     total = repo.count_industries("a")
     selected = repo.get_industries_by_ids([retail.id, analytics.id, "missing-id"])
     options = repo.list_industry_options(limit=1, search="a", exclude_ids=[analytics.id])
 
+    assert [row.id for row in listed] == [analytics.id]
     assert total == 3
     assert [row.id for row in selected] == [retail.id, analytics.id]
     assert [row.id for row in options] == [agriculture.id]
     assert db.industries.count_queries[-1] == {"name": {"$regex": "a", "$options": "i"}}
+    assert db.industries.find_queries[-3] == {"name": {"$regex": "a", "$options": "i"}}
     assert db.industries.find_queries[-2] == {
         "_id": {"$in": [retail.id, analytics.id, "missing-id"]}
     }
@@ -2248,6 +2251,7 @@ def test_mongo_repository_industry_picker_helpers_use_query_paths() -> None:
         "name": {"$regex": "a", "$options": "i"},
         "_id": {"$nin": [analytics.id]},
     }
+    assert db.industries.skips[-1] == 1
     assert db.industries.sorts[-1] == [("name", 1)]
     assert db.industries.limits[-1] == 1
     assert db.industries.collations[-1] == {"locale": "en", "strength": 2}
@@ -3231,6 +3235,13 @@ def test_industry_count_and_options_support_bounded_picker_flows() -> None:
         "selected": [space],
         "options": [agriculture, analytics],
     }
+
+    too_many_ids = client.get(
+        "/api/v1/industries/options",
+        headers=headers,
+        params=[("ids", f"ind-{index}") for index in range(101)],
+    )
+    assert too_many_ids.status_code == 422
 
 
 def test_bulk_create_industries_and_duplicate_validation() -> None:

@@ -2613,6 +2613,17 @@ class MongoRepository(InMemoryRepository):
     def count_industries(self, search: str | None) -> int:
         return self.db.industries.count_documents(self._industry_query(search))
 
+    def list_industries(self, skip: int, limit: int, search: str | None) -> list[Industry]:
+        return self._mongo_find_page(
+            "industries",
+            self._industry_query(search),
+            Industry,
+            sort=[("name", 1)],
+            skip=skip,
+            limit=limit,
+            collation={"locale": "en", "strength": 2},
+        )
+
     def get_industries_by_ids(self, industry_ids: list[str]) -> list[Industry]:
         ids = list(dict.fromkeys(industry_ids))
         if not ids:

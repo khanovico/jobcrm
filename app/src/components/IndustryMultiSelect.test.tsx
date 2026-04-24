@@ -15,41 +15,58 @@ const industries = [
 ];
 
 describe("IndustryMultiSelect", () => {
-  it("adds an industry from the dropdown", async () => {
+  it("searches and adds from bounded options", async () => {
     const onChange = vi.fn();
+    const onSearchChange = vi.fn();
     render(
-      <IndustryMultiSelect industries={industries} value={[]} onChange={onChange} />
+      <IndustryMultiSelect
+        selectedIndustries={[industries[0]]}
+        options={[industries[2]]}
+        value={["i-a"]}
+        onChange={onChange}
+        search="gam"
+        onSearchChange={onSearchChange}
+      />
     );
-
-    const dropdown = screen.getByRole("combobox", { name: /Add industry from dropdown/i });
-    await userEvent.selectOptions(dropdown, "i-b");
-
-    expect(onChange).toHaveBeenCalledWith(["i-b"]);
-  });
-
-  it("filters and adds from the search list", async () => {
-    const onChange = vi.fn();
-    render(
-      <IndustryMultiSelect industries={industries} value={["i-a"]} onChange={onChange} />
-    );
-
-    const search = screen.getByRole("searchbox");
-    await userEvent.type(search, "gam");
 
     const list = screen.getByRole("listbox");
     await userEvent.click(within(list).getByRole("option", { name: "Gamma" }));
 
     expect(onChange).toHaveBeenCalledWith(["i-a", "i-g"]);
+    expect(onSearchChange).toHaveBeenCalledWith("");
   });
 
   it("removes a selected industry", async () => {
     const onChange = vi.fn();
     render(
-      <IndustryMultiSelect industries={industries} value={["i-a", "i-b"]} onChange={onChange} />
+      <IndustryMultiSelect
+        selectedIndustries={[industries[0], industries[1]]}
+        options={[industries[2]]}
+        value={["i-a", "i-b"]}
+        onChange={onChange}
+        search=""
+        onSearchChange={vi.fn()}
+      />
     );
 
     await userEvent.click(screen.getByRole("button", { name: /Remove Alpha/i }));
 
     expect(onChange).toHaveBeenCalledWith(["i-b"]);
+  });
+
+  it("shows selected labels even when they are outside current options", () => {
+    render(
+      <IndustryMultiSelect
+        selectedIndustries={[industries[1]]}
+        options={[]}
+        value={["i-b"]}
+        onChange={vi.fn()}
+        search="alpha"
+        onSearchChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Beta")).toBeInTheDocument();
+    expect(screen.getByText("No matching industries.")).toBeInTheDocument();
   });
 });

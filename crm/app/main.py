@@ -280,7 +280,13 @@ def industry_options(
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> IndustryOptionsResponse:
-    selected = repo.get_industries_by_ids(ids or [])
+    selected_ids = list(dict.fromkeys(ids or []))
+    if len(selected_ids) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At most 100 selected industry IDs can be hydrated.",
+        )
+    selected = repo.get_industries_by_ids(selected_ids)
     options = repo.list_industry_options(
         limit=limit,
         search=search,
