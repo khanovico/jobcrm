@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { Modal } from "../components/Modal";
+import { TablePagination } from "../components/TablePagination";
 import { api, ApiConflictError } from "../api";
 import { getCompanySummariesPage, invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Company, CompanyResearchStatus, WorkerStateResponse } from "../types";
@@ -299,27 +300,7 @@ export const CompaniesPage = () => {
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No companies yet.</p>}
         </div>
-        <div className="mt-3 flex items-center justify-between">
-          <p className="text-xs opacity-70">Page {page}</p>
-          <div className="join">
-            <button
-              type="button"
-              className="btn btn-xs join-item"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={page === 1 || loading}
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              className="btn btn-xs join-item"
-              onClick={() => setPage((current) => current + 1)}
-              disabled={!hasNextPage || loading}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} disabled={loading} />
         <p className="mt-2 text-xs opacity-60">Click a row to view and edit full company details.</p>
       </section>
 

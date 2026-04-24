@@ -167,10 +167,10 @@ describe("ProfilesPage", () => {
     );
 
     expect(await screen.findByText("Profile 1")).toBeInTheDocument();
-    expect(screen.getByText("Page 1")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
 
-    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
     expect(screen.getByText("Profile 21")).toBeInTheDocument();
   });
 });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api";
+import { TablePagination } from "../components/TablePagination";
 import { dispatchNotificationsInboxChanged } from "../notificationSync";
 import { NotificationKind, NotificationSeverity, UserNotification } from "../types";
 
@@ -253,27 +254,7 @@ export const NotificationsPage = () => {
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between">
-        <p className="text-xs opacity-70">Page {page}</p>
-        <div className="join">
-          <button
-            type="button"
-            className="btn btn-xs join-item"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page === 1 || loading}
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            className="btn btn-xs join-item"
-            onClick={() => setPage((current) => current + 1)}
-            disabled={!hasNextPage || loading}
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} disabled={loading} />
       {items.length === 0 && !loading && (
         <p className="text-sm opacity-70">
           {showOnlyActive ? "No active notifications." : "No notifications."}

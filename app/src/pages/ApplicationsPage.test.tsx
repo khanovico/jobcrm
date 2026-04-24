@@ -444,15 +444,15 @@ describe("ApplicationsPage", () => {
 
   it("paginates application list requests", async () => {
     const fetchMock = vi.mocked(fetch);
-    const secondPageRow = { ...applicationRow, id: "a21", company_name: "Beta" };
+    const secondPageRow = { ...applicationRow, id: "a16", company_name: "Beta" };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
       if (isApplicationsListRequest(url)) {
-        if (url.includes("skip=20")) {
+        if (url.includes("skip=15")) {
           return Promise.resolve(new Response(JSON.stringify([secondPageRow]), { status: 200 }));
         }
         return Promise.resolve(
-          new Response(JSON.stringify(Array.from({ length: 20 }, (_, index) => ({ ...applicationRow, id: `a${index + 1}` }))), {
+          new Response(JSON.stringify(Array.from({ length: 15 }, (_, index) => ({ ...applicationRow, id: `a${index + 1}` }))), {
             status: 200
           })
         );
@@ -469,12 +469,12 @@ describe("ApplicationsPage", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Page 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to next page" })).toBeEnabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
 
-    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
   });
 

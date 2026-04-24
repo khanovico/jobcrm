@@ -238,12 +238,12 @@ describe("CompanyDetailPage", () => {
 
     renderPage();
 
-    expect(await screen.findByText("Page 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to next page" })).toBeEnabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
 
-    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.getByText("2026-02-01T00:00:00Z")).toBeInTheDocument();
   });

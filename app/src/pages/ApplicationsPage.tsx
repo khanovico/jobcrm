@@ -5,6 +5,7 @@ import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
 import { ProfileNameChips } from "../components/ProfileNameChips";
+import { TablePagination } from "../components/TablePagination";
 import { api } from "../api";
 import { applicationStatusBadgeClass, formatApplicationStatusLabel } from "../applicationStatus";
 import {
@@ -18,7 +19,7 @@ import {
 } from "../state/applicationsFilters";
 import { ApplicationListItem, WorkerStateResponse } from "../types";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 15;
 
 const PlusIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -423,27 +424,7 @@ export const ApplicationsPage = () => {
           </table>
           {filteredItems.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
         </div>
-        <div className="mt-3 flex items-center justify-between">
-          <p className="text-xs opacity-70">Page {page}</p>
-          <div className="join">
-            <button
-              type="button"
-              className="btn btn-xs join-item"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={page === 1}
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              className="btn btn-xs join-item"
-              onClick={() => setPage((current) => current + 1)}
-              disabled={!hasNextPage}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
         {appliedProfileFilterOpen && appliedProfilesFilterPosition ? (
           <>
             <button

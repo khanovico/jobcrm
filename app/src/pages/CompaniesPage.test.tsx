@@ -55,7 +55,7 @@ describe("CompaniesPage", () => {
     expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
     expect(screen.getAllByText("Indexed").some((el) => el.tagName === "SPAN")).toBe(true);
     expect(screen.getAllByText("Has applications").some((el) => el.classList.contains("badge"))).toBe(true);
-    expect(screen.getByText("Page 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("row", { name: /Acme Corp/i }));
     expect(await screen.findByTestId("company-detail")).toBeInTheDocument();
   });

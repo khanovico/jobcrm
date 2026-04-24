@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../api";
+import { TablePagination } from "../components/TablePagination";
 import { AuditEvent } from "../types";
 
 const AUDIT_PAGE_SIZE = 50;
@@ -91,27 +92,7 @@ export const AuditPage = () => {
         </table>
         {rows.length === 0 && <p className="p-4 text-sm opacity-70">No events.</p>}
       </div>
-      <div className="flex items-center justify-between">
-        <p className="text-xs opacity-70">Page {page}</p>
-        <div className="join">
-          <button
-            type="button"
-            className="btn btn-xs join-item"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page === 1}
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            className="btn btn-xs join-item"
-            onClick={() => setPage((current) => current + 1)}
-            disabled={!hasNextPage}
-          >
-            Next
-          </button>
-        </div>
-      </div>
+      <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
     </div>
   );
 };

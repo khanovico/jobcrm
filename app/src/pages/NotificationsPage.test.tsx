@@ -149,7 +149,7 @@ describe("NotificationsPage", () => {
     );
 
     await screen.findByText("Company changed 1");
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
     await screen.findByText("Company changed");
     expect(listNotifications).toHaveBeenCalledTimes(2);
     expect(listNotifications).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 10 });

@@ -5,6 +5,7 @@ import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkf
 import { ClearCompanyResearchModal } from "../components/ClearCompanyResearchModal";
 import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
 import { IndustryMultiSelect } from "../components/IndustryMultiSelect";
+import { TablePagination } from "../components/TablePagination";
 import { api } from "../api";
 import {
   applicationStatusBadgeClass,
@@ -450,27 +451,11 @@ export const CompanyDetailPage = () => {
                     </tbody>
                   </table>
                 </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <p className="text-xs opacity-70">Page {applicationsPage}</p>
-                  <div className="join">
-                    <button
-                      type="button"
-                      className="btn btn-xs join-item"
-                      onClick={() => setApplicationsPage((current) => Math.max(1, current - 1))}
-                      disabled={applicationsPage === 1}
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-xs join-item"
-                      onClick={() => setApplicationsPage((current) => current + 1)}
-                      disabled={!hasNextApplicationsPage}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
+                <TablePagination
+                  page={applicationsPage}
+                  hasNextPage={hasNextApplicationsPage}
+                  onPageChange={setApplicationsPage}
+                />
               </>
             )}
           </div>

@@ -42,12 +42,12 @@ describe("AuditPage", () => {
 
     render(<AuditPage />);
 
-    expect(await screen.findByText("Page 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to next page" })).toBeEnabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
 
-    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
     expect(screen.getByText("update")).toBeInTheDocument();
     expect(screen.getByText("agent")).toBeInTheDocument();
   });
@@ -73,13 +73,13 @@ describe("AuditPage", () => {
 
     render(<AuditPage />);
 
-    expect(await screen.findByText("Page 1")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByText("Page 2")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
+    expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByRole("combobox"), "agent");
 
-    expect(await screen.findByText("Page 1")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
     expect(screen.getByText("archive")).toBeInTheDocument();
   });
 });

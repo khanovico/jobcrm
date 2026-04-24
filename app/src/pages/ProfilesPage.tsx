@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { TablePagination } from "../components/TablePagination";
 import { ProfileListItem } from "../types";
 
 const PAGE_SIZE = 20;
@@ -153,27 +154,7 @@ export const ProfilesPage = () => {
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No profiles yet.</p>}
         </div>
-        <div className="mt-3 flex items-center justify-between">
-          <p className="text-xs opacity-70">Page {page}</p>
-          <div className="join">
-            <button
-              type="button"
-              className="btn btn-xs join-item"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={page === 1}
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              className="btn btn-xs join-item"
-              onClick={() => setPage((current) => current + 1)}
-              disabled={!hasNextPage}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
         <p className="mt-2 text-xs opacity-60">
           {canEditProfiles
             ? "Click a row to view and edit. Use + to create a profile (all fields except resume are required)."
