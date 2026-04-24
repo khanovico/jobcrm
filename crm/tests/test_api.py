@@ -351,6 +351,165 @@ def test_list_applications_includes_applied_profile_names() -> None:
     assert listed[0]["applied_profiles"] == [{"profile_name": "Alex Dev"}]
 
 
+def test_list_applications_supports_company_search_and_applied_profile_name_filters() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    acme_company = client.post("/api/v1/companies", json={"name": "Acme Platform"}, headers=headers).json()
+    orbit_company = client.post("/api/v1/companies", json={"name": "Orbit Labs"}, headers=headers).json()
+
+    alex_profile = client.post(
+        "/api/v1/profiles",
+        json={**_valid_profile_create_payload(), "name": "Alex Dev"},
+        headers=headers,
+    ).json()
+    blair_profile = client.post(
+        "/api/v1/profiles",
+        json={**_valid_profile_create_payload(), "name": "Blair Ops", "email": "blair@example.com"},
+        headers=headers,
+    ).json()
+
+    acme_application = client.post(
+        "/api/v1/applications",
+        json={"company_id": acme_company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    orbit_application = client.post(
+        "/api/v1/applications",
+        json={"company_id": orbit_company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+
+    client.post(
+        f"/api/v1/applications/{acme_application['id']}/per-profile-applications",
+        json={
+            "application_id": acme_application["id"],
+            "profile_id": alex_profile["id"],
+            "order_index": 0,
+            "analysis": "acme fit",
+        },
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/applications/{orbit_application['id']}/per-profile-applications",
+        json={
+            "application_id": orbit_application["id"],
+            "profile_id": blair_profile["id"],
+            "order_index": 0,
+            "analysis": "orbit fit",
+        },
+        headers=headers,
+    )
+
+    company_filtered = client.get(
+        "/api/v1/applications",
+        params={"company_search": "acME"},
+        headers=headers,
+    )
+    assert company_filtered.status_code == 200
+    assert [row["id"] for row in company_filtered.json()] == [acme_application["id"]]
+
+    profile_filtered = client.get(
+        "/api/v1/applications",
+        params=[("applied_profile_names", "Blair Ops"), ("applied_profile_names", "Missing")],
+        headers=headers,
+    )
+    assert profile_filtered.status_code == 200
+    assert [row["id"] for row in profile_filtered.json()] == [orbit_application["id"]]
+
+    combined = client.get(
+        "/api/v1/applications",
+        params=[
+            ("company_search", " acme "),
+            ("applied_profile_names", "Alex Dev"),
+        ],
+        headers=headers,
+    )
+    assert combined.status_code == 200
+    assert [row["id"] for row in combined.json()] == [acme_application["id"]]
+
+
+def test_application_applied_profile_facets_return_sorted_unique_names_for_matching_rows() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    acme_company = client.post("/api/v1/companies", json={"name": "Acme Platform"}, headers=headers).json()
+    other_company = client.post("/api/v1/companies", json={"name": "Other Co"}, headers=headers).json()
+
+    alex_profile = client.post(
+        "/api/v1/profiles",
+        json={**_valid_profile_create_payload(), "name": "Alex Dev"},
+        headers=headers,
+    ).json()
+    blair_profile = client.post(
+        "/api/v1/profiles",
+        json={**_valid_profile_create_payload(), "name": "Blair Ops", "email": "blair-facets@example.com"},
+        headers=headers,
+    ).json()
+
+    first_acme_app = client.post(
+        "/api/v1/applications",
+        json={"company_id": acme_company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    second_acme_app = client.post(
+        "/api/v1/applications",
+        json={"company_id": acme_company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    other_app = client.post(
+        "/api/v1/applications",
+        json={"company_id": other_company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+
+    client.post(
+        f"/api/v1/applications/{first_acme_app['id']}/per-profile-applications",
+        json={
+            "application_id": first_acme_app["id"],
+            "profile_id": blair_profile["id"],
+            "order_index": 0,
+            "analysis": "first acme",
+        },
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/applications/{second_acme_app['id']}/per-profile-applications",
+        json={
+            "application_id": second_acme_app["id"],
+            "profile_id": alex_profile["id"],
+            "order_index": 0,
+            "analysis": "second acme",
+        },
+        headers=headers,
+    )
+    client.post(
+        f"/api/v1/applications/{other_app['id']}/per-profile-applications",
+        json={
+            "application_id": other_app["id"],
+            "profile_id": blair_profile["id"],
+            "order_index": 0,
+            "analysis": "other company",
+        },
+        headers=headers,
+    )
+
+    response = client.get(
+        "/api/v1/applications/applied-profile-facets",
+        params={"company_search": "ACME"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"profile_names": ["Alex Dev", "Blair Ops"]}
+
+
 def test_clear_to_pending_preparation_removes_ppas_emails_and_resets_flags() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
@@ -1898,6 +2057,167 @@ def test_mongo_repository_list_applications_uses_query_page_and_bounded_enrichme
             {"status": {"$nin": ["archived"]}},
         ]
     }
+
+
+def test_mongo_repository_list_applications_supports_company_search_and_profile_name_filters() -> None:
+    seed = InMemoryRepository()
+    acme_company = seed.create_company(CompanyCreate(name="Acme Platform"))
+    other_company = seed.create_company(CompanyCreate(name="Other Co"))
+    alex_profile = seed.create_profile(
+        ProfileCreate.model_validate({**_valid_profile_create_payload(), "name": "Alex Dev"})
+    )
+    blair_profile = seed.create_profile(
+        ProfileCreate.model_validate(
+            {**_valid_profile_create_payload(), "name": "Blair Ops", "email": "blair-mongo@example.com"}
+        )
+    )
+    acme_application = seed.create_application(
+        ApplicationCreate(company_id=acme_company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    other_application = seed.create_application(
+        ApplicationCreate(company_id=other_company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    acme_ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=acme_application.id, profile_id=alex_profile.id)
+    )
+    other_ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=other_application.id, profile_id=blair_profile.id)
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.applications.docs = [_mongo_doc(acme_application), _mongo_doc(other_application)]
+    db.companies.docs = [_mongo_doc(acme_company), _mongo_doc(other_company)]
+    db.per_profile_applications.docs = [_mongo_doc(acme_ppa), _mongo_doc(other_ppa)]
+    db.profiles.docs = [_mongo_doc(alex_profile), _mongo_doc(blair_profile)]
+
+    rows = repo.list_applications(
+        skip=0,
+        limit=20,
+        status=ApplicationStatus.ppa_pending,
+        company_search="acme",
+        applied_profile_names=["Alex Dev"],
+    )
+
+    assert [row.id for row in rows] == [acme_application.id]
+    assert db.companies.find_queries[0] == {"name": {"$regex": "acme", "$options": "i"}}
+    assert db.companies.projections[0] == {"_id": 1}
+    assert db.applications.distinct_calls == [
+        (
+            "_id",
+            {
+                "status": {"$in": ["analysis_ready", "ppa_pending"]},
+                "company_id": {"$in": [acme_company.id]},
+            },
+        )
+    ]
+    assert db.per_profile_applications.find_queries[-1] == {
+        "application_id": {"$in": [acme_application.id]}
+    }
+    assert db.per_profile_applications.projections[-1] == {
+        "_id": 1,
+        "application_id": 1,
+        "profile_id": 1,
+        "order_index": 1,
+        "created_at": 1,
+    }
+    assert db.profiles.find_queries[-1] == {"_id": {"$in": [alex_profile.id]}}
+    assert db.profiles.projections[-1] == {"_id": 1, "name": 1}
+    assert db.applications.find_queries[-1] == {
+        "$and": [
+            {
+                "status": {"$in": ["analysis_ready", "ppa_pending"]},
+                "company_id": {"$in": [acme_company.id]},
+            },
+            {"_id": {"$in": [acme_application.id]}},
+        ]
+    }
+
+
+def test_mongo_repository_applied_profile_facets_use_base_filters_and_projection() -> None:
+    seed = InMemoryRepository()
+    acme_company = seed.create_company(CompanyCreate(name="Acme Platform"))
+    other_company = seed.create_company(CompanyCreate(name="Other Co"))
+    alex_profile = seed.create_profile(
+        ProfileCreate.model_validate({**_valid_profile_create_payload(), "name": "Alex Dev"})
+    )
+    blair_profile = seed.create_profile(
+        ProfileCreate.model_validate(
+            {**_valid_profile_create_payload(), "name": "Blair Ops", "email": "blair-facets-mongo@example.com"}
+        )
+    )
+    first_acme_application = seed.create_application(
+        ApplicationCreate(company_id=acme_company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    second_acme_application = seed.create_application(
+        ApplicationCreate(company_id=acme_company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    other_application = seed.create_application(
+        ApplicationCreate(company_id=other_company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    first_acme_ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=first_acme_application.id, profile_id=blair_profile.id)
+    )
+    second_acme_ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=second_acme_application.id, profile_id=alex_profile.id)
+    )
+    other_ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=other_application.id, profile_id=blair_profile.id)
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.applications.docs = [
+        _mongo_doc(first_acme_application),
+        _mongo_doc(second_acme_application),
+        _mongo_doc(other_application),
+    ]
+    db.companies.docs = [_mongo_doc(acme_company), _mongo_doc(other_company)]
+    db.per_profile_applications.docs = [
+        _mongo_doc(first_acme_ppa),
+        _mongo_doc(second_acme_ppa),
+        _mongo_doc(other_ppa),
+    ]
+    db.profiles.docs = [_mongo_doc(alex_profile), _mongo_doc(blair_profile)]
+
+    names = repo.list_application_applied_profile_facets(
+        status=ApplicationStatus.ppa_pending,
+        exclude_status=ApplicationStatus.archived,
+        company_search="Acme",
+        limit=10,
+    )
+
+    assert names == ["Alex Dev", "Blair Ops"]
+    assert db.companies.find_queries[0] == {"name": {"$regex": "Acme", "$options": "i"}}
+    assert db.companies.projections[0] == {"_id": 1}
+    assert db.applications.distinct_calls == [
+        (
+            "_id",
+            {
+                "$and": [
+                    {"status": {"$in": ["analysis_ready", "ppa_pending"]}},
+                    {"status": {"$nin": ["archived"]}},
+                ],
+                "company_id": {"$in": [acme_company.id]},
+            },
+        )
+    ]
+    assert set(db.per_profile_applications.find_queries[-1]["application_id"]["$in"]) == {
+        first_acme_application.id,
+        second_acme_application.id,
+    }
+    assert db.per_profile_applications.projections[-1] == {
+        "_id": 1,
+        "application_id": 1,
+        "profile_id": 1,
+        "order_index": 1,
+        "created_at": 1,
+    }
+    assert db.profiles.find_queries[-1] == {
+        "_id": {"$in": [blair_profile.id, alex_profile.id]}
+    }
+    assert db.profiles.projections[-1] == {"_id": 1, "name": 1}
 
 
 def test_mongo_repository_agent_queue_tasks_use_indexed_compact_queries() -> None:

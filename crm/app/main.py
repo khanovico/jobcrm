@@ -33,6 +33,7 @@ from app.models import (
     AgentHealthResponse,
     AgentNotificationCreate,
     Application,
+    ApplicationAppliedProfileFacetsResponse,
     ApplicationBootstrapCreate,
     ApplicationCreate,
     ApplicationDetailResponse,
@@ -174,6 +175,27 @@ def _validate_bulk_industry_names(repo: BaseRepository, names: list[str]) -> Non
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Industry names already exist: {', '.join(existing_conflicts)}",
         )
+
+
+def _normalized_query_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalized_query_text_list(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = value.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
 
 
 @app.get("/health")
@@ -645,6 +667,8 @@ def list_applications(
     status_filter: ApplicationStatus | None = None,
     exclude_status: ApplicationStatus | None = None,
     company_id: str | None = None,
+    company_search: str | None = None,
+    applied_profile_names: list[str] | None = Query(default=None),
     applied: bool | None = None,
     email_sent: bool | None = None,
     sort: Literal[
@@ -665,6 +689,34 @@ def list_applications(
         email_sent=email_sent,
         sort=sort,
         exclude_status=exclude_status,
+        company_search=_normalized_query_text(company_search),
+        applied_profile_names=_normalized_query_text_list(applied_profile_names),
+    )
+
+
+@app.get(
+    "/api/v1/applications/applied-profile-facets",
+    response_model=ApplicationAppliedProfileFacetsResponse,
+)
+def list_application_applied_profile_facets(
+    status_filter: ApplicationStatus | None = None,
+    exclude_status: ApplicationStatus | None = None,
+    company_id: str | None = None,
+    company_search: str | None = None,
+    applied: bool | None = None,
+    email_sent: bool | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> ApplicationAppliedProfileFacetsResponse:
+    return ApplicationAppliedProfileFacetsResponse(
+        profile_names=repo.list_application_applied_profile_facets(
+            status=status_filter,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            company_search=_normalized_query_text(company_search),
+        )
     )
 
 

@@ -628,6 +628,10 @@ class ApplicationListItem(Application):
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
 
 
+class ApplicationAppliedProfileFacetsResponse(BaseModel):
+    profile_names: list[str] = Field(default_factory=list)
+
+
 class AgentApplicationTaskSummary(BaseModel):
     """Compact queue item for polling agents; fetch full detail by id when claiming work."""
 
