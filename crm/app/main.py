@@ -61,7 +61,9 @@ from app.models import (
     GlobalSearchResult,
     Industry,
     IndustryBulkCreateRequest,
+    IndustryCountResponse,
     IndustryCreate,
+    IndustryOptionsResponse,
     IndustryUpdate,
     NotificationBulkDelete,
     NotificationBulkRead,
@@ -259,6 +261,32 @@ def list_industries(
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Industry]:
     return repo.list_industries(skip=skip, limit=limit, search=search)
+
+
+@app.get("/api/v1/industries/count", response_model=IndustryCountResponse)
+def industry_count(
+    search: str | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> IndustryCountResponse:
+    return IndustryCountResponse(total=repo.count_industries(search))
+
+
+@app.get("/api/v1/industries/options", response_model=IndustryOptionsResponse)
+def industry_options(
+    ids: list[str] | None = Query(default=None),
+    search: str | None = None,
+    limit: int = Query(default=20, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> IndustryOptionsResponse:
+    selected = repo.get_industries_by_ids(ids or [])
+    options = repo.list_industry_options(
+        limit=limit,
+        search=search,
+        exclude_ids=[industry.id for industry in selected],
+    )
+    return IndustryOptionsResponse(selected=selected, options=options)
 
 
 @app.post("/api/v1/industries", response_model=Industry, status_code=status.HTTP_201_CREATED)

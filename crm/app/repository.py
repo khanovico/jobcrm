@@ -168,6 +168,21 @@ class BaseRepository:
     ) -> list[Industry]:
         raise NotImplementedError
 
+    def count_industries(self, search: str | None) -> int:
+        raise NotImplementedError
+
+    def get_industries_by_ids(self, industry_ids: list[str]) -> list[Industry]:
+        raise NotImplementedError
+
+    def list_industry_options(
+        self,
+        *,
+        limit: int,
+        search: str | None,
+        exclude_ids: list[str] | None = None,
+    ) -> list[Industry]:
+        raise NotImplementedError
+
     def create_industry(self, payload: IndustryCreate) -> Industry:
         raise NotImplementedError
 
@@ -577,13 +592,38 @@ class InMemoryRepository(BaseRepository):
     def has_registered_user(self) -> bool:
         return bool(self.users)
 
-    def list_industries(self, skip: int, limit: int, search: str | None) -> list[Industry]:
+    def _filtered_industries(
+        self, *, search: str | None, exclude_ids: list[str] | None = None
+    ) -> list[Industry]:
         values = list(self.industries.values())
         if search:
             needle = search.lower()
-            values = [i for i in values if needle in i.name.lower()]
-        values.sort(key=lambda i: i.name.lower())
+            values = [industry for industry in values if needle in industry.name.lower()]
+        if exclude_ids:
+            excluded = set(exclude_ids)
+            values = [industry for industry in values if industry.id not in excluded]
+        values.sort(key=lambda industry: industry.name.lower())
+        return values
+
+    def list_industries(self, skip: int, limit: int, search: str | None) -> list[Industry]:
+        values = self._filtered_industries(search=search)
         return values[skip : skip + limit]
+
+    def count_industries(self, search: str | None) -> int:
+        return len(self._filtered_industries(search=search))
+
+    def get_industries_by_ids(self, industry_ids: list[str]) -> list[Industry]:
+        ids = list(dict.fromkeys(industry_ids))
+        return [self.industries[industry_id] for industry_id in ids if industry_id in self.industries]
+
+    def list_industry_options(
+        self,
+        *,
+        limit: int,
+        search: str | None,
+        exclude_ids: list[str] | None = None,
+    ) -> list[Industry]:
+        return self._filtered_industries(search=search, exclude_ids=exclude_ids)[:limit]
 
     def create_industry(self, payload: IndustryCreate) -> Industry:
         if any(i.name.lower() == payload.name.lower() for i in self.industries.values()):
@@ -1664,6 +1704,7 @@ class MongoRepository(InMemoryRepository):
         self.db.companies.create_index([("archived", 1), ("research_status", 1), ("updated_at", -1)])
         self.db.companies.create_index([("archived", 1), ("research_status", 1), ("created_at", 1)])
         self.db.companies.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
+        self.db.industries.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.profiles.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.profiles.create_index([("frozen", 1), ("created_at", 1)])
         self.db.applications.create_index([("status", 1), ("updated_at", -1)])
@@ -1795,6 +1836,16 @@ class MongoRepository(InMemoryRepository):
         if limit is not None:
             cursor = cursor.limit(limit)
         return list(cursor)
+
+    def _industry_query(
+        self, search: str | None, exclude_ids: list[str] | None = None
+    ) -> dict[str, object]:
+        query: dict[str, object] = {}
+        if search:
+            query["name"] = {"$regex": re.escape(search), "$options": "i"}
+        if exclude_ids:
+            query["_id"] = {"$nin": list(dict.fromkeys(exclude_ids))}
+        return query
 
     def _literal_contains_filter(self, value: str) -> dict:
         return {"$regex": re.escape(value), "$options": "i"}
@@ -2558,6 +2609,33 @@ class MongoRepository(InMemoryRepository):
         for email in rows:
             grouped.setdefault(email.per_profile_application_id, []).append(email)
         return grouped
+
+    def count_industries(self, search: str | None) -> int:
+        return self.db.industries.count_documents(self._industry_query(search))
+
+    def get_industries_by_ids(self, industry_ids: list[str]) -> list[Industry]:
+        ids = list(dict.fromkeys(industry_ids))
+        if not ids:
+            return []
+        rows = self._mongo_find_page("industries", {"_id": {"$in": ids}}, Industry)
+        by_id = {industry.id: industry for industry in rows}
+        return [by_id[industry_id] for industry_id in ids if industry_id in by_id]
+
+    def list_industry_options(
+        self,
+        *,
+        limit: int,
+        search: str | None,
+        exclude_ids: list[str] | None = None,
+    ) -> list[Industry]:
+        return self._mongo_find_page(
+            "industries",
+            self._industry_query(search, exclude_ids),
+            Industry,
+            sort=[("name", 1)],
+            limit=limit,
+            collation={"locale": "en", "strength": 2},
+        )
 
     def create_user(self, payload: UserCreate, password_hash: str) -> UserInDB:
         user = super().create_user(payload, password_hash)
