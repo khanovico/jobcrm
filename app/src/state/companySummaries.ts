@@ -1,17 +1,17 @@
 import { api } from "../api";
-import type { Company } from "../types";
+import type { CompanyListItem } from "../types";
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 30 * 1000;
 const ALL_COMPANIES_PAGE_SIZE = 200;
 
 type CachedCompanyPage = {
-  items: Company[];
+  items: CompanyListItem[];
   fetchedAt: number;
 };
 
 const companyPages = new Map<string, CachedCompanyPage>();
 let allCompaniesCache: CachedCompanyPage | null = null;
-let allCompaniesPromise: Promise<Company[]> | null = null;
+let allCompaniesPromise: Promise<CompanyListItem[]> | null = null;
 
 const isFresh = (fetchedAt: number) => Date.now() - fetchedAt < CACHE_TTL_MS;
 
@@ -34,7 +34,7 @@ export const getCompanySummariesPage = async (options: {
   force?: boolean;
   /** Extra query params (sort, filters); included in cache key */
   extraParams?: URLSearchParams;
-}): Promise<Company[]> => {
+}): Promise<CompanyListItem[]> => {
   const fingerprint = options.extraParams?.toString() ?? "";
   const key = pageKey(options.page, options.pageSize, fingerprint);
   const cached = companyPages.get(key);
@@ -51,15 +51,15 @@ export const getCompanySummariesPage = async (options: {
       params.set(name, value);
     });
   }
-  const items = await api.listCompanies(params);
+  const items = await api.listCompanySummaries(params);
   companyPages.set(key, { items, fetchedAt: Date.now() });
   return items;
 };
 
-const fetchAllCompanySummaries = async (): Promise<Company[]> => {
-  const items: Company[] = [];
+const fetchAllCompanySummaries = async (): Promise<CompanyListItem[]> => {
+  const items: CompanyListItem[] = [];
   for (let page = 0; ; page += 1) {
-    const batch = await api.listCompanies(
+    const batch = await api.listCompanySummaries(
       new URLSearchParams({
         skip: String(page * ALL_COMPANIES_PAGE_SIZE),
         limit: String(ALL_COMPANIES_PAGE_SIZE)
@@ -75,7 +75,7 @@ const fetchAllCompanySummaries = async (): Promise<Company[]> => {
   return sorted;
 };
 
-export const getAllCompanySummaries = async (options?: { force?: boolean }): Promise<Company[]> => {
+export const getAllCompanySummaries = async (options?: { force?: boolean }): Promise<CompanyListItem[]> => {
   if (!options?.force && allCompaniesCache && isFresh(allCompaniesCache.fetchedAt)) {
     return allCompaniesCache.items;
   }

@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetCompanySummariesCacheForTests } from "../state/companySummaries";
+import { resetWorkerSummaryCacheForTests } from "../state/workerState";
 import { CompaniesPage } from "./CompaniesPage";
 
 const WORKER_STATE = {
@@ -19,6 +20,7 @@ describe("CompaniesPage", () => {
   afterEach(() => {
     cleanup();
     resetCompanySummariesCacheForTests();
+    resetWorkerSummaryCacheForTests();
     vi.unstubAllGlobals();
   });
 
@@ -35,10 +37,10 @@ describe("CompaniesPage", () => {
     };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -75,10 +77,10 @@ describe("CompaniesPage", () => {
     };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -103,7 +105,7 @@ describe("CompaniesPage", () => {
 
     const companyCalls = fetchMock.mock.calls
       .map(([input]) => (typeof input === "string" ? input : input.toString()))
-      .filter((url) => url.includes("/api/v1/companies"));
+      .filter((url) => url.includes("/api/v1/companies/summary"));
     expect(companyCalls).toHaveLength(1);
   });
 
@@ -120,12 +122,12 @@ describe("CompaniesPage", () => {
     };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         const u = new URL(url);
         expect(u.searchParams.get("sort")).toBe("updated_at_desc");
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -140,13 +142,69 @@ describe("CompaniesPage", () => {
     await waitFor(() => {
       const calls = fetchMock.mock.calls
         .map(([input]) => (typeof input === "string" ? input : input.toString()))
-        .filter((url) => url.includes("/api/v1/companies"));
+        .filter((url) => url.includes("/api/v1/companies/summary"));
       expect(calls.some((url) => new URL(url).searchParams.get("sort") === "updated_at_desc")).toBe(true);
     });
 
     expect(screen.getAllByText("No application records").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: "No application records" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("option", { name: "Has application records" }).length).toBeGreaterThan(0);
+    const calledUrls = fetchMock.mock.calls.map(([input]) =>
+      typeof input === "string" ? input : input.toString()
+    );
+    expect(calledUrls.some((url) => url.includes("/api/v1/companies/summary"))).toBe(true);
+    expect(calledUrls.some((url) => url.includes("/api/v1/settings/workers"))).toBe(false);
+    expect(calledUrls.filter((url) => url.includes("/api/v1/workers/summary"))).toHaveLength(1);
+  });
+
+  it("refreshes cached company summaries when the tab returns to the foreground", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const initialCompany = {
+      id: "c1",
+      name: "Acme Corp",
+      has_application: false,
+      research_status: "pending",
+      website: "https://acme.example",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    };
+    const refreshedCompany = {
+      ...initialCompany,
+      has_application: true,
+      research_status: "indexed",
+      updated_at: "2026-01-02T00:00:00Z"
+    };
+    let summaryCalls = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/companies/summary")) {
+        summaryCalls += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify([summaryCalls > 1 ? refreshedCompany : initialCompany]), {
+            status: 200
+          })
+        );
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Pending")).toBeInTheDocument();
+    fireEvent.focus(window);
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => {
+      expect(summaryCalls).toBe(2);
+      expect(screen.getAllByText("Indexed").some((el) => el.tagName === "SPAN")).toBe(true);
+    });
   });
 
   it("creates an application from the company row Apply action", async () => {
@@ -178,10 +236,10 @@ describe("CompaniesPage", () => {
           )
         );
       }
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));

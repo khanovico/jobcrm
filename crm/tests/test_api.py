@@ -242,6 +242,7 @@ def test_human_list_endpoints_reject_unbounded_limits() -> None:
     endpoints = [
         "/api/v1/industries",
         "/api/v1/companies",
+        "/api/v1/companies/summary",
         "/api/v1/profiles",
         "/api/v1/profiles/summary",
         "/api/v1/applications",
@@ -265,11 +266,121 @@ def test_user_role_cannot_access_settings_or_audit() -> None:
     )
     headers = _auth_headers(token)
 
+    summary_response = client.get("/api/v1/workers/summary", headers=headers)
+    assert summary_response.status_code == 200
+    assert summary_response.json() == {
+        "settings": {
+            "max_company_researcher": 1,
+            "max_ppa_analyser": 1,
+            "max_application_drafter": 1,
+        },
+        "active": {
+            "company_researcher": 0,
+            "ppa_analyser": 0,
+            "application_drafter": 0,
+        },
+        "max": {
+            "company_researcher": 1,
+            "ppa_analyser": 1,
+            "application_drafter": 1,
+        },
+    }
+
     settings_response = client.get("/api/v1/settings/workers", headers=headers)
     assert settings_response.status_code == 403
 
+    patch_response = client.patch(
+        "/api/v1/settings/workers",
+        json={"max_company_researcher": 2},
+        headers=headers,
+    )
+    assert patch_response.status_code == 403
+
     audit_response = client.get("/api/v1/audit-events", headers=headers)
     assert audit_response.status_code == 403
+
+
+def test_company_summary_returns_compact_fields_and_respects_filters_sort_pagination() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    alpha = client.post(
+        "/api/v1/companies",
+        json={
+            "name": "Acme Alpha",
+            "website": "https://alpha.example",
+            "overview": "heavy overview",
+            "full_product_detail": "heavy product detail",
+            "full_hiring_detail": "heavy hiring detail",
+            "full_organization_detail": "heavy org detail",
+            "enrichment_source_links": ["https://source.example/alpha"],
+        },
+        headers=headers,
+    )
+    assert alpha.status_code == 201
+    beta = client.post(
+        "/api/v1/companies",
+        json={"name": "Acme Beta", "website": "https://beta.example"},
+        headers=headers,
+    )
+    assert beta.status_code == 201
+    gamma = client.post(
+        "/api/v1/companies",
+        json={
+            "name": "Acme Gamma",
+            "website": "https://gamma.example",
+            "research_status": "indexed",
+        },
+        headers=headers,
+    )
+    assert gamma.status_code == 201
+    other = client.post(
+        "/api/v1/companies",
+        json={"name": "Other Co", "website": "https://other.example"},
+        headers=headers,
+    )
+    assert other.status_code == 201
+
+    for company_id in [alpha.json()["id"], beta.json()["id"]]:
+        application = client.post(
+            "/api/v1/applications",
+            json={"company_id": company_id, "status": "company_research_pending"},
+            headers=headers,
+        )
+        assert application.status_code == 201
+
+    response = client.get(
+        "/api/v1/companies/summary",
+        params={
+            "search": "Acme",
+            "research_status": "pending",
+            "has_application": "true",
+            "sort": "name_asc",
+            "skip": 1,
+            "limit": 1,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["name"] == "Acme Beta"
+    assert rows[0]["website"] == "https://beta.example"
+    assert rows[0]["research_status"] == "pending"
+    assert rows[0]["has_application"] is True
+    assert set(rows[0]) == {
+        "id",
+        "name",
+        "research_status",
+        "website",
+        "has_application",
+        "created_at",
+        "updated_at",
+    }
 
 
 def test_user_role_profiles_are_read_only() -> None:
@@ -1983,6 +2094,79 @@ def test_mongo_repository_list_companies_uses_query_pagination_and_distinct_anno
             },
         ],
         "_id": {"$in": [acme.id]},
+    }
+    assert db.companies.sorts[-1] == [("name", 1)]
+    assert db.companies.limits[-1] == 10
+    assert db.companies.collations[-1] == {"locale": "en", "strength": 2}
+    assert db.applications.distinct_calls == [
+        ("company_id", {}),
+        ("company_id", {"company_id": {"$in": [acme.id]}}),
+    ]
+
+
+def test_mongo_repository_list_company_summaries_uses_projection_and_distinct_annotation() -> None:
+    seed = InMemoryRepository()
+    acme = seed.create_company(
+        CompanyCreate(
+            name="Ac.me Labs",
+            website="https://acme.example",
+            overview="heavy overview",
+            full_product_detail="heavy product detail",
+            full_hiring_detail="heavy hiring detail",
+            full_organization_detail="heavy org detail",
+            enrichment_source_links=["https://source.example/acme"],
+        )
+    )
+    other = seed.create_company(
+        CompanyCreate(name="Other", research_status=CompanyResearchStatus.indexed)
+    )
+    archived = seed.create_company(CompanyCreate(name="Ac.me Archived"))
+    seed.archive_company(archived.id, "old")
+    app = seed.create_application(
+        ApplicationCreate(company_id=acme.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id="u1",
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.companies.docs = [_mongo_doc(other), _mongo_doc(acme), _mongo_doc(seed.companies[archived.id])]
+    db.applications.docs = [_mongo_doc(app)]
+
+    rows = repo.list_company_summaries(
+        skip=0,
+        limit=10,
+        search="Ac.",
+        sort="name_asc",
+        research_status=CompanyResearchStatus.pending,
+        has_application=True,
+    )
+
+    assert [row.id for row in rows] == [acme.id]
+    assert rows[0].name == acme.name
+    assert rows[0].website == acme.website
+    assert rows[0].has_application is True
+    assert not hasattr(rows[0], "overview")
+    assert db.companies.find_queries[-1] == {
+        "$and": [
+            {
+                "archived": {"$ne": True},
+                "name": {"$regex": "Ac\\.", "$options": "i"},
+            },
+            {
+                "$or": [
+                    {"research_status": "pending"},
+                    {"research_status": {"$exists": False}, "indexed": {"$ne": True}},
+                ]
+            },
+        ],
+        "_id": {"$in": [acme.id]},
+    }
+    assert db.companies.projections[-1] == {
+        "_id": 1,
+        "name": 1,
+        "website": 1,
+        "research_status": 1,
+        "indexed": 1,
+        "created_at": 1,
+        "updated_at": 1,
     }
     assert db.companies.sorts[-1] == [("name", 1)]
     assert db.companies.limits[-1] == 10

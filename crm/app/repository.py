@@ -28,6 +28,7 @@ from app.models import (
     AuditListQuery,
     Company,
     CompanyCreate,
+    CompanyListItem,
     CompanyResearchStatus,
     CompanyUpdate,
     ColdEmailPlan,
@@ -188,6 +189,17 @@ class BaseRepository:
         research_status: CompanyResearchStatus | None = None,
         has_application: bool | None = None,
     ) -> list[Company]:
+        raise NotImplementedError
+
+    def list_company_summaries(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        sort: str = "updated_at_desc",
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> list[CompanyListItem]:
         raise NotImplementedError
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
@@ -503,6 +515,18 @@ def _company_ids_with_applications(applications: dict[str, Application]) -> set[
     return {a.company_id for a in applications.values()}
 
 
+def _company_list_item_from_company(company: Company) -> CompanyListItem:
+    return CompanyListItem(
+        id=company.id,
+        name=company.name,
+        research_status=company.research_status,
+        website=company.website,
+        has_application=company.has_application,
+        created_at=company.created_at,
+        updated_at=company.updated_at,
+    )
+
+
 class InMemoryRepository(BaseRepository):
     def __init__(self) -> None:
         self.users: dict[str, UserInDB] = {}
@@ -608,6 +632,27 @@ class InMemoryRepository(BaseRepository):
         values = _sort_companies(values, sort)
         sliced = values[skip : skip + limit]
         return self._annotate_companies_has_application(sliced)
+
+    def list_company_summaries(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        sort: str = "updated_at_desc",
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> list[CompanyListItem]:
+        return [
+            _company_list_item_from_company(company)
+            for company in self.list_companies(
+                skip=skip,
+                limit=limit,
+                search=search,
+                sort=sort,
+                research_status=research_status,
+                has_application=has_application,
+            )
+        ]
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
         values = [
@@ -1722,8 +1767,9 @@ class MongoRepository(InMemoryRepository):
         skip: int = 0,
         limit: int | None = None,
         collation: dict | None = None,
+        projection: dict[str, int] | None = None,
     ):
-        cursor = self.db[collection_name].find(query)
+        cursor = self.db[collection_name].find(query, projection)
         if collation and hasattr(cursor, "collation"):
             cursor = cursor.collation(collation)
         if sort:
@@ -1823,6 +1869,41 @@ class MongoRepository(InMemoryRepository):
             company.model_copy(update={"has_application": company.id in app_company_ids})
             for company in companies
         ]
+
+    def _annotate_company_summaries_has_application_mongo(
+        self, companies: list[CompanyListItem]
+    ) -> list[CompanyListItem]:
+        if not companies:
+            return []
+        company_ids = [company.id for company in companies]
+        app_company_ids = self._company_ids_with_applications_mongo(
+            {"company_id": {"$in": company_ids}}
+        )
+        return [
+            company.model_copy(update={"has_application": company.id in app_company_ids})
+            for company in companies
+        ]
+
+    def _company_list_query(
+        self,
+        search: str | None,
+        research_status: CompanyResearchStatus | None,
+        has_application: bool | None,
+    ) -> dict[str, object]:
+        query: dict[str, object] = {"archived": {"$ne": True}}
+        if search:
+            query["name"] = self._literal_contains_filter(search)
+        if research_status is not None:
+            query = {
+                "$and": [
+                    query,
+                    self._company_research_status_filter(research_status),
+                ]
+            }
+        if has_application is not None:
+            company_ids = list(self._company_ids_with_applications_mongo())
+            query["_id"] = {"$in" if has_application else "$nin": company_ids}
+        return query
 
     def _sync(self) -> None:
         # Repair/bootstrap fallback only. Normal writes must use targeted helpers below.
@@ -1959,19 +2040,7 @@ class MongoRepository(InMemoryRepository):
         research_status: CompanyResearchStatus | None = None,
         has_application: bool | None = None,
     ) -> list[Company]:
-        query: dict[str, object] = {"archived": {"$ne": True}}
-        if search:
-            query["name"] = self._literal_contains_filter(search)
-        if research_status is not None:
-            query = {
-                "$and": [
-                    query,
-                    self._company_research_status_filter(research_status),
-                ]
-            }
-        if has_application is not None:
-            company_ids = list(self._company_ids_with_applications_mongo())
-            query["_id"] = {"$in" if has_application else "$nin": company_ids}
+        query = self._company_list_query(search, research_status, has_application)
         companies = self._mongo_find_page(
             "companies",
             query,
@@ -1982,6 +2051,35 @@ class MongoRepository(InMemoryRepository):
             collation={"locale": "en", "strength": 2} if sort == "name_asc" else None,
         )
         return self._annotate_companies_has_application_mongo(companies)
+
+    def list_company_summaries(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        sort: str = "updated_at_desc",
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> list[CompanyListItem]:
+        companies = self._mongo_find_page(
+            "companies",
+            self._company_list_query(search, research_status, has_application),
+            CompanyListItem,
+            sort=self._company_sort_spec(sort),
+            skip=skip,
+            limit=limit,
+            collation={"locale": "en", "strength": 2} if sort == "name_asc" else None,
+            projection={
+                "_id": 1,
+                "name": 1,
+                "website": 1,
+                "research_status": 1,
+                "indexed": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+        )
+        return self._annotate_company_summaries_has_application_mongo(companies)
 
     def list_company_research_tasks(
         self, limit: int

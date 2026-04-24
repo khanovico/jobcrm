@@ -50,6 +50,7 @@ from app.models import (
     CompanyArchiveRequest,
     CompanyArchiveResponse,
     CompanyCreate,
+    CompanyListItem,
     CompanyResearchStatus,
     CompanyUpdate,
     DashboardMetrics,
@@ -426,6 +427,33 @@ def list_companies(
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Company]:
     return repo.list_companies(
+        skip=skip,
+        limit=limit,
+        search=search,
+        sort=sort,
+        research_status=research_status,
+        has_application=has_application,
+    )
+
+
+@app.get("/api/v1/companies/summary", response_model=list[CompanyListItem])
+def list_company_summaries(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    search: str | None = None,
+    sort: Literal[
+        "updated_at_desc",
+        "created_at_desc",
+        "created_at_asc",
+        "updated_at_asc",
+        "name_asc",
+    ] = "updated_at_desc",
+    research_status: CompanyResearchStatus | None = None,
+    has_application: bool | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[CompanyListItem]:
+    return repo.list_company_summaries(
         skip=skip,
         limit=limit,
         search=search,
@@ -1231,6 +1259,14 @@ def list_audit(
 @app.get("/api/v1/settings/workers", response_model=WorkerStateResponse)
 def get_worker_settings_route(
     _: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> WorkerStateResponse:
+    return repo.get_worker_state()
+
+
+@app.get("/api/v1/workers/summary", response_model=WorkerStateResponse)
+def get_worker_summary_route(
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> WorkerStateResponse:
     return repo.get_worker_state()

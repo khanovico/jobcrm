@@ -124,7 +124,7 @@ export const NewApplicationModal = ({
         if (searchTerm.trim()) {
           params.set("search", searchTerm.trim());
         }
-        const result = await api.listCompanies(params);
+        const result = await api.listCompanySummaries(params);
         if (companySearchRequestRef.current !== requestId) return;
         const fetchedOptions = result.map((company) => ({ id: company.id, name: company.name, website: company.website }));
         setCompanyOptions(

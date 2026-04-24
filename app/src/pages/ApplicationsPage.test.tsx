@@ -4,6 +4,11 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetAppliedProfilesFilterSelectionForTests } from "../state/applicationsFilters";
+import {
+  getCompanySummariesPage,
+  resetCompanySummariesCacheForTests
+} from "../state/companySummaries";
+import { resetWorkerSummaryCacheForTests } from "../state/workerState";
 import { ApplicationsPage } from "./ApplicationsPage";
 
 const WORKER_STATE = {
@@ -19,6 +24,8 @@ describe("ApplicationsPage", () => {
   afterEach(() => {
     cleanup();
     resetAppliedProfilesFilterSelectionForTests();
+    resetCompanySummariesCacheForTests();
+    resetWorkerSummaryCacheForTests();
     vi.unstubAllGlobals();
   });
 
@@ -54,7 +61,7 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -83,7 +90,7 @@ describe("ApplicationsPage", () => {
         expect(parsed.searchParams.get("sort")).toBe("updated_at_desc");
         return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -105,7 +112,7 @@ describe("ApplicationsPage", () => {
       if (isApplicationsListRequest(url)) {
         return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -129,7 +136,7 @@ describe("ApplicationsPage", () => {
       if (isApplicationsListRequest(url)) {
         return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
       }
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         const search = new URL(url).searchParams.get("search");
         if (search === "Beta") {
           return Promise.resolve(
@@ -138,7 +145,7 @@ describe("ApplicationsPage", () => {
         }
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -158,7 +165,7 @@ describe("ApplicationsPage", () => {
 
     const initialCompanyCalls = fetchMock.mock.calls
       .map(([input]) => (typeof input === "string" ? input : input.toString()))
-      .filter((url) => url.includes("/api/v1/companies"));
+      .filter((url) => url.includes("/api/v1/companies/summary"));
     expect(initialCompanyCalls).toHaveLength(0);
 
     fireEvent.change(screen.getByRole("textbox", { name: "Use an existing company (optional)" }), {
@@ -168,11 +175,73 @@ describe("ApplicationsPage", () => {
     await waitFor(() => {
       const companyCalls = fetchMock.mock.calls
         .map(([input]) => (typeof input === "string" ? input : input.toString()))
-        .filter((url) => url.includes("/api/v1/companies"));
+        .filter((url) => url.includes("/api/v1/companies/summary"));
       expect(companyCalls.some((url) => url.includes("search=Beta"))).toBe(true);
       expect(companyCalls.every((url) => url.includes("limit=20"))).toBe(true);
     });
     expect(await screen.findByRole("button", { name: /Beta Labs/ })).toBeInTheDocument();
+  });
+
+  it("invalidates cached company summaries after creating an application", async () => {
+    const fetchMock = vi.mocked(fetch);
+    let summaryCalls = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/companies/summary")) {
+        summaryCalls += 1;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: "c1",
+                name: "Acme",
+                research_status: "indexed",
+                has_application: summaryCalls > 1,
+                created_at: "2026-01-01",
+                updated_at: "2026-01-01"
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/api/v1/applications/bootstrap") && init?.method === "POST") {
+        return Promise.resolve(new Response(JSON.stringify(applicationRow), { status: 201 }));
+      }
+      if (isApplicationsFacetRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify({ profile_names: [] }), { status: 200 }));
+      }
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    const cachedBeforeCreate = await getCompanySummariesPage({ page: 1, pageSize: 10 });
+    expect(cachedBeforeCreate[0].has_application).toBe(false);
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("heading", { name: "Applications" });
+    await userEvent.click(screen.getByRole("button", { name: "New application" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "Acme");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input]) => String(input).includes("/api/v1/applications/bootstrap"))
+      ).toBe(true);
+    });
+    const refreshedAfterCreate = await getCompanySummariesPage({ page: 1, pageSize: 10 });
+    expect(summaryCalls).toBe(2);
+    expect(refreshedAfterCreate[0].has_application).toBe(true);
   });
 
   it("sends company search to the application list API instead of filtering the current page", async () => {
@@ -190,7 +259,7 @@ describe("ApplicationsPage", () => {
         }
         return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -293,7 +362,7 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -326,7 +395,7 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -365,7 +434,7 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -409,7 +478,7 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -443,7 +512,7 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -476,6 +545,16 @@ describe("ApplicationsPage", () => {
         .map(([input]) => (typeof input === "string" ? input : input.toString()))
         .filter((url) => url.endsWith("/companies"))
     ).toHaveLength(0);
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .filter((url) => url.includes("/api/v1/workers/summary"))
+    ).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .some((url) => url.includes("/api/v1/settings/workers"))
+    ).toBe(false);
   });
 
   it("paginates application list requests", async () => {
@@ -493,7 +572,7 @@ describe("ApplicationsPage", () => {
           })
         );
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -534,7 +613,7 @@ describe("ApplicationsPage", () => {
       if (url.endsWith("/companies")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -632,7 +711,7 @@ describe("ApplicationsPage", () => {
           )
         );
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -709,7 +788,7 @@ describe("ApplicationsPage", () => {
           )
         );
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -798,7 +877,7 @@ describe("ApplicationsPage", () => {
           )
         );
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));

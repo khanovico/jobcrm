@@ -351,6 +351,30 @@ class ClearCompanyResearchDetailRequest(BaseModel):
     related_applications: Literal["none", "archive", "reset"] = "none"
 
 
+class CompanyListItem(BaseModel):
+    id: str
+    name: str
+    research_status: CompanyResearchStatus = CompanyResearchStatus.pending
+    website: str | None = None
+    has_application: bool = Field(
+        default=False,
+        description="True when at least one application exists for this company.",
+    )
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_indexed_field(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "research_status" not in data and "indexed" in data:
+            data["research_status"] = (
+                CompanyResearchStatus.indexed.value if data.get("indexed") else CompanyResearchStatus.pending.value
+            )
+        return data
+
+
 class Company(CompanyBase):
     id: str
     created_at: datetime

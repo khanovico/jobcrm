@@ -17,10 +17,13 @@ import {
   initializeSelectedAppliedProfileNames,
   setSelectedAppliedProfileNames
 } from "../state/applicationsFilters";
+import { invalidateCompanySummariesCache } from "../state/companySummaries";
+import { getWorkerSummaryCached, invalidateWorkerSummaryCache } from "../state/workerState";
 import { ApplicationListItem, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 15;
 const EMPTY_APPLIED_PROFILE_MATCH = "__jobcrm_no_applied_profile_match__";
+const WORKER_FOREGROUND_REFRESH_DEDUPE_MS = 1000;
 
 const PlusIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -56,6 +59,7 @@ export const ApplicationsPage = () => {
   const [companySearch, setCompanySearch] = useState("");
   const [debouncedCompanySearch, setDebouncedCompanySearch] = useState("");
   const previousAvailableProfileNamesRef = useRef<string[]>([]);
+  const lastWorkerForegroundRefreshAtRef = useRef(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -150,13 +154,9 @@ export const ApplicationsPage = () => {
         const params = new URLSearchParams(listParamsKey);
         params.set("skip", String((targetPage - 1) * PAGE_SIZE));
         params.set("limit", String(PAGE_SIZE));
-        const [applicationItems, workers] = await Promise.all([
-          api.listApplications(params),
-          api.getWorkerState().catch(() => null)
-        ]);
+        const applicationItems = await api.listApplications(params);
         setItems(applicationItems);
         setHasNextPage(applicationItems.length === PAGE_SIZE);
-        setWorkerState(workers);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -175,6 +175,30 @@ export const ApplicationsPage = () => {
   useEffect(() => {
     void loadProfileNamesForFilter();
   }, [loadProfileNamesForFilter]);
+
+  const loadWorkerSummary = useCallback(async (options?: { force?: boolean }) => {
+    setWorkerState(await getWorkerSummaryCached(options));
+  }, []);
+
+  useEffect(() => {
+    void loadWorkerSummary();
+  }, [loadWorkerSummary]);
+
+  useEffect(() => {
+    const refreshWorkerSummaryOnForeground = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastWorkerForegroundRefreshAtRef.current < WORKER_FOREGROUND_REFRESH_DEDUPE_MS) return;
+      lastWorkerForegroundRefreshAtRef.current = now;
+      void loadWorkerSummary({ force: true });
+    };
+    window.addEventListener("focus", refreshWorkerSummaryOnForeground);
+    document.addEventListener("visibilitychange", refreshWorkerSummaryOnForeground);
+    return () => {
+      window.removeEventListener("focus", refreshWorkerSummaryOnForeground);
+      document.removeEventListener("visibilitychange", refreshWorkerSummaryOnForeground);
+    };
+  }, [loadWorkerSummary]);
 
   useEffect(() => {
     void load(page);
@@ -302,7 +326,15 @@ export const ApplicationsPage = () => {
             >
               Reset profile filter
             </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page)}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                void load(page);
+                invalidateWorkerSummaryCache();
+                void loadWorkerSummary({ force: true });
+              }}
+            >
               Refresh
             </button>
             <button
@@ -495,7 +527,10 @@ export const ApplicationsPage = () => {
         onClose={closeModal}
         companies={editing ? [{ id: editing.company_id, name: editing.company_name }] : []}
         editing={editing}
-        onSuccess={load}
+        onSuccess={async () => {
+          invalidateCompanySummariesCache();
+          await load(page);
+        }}
       />
 
       <ApplicationWorkflowOverrideModal

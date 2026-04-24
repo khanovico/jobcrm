@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
@@ -7,9 +7,11 @@ import { Modal } from "../components/Modal";
 import { TablePagination } from "../components/TablePagination";
 import { api, ApiConflictError } from "../api";
 import { getCompanySummariesPage, invalidateCompanySummariesCache } from "../state/companySummaries";
-import { Company, CompanyResearchStatus, WorkerStateResponse } from "../types";
+import { getWorkerSummaryCached, invalidateWorkerSummaryCache } from "../state/workerState";
+import { CompanyListItem, CompanyResearchStatus, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 10;
+const FOREGROUND_REFRESH_DEDUPE_MS = 1000;
 
 type CompanySort =
   | "updated_at_desc"
@@ -50,7 +52,7 @@ const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
 
 export const CompaniesPage = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<Company[]>([]);
+  const [items, setItems] = useState<CompanyListItem[]>([]);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -61,10 +63,10 @@ export const CompaniesPage = () => {
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
   const [sort, setSort] = useState<CompanySort>("updated_at_desc");
   const [researchFilter, setResearchFilter] = useState<CompanyResearchStatus | "all">("all");
   const [applicationRecordFilter, setApplicationRecordFilter] = useState<ApplicationRecordFilter>("all");
+  const lastForegroundRefreshAtRef = useRef(0);
 
   const listExtraParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -79,7 +81,7 @@ export const CompaniesPage = () => {
     }
     return p;
   }, [sort, researchFilter, applicationRecordFilter]);
-  const [archiveTarget, setArchiveTarget] = useState<Company | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<CompanyListItem | null>(null);
   const [awaitingArchivedRestore, setAwaitingArchivedRestore] = useState(false);
 
   const load = useCallback(
@@ -87,18 +89,14 @@ export const CompaniesPage = () => {
       setLoading(true);
       setError(null);
       try {
-        const [response, workers] = await Promise.all([
-          getCompanySummariesPage({
-            page: targetPage,
-            pageSize: PAGE_SIZE,
-            force: options?.force,
-            extraParams: listExtraParams
-          }),
-          api.getWorkerState().catch(() => null)
-        ]);
+        const response = await getCompanySummariesPage({
+          page: targetPage,
+          pageSize: PAGE_SIZE,
+          force: options?.force,
+          extraParams: listExtraParams
+        });
         setItems(response);
         setHasNextPage(response.length === PAGE_SIZE);
-        setWorkerState(workers);
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -115,6 +113,31 @@ export const CompaniesPage = () => {
   useEffect(() => {
     void load(page);
   }, [load, page]);
+
+  const loadWorkerSummary = useCallback(async (options?: { force?: boolean }) => {
+    setWorkerState(await getWorkerSummaryCached(options));
+  }, []);
+
+  useEffect(() => {
+    void loadWorkerSummary();
+  }, [loadWorkerSummary]);
+
+  useEffect(() => {
+    const refreshOnForeground = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastForegroundRefreshAtRef.current < FOREGROUND_REFRESH_DEDUPE_MS) return;
+      lastForegroundRefreshAtRef.current = now;
+      void load(page, { force: true });
+      void loadWorkerSummary({ force: true });
+    };
+    window.addEventListener("focus", refreshOnForeground);
+    document.addEventListener("visibilitychange", refreshOnForeground);
+    return () => {
+      window.removeEventListener("focus", refreshOnForeground);
+      document.removeEventListener("visibilitychange", refreshOnForeground);
+    };
+  }, [load, loadWorkerSummary, page]);
 
   useEffect(() => {
     if (items.length === 0 && page > 1) {
@@ -167,7 +190,15 @@ export const CompaniesPage = () => {
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page, { force: true })}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                void load(page, { force: true });
+                invalidateWorkerSummaryCache();
+                void loadWorkerSummary({ force: true });
+              }}
+            >
               Refresh
             </button>
             <button
