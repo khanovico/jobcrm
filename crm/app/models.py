@@ -906,10 +906,21 @@ class AgentNotificationCreate(BaseModel):
         return self
 
 
+class ApplicationSearchSummary(BaseModel):
+    id: str
+    company_id: str
+    company_name: str
+    status: ApplicationStatus
+    updated_at: datetime
+    job_link: str | None = None
+    job_title: str | None = None
+    job_description_excerpt: str | None = None
+
+
 class GlobalSearchResult(BaseModel):
     companies: list[Company]
     profiles: list[Profile]
-    applications: list[Application]
+    applications: list[ApplicationSearchSummary]
 
 
 class ApplicationListQuery(BaseModel):

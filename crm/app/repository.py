@@ -22,6 +22,7 @@ from app.models import (
     ApplicationBootstrapCreate,
     ApplicationCreate,
     ApplicationListItem,
+    ApplicationSearchSummary,
     ApplicationStatus,
     ApplicationUpdate,
     AuditEvent,
@@ -121,6 +122,62 @@ def _cold_email_plan_ready_for_applied_list(plan: ColdEmailPlan | dict | None) -
     else:
         subs = plan.subjects or []
     return any(str(s or "").strip() for s in subs)
+
+
+def _compact_search_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    compact = " ".join(value.split())
+    return compact or None
+
+
+def _truncate_search_text(value: str | None, limit: int) -> str | None:
+    if not value:
+        return None
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 1].rstrip()}…"
+
+
+def _application_search_job_title(application: Application) -> str | None:
+    if not application.job_post:
+        return None
+    description = application.job_post.job_description or ""
+    if not description.strip():
+        return None
+    for line in description.splitlines():
+        title = _compact_search_text(line)
+        if title and len(title) <= 120:
+            return title
+    return None
+
+
+def _application_search_description_excerpt(application: Application, job_title: str | None) -> str | None:
+    if not application.job_post:
+        return None
+    description = _compact_search_text(application.job_post.job_description)
+    if not description:
+        return None
+    excerpt = description
+    if job_title and excerpt.startswith(job_title):
+        excerpt = _compact_search_text(excerpt[len(job_title) :].lstrip(" -:|"))
+    if not excerpt or excerpt == job_title:
+        return None
+    return _truncate_search_text(excerpt, 180)
+
+
+def _application_search_summary(application: Application, company_name: str) -> ApplicationSearchSummary:
+    job_title = _application_search_job_title(application)
+    return ApplicationSearchSummary(
+        id=application.id,
+        company_id=application.company_id,
+        company_name=company_name,
+        status=application.status,
+        updated_at=application.updated_at,
+        job_link=application.job_post.job_link if application.job_post else None,
+        job_title=job_title,
+        job_description_excerpt=_application_search_description_excerpt(application, job_title),
+    )
 
 
 def _normalized_optional_text_filter(value: str | None) -> str | None:
@@ -1468,12 +1525,20 @@ class InMemoryRepository(BaseRepository):
             for p in self.profiles.values()
             if q in p.name.lower() or (p.bio_md and q in p.bio_md.lower())
         ][:limit]
-        applications = []
+        applications: list[ApplicationSearchSummary] = []
         for a in self.applications.values():
-            if a.notes and q in a.notes.lower():
-                applications.append(a)
-                if len(applications) >= limit:
-                    break
+            company = self.companies.get(a.company_id)
+            company_name = company.name if company else a.company_id
+            search_fields = [
+                a.notes,
+                a.job_post.job_description if a.job_post else None,
+                a.job_post.job_link if a.job_post else None,
+                company_name,
+            ]
+            if any(field and q in field.lower() for field in search_fields):
+                applications.append(_application_search_summary(a, company_name))
+            if len(applications) >= limit:
+                break
         return GlobalSearchResult(
             companies=companies[:limit], profiles=profiles[:limit], applications=applications[:limit]
         )

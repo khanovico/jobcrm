@@ -89,6 +89,62 @@ def _valid_profile_create_payload() -> dict:
     }
 
 
+def test_global_search_returns_compact_application_summaries() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Acme Labs"}, headers=headers).json()
+    client.post(
+        "/api/v1/applications",
+        json={
+            "company_id": company["id"],
+            "status": "company_research_pending",
+            "notes": "Internal tracker note that should stay out of dashboard search payloads.",
+            "job_post": {
+                "job_link": "https://jobs.example.com/acme/platform-engineer",
+                "job_description": (
+                    "Senior Platform Engineer\n"
+                    "Build customer portals with fast search dashboards and compact summaries."
+                ),
+            },
+        },
+        headers=headers,
+    )
+
+    response = client.get("/api/v1/search", params={"q": "compact summaries"}, headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["companies"] == []
+    assert body["profiles"] == []
+    assert len(body["applications"]) == 1
+
+    summary = body["applications"][0]
+    assert set(summary.keys()) == {
+        "id",
+        "company_id",
+        "company_name",
+        "status",
+        "updated_at",
+        "job_link",
+        "job_title",
+        "job_description_excerpt",
+    }
+    assert summary["company_id"] == company["id"]
+    assert summary["company_name"] == "Acme Labs"
+    assert summary["status"] == "company_research_pending"
+    assert summary["job_link"] == "https://jobs.example.com/acme/platform-engineer"
+    assert summary["job_title"] == "Senior Platform Engineer"
+    assert summary["job_description_excerpt"] == (
+        "Build customer portals with fast search dashboards and compact summaries."
+    )
+    assert "notes" not in summary
+    assert "job_post" not in summary
+
+
 def test_list_applications_exclude_archived() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
