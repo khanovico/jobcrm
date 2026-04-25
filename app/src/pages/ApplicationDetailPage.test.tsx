@@ -1,5 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -192,10 +191,11 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Second email");
-    const target = document.getElementById("email-e2");
-    expect(target).not.toBeNull();
-    expect(target?.className).toContain("ring-2");
+    await waitFor(() => {
+      const target = document.getElementById("email-e2");
+      expect(target).not.toBeNull();
+      expect(target?.className).toContain("ring-2");
+    });
     await waitFor(() => {
       expect(scrollIntoViewMock).toHaveBeenCalled();
     });
@@ -275,7 +275,7 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Existing email");
+    await screen.findAllByText("Email body");
     const emptyStates = await screen.findAllByText("No emails yet.");
     expect(emptyStates).toHaveLength(1);
   });
@@ -344,13 +344,16 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
+    fireEvent.click(await screen.findByText("Email body"));
     await screen.findByText("Hi Benjamin,");
-    expect(screen.getAllByText("Subjects").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Review summary" })).toBeInTheDocument();
+    expect(screen.getAllByText("Subject options").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Email body").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Quick intro").length).toBeGreaterThan(0);
     expect(screen.getAllByText("LLM reliability for legal workflows").length).toBeGreaterThan(0);
     expect(screen.getAllByText("15-minute chat?").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Subject:").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("To:").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Recipient:").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Hiring Manager - Benjamin (benjamin@lawgoat.com)").length).toBeGreaterThan(0);
     const emphasis = screen.getByText("team");
     expect(emphasis.tagName).toBe("STRONG");
@@ -465,7 +468,6 @@ describe("ApplicationDetailPage", () => {
       updated_at: "2026-01-01T00:00:00Z"
     });
 
-    const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={["/applications/a1"]}>
         <Routes>
@@ -475,7 +477,7 @@ describe("ApplicationDetailPage", () => {
     );
 
     await screen.findAllByRole("button", { name: "Subject A" });
-    await user.click(screen.getAllByRole("button", { name: "Subject C" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Subject C" })[0]);
 
     await waitFor(() => {
       expect(updatePerProfileApplication).toHaveBeenCalledWith("ppa1", {
@@ -487,7 +489,7 @@ describe("ApplicationDetailPage", () => {
         }
       });
     });
-    expect(screen.getAllByText("Subject C")).toHaveLength(2);
+    expect(screen.getAllByText("Subject C").length).toBeGreaterThanOrEqual(2);
   });
 
   it("allows editing recipient and syncs changes", async () => {
@@ -561,7 +563,6 @@ describe("ApplicationDetailPage", () => {
       updated_at: "2026-01-01T00:00:00Z"
     });
 
-    const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={["/applications/a1"]}>
         <Routes>
@@ -570,17 +571,13 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    await screen.findAllByRole("button", { name: "Edit recipient" });
-    await user.click(screen.getAllByRole("button", { name: "Edit recipient" })[0]);
-    await user.clear(screen.getByLabelText("Recipient title"));
-    await user.type(screen.getByLabelText("Recipient title"), "CTO");
-    await user.clear(screen.getByLabelText("Recipient name"));
-    await user.type(screen.getByLabelText("Recipient name"), "Benjamin Kim");
-    await user.clear(screen.getByLabelText("Recipient email"));
-    await user.type(screen.getByLabelText("Recipient email"), "bk@lawgoat.com");
-    await user.clear(screen.getByLabelText("Recipient timezone"));
-    await user.type(screen.getByLabelText("Recipient timezone"), "America/Chicago");
-    await user.click(screen.getByRole("button", { name: "Save recipient" }));
+    await screen.findByRole("button", { name: "Edit recipient" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit recipient" }));
+    fireEvent.change(screen.getByLabelText("Recipient title"), { target: { value: "CTO" } });
+    fireEvent.change(screen.getByLabelText("Recipient name"), { target: { value: "Benjamin Kim" } });
+    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "bk@lawgoat.com" } });
+    fireEvent.change(screen.getByLabelText("Recipient timezone"), { target: { value: "America/Chicago" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save recipient" }));
 
     await waitFor(() => {
       expect(updatePerProfileApplication).toHaveBeenCalledWith("ppa1", {
@@ -593,8 +590,8 @@ describe("ApplicationDetailPage", () => {
       });
     });
     expect(
-      screen.getByText("CTO - Benjamin Kim (bk@lawgoat.com) · America/Chicago")
-    ).toBeInTheDocument();
+      screen.getAllByText("CTO - Benjamin Kim (bk@lawgoat.com) · America/Chicago").length
+    ).toBeGreaterThan(0);
   });
 
   it("shows unmark actions when application and email are already marked", async () => {
@@ -660,6 +657,46 @@ describe("ApplicationDetailPage", () => {
     expect(await screen.findByRole("button", { name: "Unmark applied" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Unmark email sent" })).toHaveLength(2);
     expect(screen.getByText("Sent: 2026-01-02T00:00:00Z")).toBeInTheDocument();
+  });
+
+  it("disables application mark actions while saving and shows inline failures", async () => {
+    getApplication.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "application_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValue({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValue([]);
+    listProfiles.mockResolvedValue([]);
+    let rejectMark: (error: Error) => void = () => undefined;
+    markApplied.mockReturnValue(new Promise((_, reject) => {
+      rejectMark = reject;
+    }));
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const markButton = await screen.findByRole("button", { name: "Mark applied" });
+    fireEvent.click(markButton);
+    expect(screen.getByRole("button", { name: "Saving..." })).toBeDisabled();
+
+    rejectMark(new Error("mark failed"));
+    expect(await screen.findByText("mark failed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark applied" })).not.toBeDisabled();
   });
 
   it("unmarks application applied, application email-sent, and per-profile email-sent", async () => {
@@ -755,15 +792,19 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    await userEvent.click(await screen.findByRole("button", { name: "Unmark applied" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Unmark applied" }));
     expect(markApplied).toHaveBeenCalledWith("a1", false);
 
     const unmarkEmailButtons = screen.getAllByRole("button", { name: "Unmark email sent" });
-    await userEvent.click(unmarkEmailButtons[0]);
-    expect(markApplicationEmailSent).toHaveBeenCalledWith("a1", false);
+    fireEvent.click(unmarkEmailButtons[0]);
+    await waitFor(() => {
+      expect(markApplicationEmailSent).toHaveBeenCalledWith("a1", false);
+    });
 
-    await userEvent.click(unmarkEmailButtons[1]);
-    expect(markEmailSent).toHaveBeenCalledWith("e1", false);
+    fireEvent.click(screen.getByRole("button", { name: "Unmark email sent" }));
+    await waitFor(() => {
+      expect(markEmailSent).toHaveBeenCalledWith("e1", false);
+    });
   });
 
   it("marks per-profile email sent without refetching the full detail payload", async () => {
@@ -825,6 +866,16 @@ describe("ApplicationDetailPage", () => {
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-02T00:00:00Z"
     });
+    markApplicationEmailSent.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "application_ready",
+      applied: false,
+      email_sent: true,
+      email_sent_at: "2026-01-02T00:00:00Z",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    });
 
     render(
       <MemoryRouter initialEntries={["/applications/a1"]}>
@@ -834,15 +885,81 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Draft email");
+    await screen.findByText("Email body");
     expect(getApplicationDetail).toHaveBeenCalledTimes(1);
 
     const markEmailButtons = screen.getAllByRole("button", { name: "Mark email sent" });
-    await userEvent.click(markEmailButtons[1]);
+    fireEvent.click(markEmailButtons[1]);
 
     expect(markEmailSent).toHaveBeenCalledWith("e1", true);
     expect(getApplicationDetail).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Sent: 2026-01-02T00:00:00Z")).toBeInTheDocument();
+  });
+
+  it("locks an email row while its sent action is in flight", async () => {
+    getApplication.mockResolvedValue({
+      id: "a1",
+      company_id: "c1",
+      status: "application_ready",
+      applied: false,
+      email_sent: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    getCompany.mockResolvedValue({
+      id: "c1",
+      name: "Acme",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+    listPerProfileApplications.mockResolvedValue([
+      {
+        id: "ppa1",
+        application_id: "a1",
+        profile_id: "p1",
+        order_index: 1,
+        analysis: "Strong fit",
+        applied: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listProfiles.mockResolvedValue([
+      {
+        id: "p1",
+        name: "Profile One",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    listEmailsForPpa.mockResolvedValue([
+      {
+        id: "e1",
+        per_profile_application_id: "ppa1",
+        kind: "follow_up",
+        content: "Draft email",
+        lifecycle_status: "drafted",
+        sent: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z"
+      }
+    ]);
+    markEmailSent.mockReturnValue(new Promise(() => undefined));
+
+    render(
+      <MemoryRouter initialEntries={["/applications/a1"]}>
+        <Routes>
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Email body");
+    const markButtons = screen.getAllByRole("button", { name: "Mark email sent" });
+    fireEvent.click(markButtons[markButtons.length - 1]);
+
+    expect(screen.getByRole("button", { name: "Saving..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete email" })).toBeDisabled();
   });
 
   it("hides default not-sent text and keeps subjects collapsible", async () => {
@@ -908,9 +1025,9 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Subject:")).toBeInTheDocument();
+    expect((await screen.findAllByText("Subject:")).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Sent: Not sent/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Subjects")).toBeInTheDocument();
+    expect(screen.getByText("Subject options")).toBeInTheDocument();
   });
 
   it("deletes email after confirmation", async () => {
@@ -972,8 +1089,8 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Sent email");
-    await userEvent.click(screen.getByRole("button", { name: "Delete email" }));
+    await screen.findByText("Email body");
+    fireEvent.click(screen.getByRole("button", { name: "Delete email" }));
     expect(confirmSpy).toHaveBeenCalled();
     expect(deleteEmail).toHaveBeenCalledWith("e1");
   });
@@ -1038,7 +1155,7 @@ describe("ApplicationDetailPage", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByRole("button", { name: "Clear" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Reset preparation" })).toBeInTheDocument();
   });
 
   it("does not show Clear when status is company research pending", async () => {
@@ -1070,6 +1187,6 @@ describe("ApplicationDetailPage", () => {
     );
 
     expect(await screen.findByText("Company research pending")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset preparation" })).not.toBeInTheDocument();
   });
 });

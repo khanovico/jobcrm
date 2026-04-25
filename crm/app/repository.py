@@ -2595,6 +2595,16 @@ class MongoRepository(InMemoryRepository):
             limit=q.limit,
         )
 
+    def list_per_profile_for_application(
+        self, application_id: str
+    ) -> list[PerProfileApplication]:
+        return self._mongo_find_page(
+            "per_profile_applications",
+            {"application_id": application_id},
+            PerProfileApplication,
+            sort=[("order_index", 1), ("created_at", 1)],
+        )
+
     def list_emails_for_ppas(self, per_profile_application_ids: list[str]) -> dict[str, list[Email]]:
         ppa_ids = list(dict.fromkeys(per_profile_application_ids))
         if not ppa_ids:

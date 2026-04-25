@@ -41,7 +41,10 @@ export const ApplicationsPage = () => {
   const [markAppliedBusyId, setMarkAppliedBusyId] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
-  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(null);
+  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(
+    () => getSelectedAppliedProfileNames()
+  );
+  const [profileNamesLoaded, setProfileNamesLoaded] = useState(false);
   const appliedProfilesFilterButtonRef = useRef<HTMLButtonElement | null>(null);
   const [appliedProfilesFilterPosition, setAppliedProfilesFilterPosition] = useState<{ top: number; left: number } | null>(
     null
@@ -73,6 +76,7 @@ export const ApplicationsPage = () => {
   const availableAppliedProfileNames = profileNamesForFilter;
 
   useEffect(() => {
+    if (!profileNamesLoaded) return;
     if (availableAppliedProfileNames.length === 0) {
       setSelectedAppliedProfileNamesState(null);
       previousAvailableProfileNamesRef.current = [];
@@ -92,7 +96,7 @@ export const ApplicationsPage = () => {
       setSelectedAppliedProfileNamesState(initializeSelectedAppliedProfileNames(next));
     }
     previousAvailableProfileNamesRef.current = next;
-  }, [availableAppliedProfileNames]);
+  }, [availableAppliedProfileNames, profileNamesLoaded]);
 
   const updateAppliedProfileSelection = (nextSelection: string[]) => {
     const sanitizedSelection = nextSelection.filter((name) => availableAppliedProfileNames.includes(name));
@@ -127,16 +131,19 @@ export const ApplicationsPage = () => {
       setProfileNamesForFilter(names);
     } catch {
       setProfileNamesForFilter([]);
+    } finally {
+      setProfileNamesLoaded(true);
     }
   }, [applicationFilterParams]);
 
   const listParamsKey = useMemo(() => {
     const p = new URLSearchParams(applicationFilterParams);
     const allProfilesSelected =
-      selectedAppliedProfileNames === null ||
-      (selectedAppliedProfileNames.length === availableAppliedProfileNames.length &&
-        availableAppliedProfileNames.every((name) => selectedAppliedProfileNames.includes(name)));
-    if (availableAppliedProfileNames.length > 0 && selectedAppliedProfileNames !== null && !allProfilesSelected) {
+      availableAppliedProfileNames.length > 0 &&
+      selectedAppliedProfileNames !== null &&
+      selectedAppliedProfileNames.length === availableAppliedProfileNames.length &&
+      availableAppliedProfileNames.every((name) => selectedAppliedProfileNames.includes(name));
+    if (selectedAppliedProfileNames !== null && !allProfilesSelected) {
       const namesToFilter =
         selectedAppliedProfileNames.length > 0
           ? selectedAppliedProfileNames
@@ -175,6 +182,7 @@ export const ApplicationsPage = () => {
   }, [tableSort]);
 
   useEffect(() => {
+    setProfileNamesLoaded(false);
     void loadProfileNamesForFilter();
   }, [loadProfileNamesForFilter]);
 
@@ -513,12 +521,12 @@ export const ApplicationsPage = () => {
                 {availableAppliedProfileNames.length === 0 ? (
                   <p className="text-xs opacity-70">No profiles available</p>
                 ) : (
-                  availableAppliedProfileNames.map((profileName) => (
-                    <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
+	                  availableAppliedProfileNames.map((profileName) => (
+	                    <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
 	                      <input
 	                        type="checkbox"
 	                        className="checkbox checkbox-sm"
-	                        checked={(selectedAppliedProfileNames ?? []).includes(profileName)}
+	                        checked={selectedAppliedProfileNames === null || selectedAppliedProfileNames.includes(profileName)}
                         onChange={(event) => {
 	                          if (event.target.checked) {
 	                            updateAppliedProfileSelection(
@@ -526,11 +534,12 @@ export const ApplicationsPage = () => {
 	                                a.localeCompare(b)
 	                              )
 	                            );
-                            return;
-                          }
-	                          updateAppliedProfileSelection((selectedAppliedProfileNames ?? []).filter((name) => name !== profileName));
+	                            return;
+	                          }
+                          const currentSelection = selectedAppliedProfileNames ?? availableAppliedProfileNames;
+	                          updateAppliedProfileSelection(currentSelection.filter((name) => name !== profileName));
                         }}
-                      />
+	                      />
                       <span className="label-text text-xs">{profileName}</span>
                     </label>
                   ))

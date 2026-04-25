@@ -1,9 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resetAppliedProfilesFilterSelectionForTests } from "../state/applicationsFilters";
+import {
+  resetAppliedProfilesFilterSelectionForTests,
+  setSelectedAppliedProfileNames
+} from "../state/applicationsFilters";
 import {
   getCompanySummariesPage,
   resetCompanySummariesCacheForTests
@@ -77,7 +79,7 @@ describe("ApplicationsPage", () => {
     );
 
     expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("row", { name: /Acme/i }));
+    fireEvent.click(screen.getByRole("row", { name: /Acme/i }));
     expect(await screen.findByTestId("app-detail")).toBeInTheDocument();
   });
 
@@ -125,7 +127,7 @@ describe("ApplicationsPage", () => {
     );
 
     await screen.findByRole("cell", { name: "Acme" });
-    await userEvent.click(screen.getByRole("button", { name: "Set status…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set status…" }));
     expect(screen.getByRole("heading", { name: "Set application status" })).toBeInTheDocument();
   });
 
@@ -158,7 +160,7 @@ describe("ApplicationsPage", () => {
     );
 
     await screen.findByRole("heading", { name: "Applications" });
-    await userEvent.click(screen.getByRole("button", { name: "New application" }));
+    fireEvent.click(screen.getByRole("button", { name: "New application" }));
     expect(await screen.findByRole("heading", { name: "New application", level: 3 })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Company name" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Use an existing company (optional)" })).toBeInTheDocument();
@@ -230,7 +232,7 @@ describe("ApplicationsPage", () => {
     );
 
     await screen.findByRole("heading", { name: "Applications" });
-    await userEvent.click(screen.getByRole("button", { name: "New application" }));
+    fireEvent.click(screen.getByRole("button", { name: "New application" }));
     fireEvent.change(screen.getByRole("textbox", { name: "Company name" }), {
       target: { value: "Acme" }
     });
@@ -320,7 +322,7 @@ describe("ApplicationsPage", () => {
       </MemoryRouter>
     );
     expect(await screen.findByText("Mark Applied")).toBeInTheDocument();
-    await userEvent.click(screen.getByText("Mark Applied"));
+    fireEvent.click(screen.getByText("Mark Applied"));
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/applications/a1/mark-applied"),
       expect.objectContaining({
@@ -423,7 +425,7 @@ describe("ApplicationsPage", () => {
     );
 
     expect(await screen.findByText("Unmark Applied")).toBeInTheDocument();
-    await userEvent.click(screen.getByText("Unmark Applied"));
+    fireEvent.click(screen.getByText("Unmark Applied"));
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/applications/a1/mark-applied"),
       expect.objectContaining({
@@ -455,7 +457,7 @@ describe("ApplicationsPage", () => {
       </MemoryRouter>
     );
 
-    await userEvent.click(await screen.findByRole("button", { name: "Mark Applied" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mark Applied" }));
 
     expect(await screen.findByText(/Could not mark Acme as applied\./)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pending" })).toHaveClass("btn-active");
@@ -572,7 +574,7 @@ describe("ApplicationsPage", () => {
     );
 
     expect(await screen.findByText("Mark Applied")).toBeInTheDocument();
-    await userEvent.click(screen.getByText("Mark Applied"));
+    fireEvent.click(screen.getByText("Mark Applied"));
     expect(await screen.findByText("No applications in this view.")).toBeInTheDocument();
 
     const listCalls = fetchMock.mock.calls
@@ -612,7 +614,7 @@ describe("ApplicationsPage", () => {
         .filter((url) => url.endsWith("/companies"))
     ).toHaveLength(0);
 
-    await userEvent.click(screen.getByRole("button", { name: "Applied" }));
+    fireEvent.click(screen.getByRole("button", { name: "Applied" }));
 
     await waitFor(() => {
       const listCalls = fetchMock.mock.calls
@@ -668,7 +670,7 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Go to next page" })).toBeEnabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to next page" }));
 
     expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
@@ -808,9 +810,12 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
-    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "Bob Stone" }));
+    fireEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    expect(screen.getByRole("checkbox", { name: "Alice Park" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Bob Stone" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Carla Kim" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Bob Stone" }));
 
     await waitFor(() => {
       const listCalls = fetchMock.mock.calls
@@ -884,8 +889,8 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Beta" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
-    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
+    fireEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
 
     await waitFor(() => {
       const listCalls = fetchMock.mock.calls
@@ -973,13 +978,14 @@ describe("ApplicationsPage", () => {
     expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
-    await userEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "Carla Kim" }));
+    fireEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Carla Kim" }));
     expect(await screen.findByRole("cell", { name: "Core" })).toBeInTheDocument();
     expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
 
     firstMount.unmount();
+    fetchMock.mockClear();
 
     render(
       <MemoryRouter>
@@ -989,5 +995,84 @@ describe("ApplicationsPage", () => {
 
     expect(await screen.findByRole("cell", { name: "Core" })).toBeInTheDocument();
     expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+    const remountListCalls = fetchMock.mock.calls
+      .map(([input]) => (typeof input === "string" ? input : input.toString()))
+      .filter((requestUrl) => isApplicationsListRequest(requestUrl));
+    expect(remountListCalls.length).toBeGreaterThan(0);
+    expect(remountListCalls.every((requestUrl) => requestUrl.includes("applied_profile_names=Carla+Kim"))).toBe(
+      true
+    );
+  });
+
+  it("uses stored applied profile selection on the first list request", async () => {
+    setSelectedAppliedProfileNames(["Carla Kim"]);
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsFacetRequest(url)) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ profile_names: ["Alice Park", "Carla Kim"] }), { status: 200 })
+        );
+      }
+      if (isApplicationsListRequest(url)) {
+        const params = new URL(url).searchParams;
+        if (params.getAll("applied_profile_names").includes("Carla Kim")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify([
+                {
+                  ...applicationRow,
+                  id: "a2",
+                  company_id: "c2",
+                  company_name: "Core",
+                  applied_profiles: [{ profile_name: "Carla Kim" }]
+                }
+              ]),
+              { status: 200 }
+            )
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                ...applicationRow,
+                id: "a1",
+                company_id: "c1",
+                company_name: "Acme",
+                applied_profiles: [{ profile_name: "Alice Park" }]
+              },
+              {
+                ...applicationRow,
+                id: "a2",
+                company_id: "c2",
+                company_name: "Core",
+                applied_profiles: [{ profile_name: "Carla Kim" }]
+              }
+            ]),
+            { status: 200 }
+          )
+        );
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ApplicationsPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Core" })).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+    const listCalls = fetchMock.mock.calls
+      .map(([input]) => (typeof input === "string" ? input : input.toString()))
+      .filter((requestUrl) => isApplicationsListRequest(requestUrl));
+    expect(listCalls.length).toBeGreaterThan(0);
+    expect(listCalls[0]).toContain("applied_profile_names=Carla+Kim");
+    expect(listCalls.every((requestUrl) => requestUrl.includes("applied_profile_names=Carla+Kim"))).toBe(true);
   });
 });
