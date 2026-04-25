@@ -43,7 +43,7 @@ Out of scope:
 - [x] Run targeted backend and frontend tests plus frontend build.
 - [x] Run reviewers and address actionable findings.
 - [x] Update audit rows for cleared Batch 15 issues.
-- [ ] Commit Batch 15 and merge back into `codex/ux-performance-audit`.
+- [x] Commit Batch 15 and merge back into `codex/ux-performance-audit`.
 
 ## Parallel Work
 
