@@ -1,18 +1,51 @@
-import { FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { MarkdownModal } from "../components/MarkdownModal";
+import { Modal } from "../components/Modal";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Profile, ProfileCreatePayload } from "../types";
 
 type EdRow = { university_name: string; from_year: string; to_year: string };
 type EdRowErrors = { from_year: string | null; to_year: string | null };
+type ProfileSection = "basics" | "education" | "writing";
+type ProfileFormSnapshot = {
+  name: string;
+  location: string;
+  email: string;
+  phone: string;
+  bioMd: string;
+  nicheMd: string;
+  resumeMd: string;
+  edRows: EdRow[];
+};
 
 const emptyEdRow = (): EdRow => ({ university_name: "", from_year: "", to_year: "" });
 const MIN_EDUCATION_YEAR = 1900;
 const MAX_EDUCATION_YEAR = 2100;
 const YEAR_INPUT_PATTERN = /^\d{4}$/;
+const emptyProfileFormSnapshot = () =>
+  serializeProfileForm({
+    name: "",
+    location: "",
+    email: "",
+    phone: "",
+    bioMd: "",
+    nicheMd: "",
+    resumeMd: "",
+    edRows: [emptyEdRow()]
+  });
+
+const serializeProfileForm = (snapshot: ProfileFormSnapshot) =>
+  JSON.stringify({
+    ...snapshot,
+    edRows: snapshot.edRows.map((row) => ({
+      university_name: row.university_name,
+      from_year: row.from_year,
+      to_year: row.to_year
+    }))
+  });
 
 export const ProfileDetailPage = () => {
   const { profileId } = useParams<{ profileId: string }>();
@@ -32,30 +65,54 @@ export const ProfileDetailPage = () => {
   const [edRows, setEdRows] = useState<EdRow[]>([emptyEdRow()]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [bioPreviewOpen, setBioPreviewOpen] = useState(false);
   const [nichePreviewOpen, setNichePreviewOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<ProfileSection>("basics");
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState(emptyProfileFormSnapshot);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+
+  const profileToFormSnapshot = (p: Profile): ProfileFormSnapshot => ({
+    name: p.name,
+    location: p.location ?? "",
+    email: p.email ?? "",
+    phone: p.phone ?? "",
+    bioMd: p.bio_md ?? "",
+    nicheMd: p.niche_info_md ?? "",
+    resumeMd: p.resume_md ?? "",
+    edRows: p.educations?.length
+      ? p.educations.map((e) => ({
+          university_name: e.university_name,
+          from_year: e.from_year != null ? String(e.from_year) : "",
+          to_year: e.to_year != null ? String(e.to_year) : ""
+        }))
+      : [emptyEdRow()]
+  });
+
+  const applyProfileForm = (snapshot: ProfileFormSnapshot, options?: { markSaved?: boolean }) => {
+    setName(snapshot.name);
+    setLocation(snapshot.location);
+    setEmail(snapshot.email);
+    setPhone(snapshot.phone);
+    setBioMd(snapshot.bioMd);
+    setNicheMd(snapshot.nicheMd);
+    setResumeMd(snapshot.resumeMd);
+    setEdRows(snapshot.edRows);
+    if (options?.markSaved) {
+      setLastSavedSnapshot(serializeProfileForm(snapshot));
+    }
+  };
 
   const load = async () => {
     if (!profileId || isNew) return;
     setError(null);
+    setSavedMessage(null);
     try {
       const p = await api.getProfile(profileId);
       setProfile(p);
-      setName(p.name);
-      setLocation(p.location ?? "");
-      setEmail(p.email ?? "");
-      setPhone(p.phone ?? "");
-      setBioMd(p.bio_md ?? "");
-      setNicheMd(p.niche_info_md ?? "");
-      setResumeMd(p.resume_md ?? "");
-      const eds = p.educations?.length
-        ? p.educations.map((e) => ({
-            university_name: e.university_name,
-            from_year: e.from_year != null ? String(e.from_year) : "",
-            to_year: e.to_year != null ? String(e.to_year) : ""
-          }))
-        : [emptyEdRow()];
-      setEdRows(eds);
+      applyProfileForm(profileToFormSnapshot(p), { markSaved: true });
     } catch (e) {
       setError((e as Error).message);
     }
@@ -64,19 +121,48 @@ export const ProfileDetailPage = () => {
   useEffect(() => {
     if (isNew) {
       setProfile(null);
-      setName("");
-      setLocation("");
-      setEmail("");
-      setPhone("");
-      setBioMd("");
-      setNicheMd("");
-      setResumeMd("");
-      setEdRows([emptyEdRow()]);
+      applyProfileForm({
+        name: "",
+        location: "",
+        email: "",
+        phone: "",
+        bioMd: "",
+        nicheMd: "",
+        resumeMd: "",
+        edRows: [emptyEdRow()]
+      }, { markSaved: true });
       setError(null);
+      setSavedMessage(null);
       return;
     }
     void load();
   }, [profileId, isNew]);
+
+  const currentSnapshot = useMemo(
+    () =>
+      serializeProfileForm({
+        name,
+        location,
+        email,
+        phone,
+        bioMd,
+        nicheMd,
+        resumeMd,
+        edRows
+      }),
+    [bioMd, edRows, email, location, name, nicheMd, phone, resumeMd]
+  );
+  const hasUnsavedChanges = currentSnapshot !== lastSavedSnapshot;
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const parseYear = (s: string): number | null => {
     const t = s.trim();
@@ -152,8 +238,11 @@ export const ProfileDetailPage = () => {
       resume_md: resumeMd.trim() ? resumeMd.trim() : null
     };
     try {
-      await api.createProfile(payload);
-      navigate("/profiles");
+      const created = await api.createProfile(payload);
+      setProfile(created);
+      applyProfileForm(profileToFormSnapshot(created), { markSaved: true });
+      setSavedMessage("Profile created.");
+      navigate(`/profiles/${created.id}`, { replace: true });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -171,8 +260,9 @@ export const ProfileDetailPage = () => {
     }
     setSaving(true);
     setError(null);
+    setSavedMessage(null);
     try {
-      await api.updateProfile(profileId, {
+      const updated = await api.updateProfile(profileId, {
         name: name.trim(),
         location: location.trim() || null,
         email: email.trim() || null,
@@ -182,7 +272,9 @@ export const ProfileDetailPage = () => {
         niche_info_md: nicheMd.trim() || null,
         resume_md: resumeMd.trim() ? resumeMd.trim() : null
       });
-      navigate("/profiles");
+      setProfile(updated);
+      applyProfileForm(profileToFormSnapshot(updated), { markSaved: true });
+      setSavedMessage(`Saved ${new Date(updated.updated_at).toLocaleString()}.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -192,15 +284,27 @@ export const ProfileDetailPage = () => {
 
   const onDelete = async () => {
     if (!canEditProfiles || !profileId || isNew || !profile) return;
-    if (!window.confirm(`Delete profile “${profile.name}”? This cannot be undone.`)) return;
+    setDeleting(true);
     setError(null);
     try {
       await api.deleteProfile(profileId);
       navigate("/profiles");
     } catch (e) {
       setError((e as Error).message);
+      setDeleting(false);
     }
   };
+
+  const requestProfilesNavigation = () => {
+    if (hasUnsavedChanges) {
+      setLeaveConfirmOpen(true);
+      return;
+    }
+    navigate("/profiles");
+  };
+
+  const sectionButtonClass = (section: ProfileSection) =>
+    `btn btn-sm ${activeSection === section ? "btn-active" : "btn-ghost"}`;
 
   if (!profileId) return <div>Missing profile id</div>;
   if (isNew && !canEditProfiles) return <div className="alert alert-warning">Profile creation is admin-only.</div>;
@@ -210,64 +314,115 @@ export const ProfileDetailPage = () => {
       <div className="breadcrumbs text-sm">
         <ul>
           <li>
-            <Link to="/profiles">Profiles</Link>
+            <button type="button" className="link" onClick={requestProfilesNavigation}>
+              Profiles
+            </button>
           </li>
           <li>{isNew ? "New profile" : profile?.name ?? "Profile"}</li>
         </ul>
       </div>
       {error && <div className="alert alert-error text-sm">{error}</div>}
+      {savedMessage && <div className="alert alert-success text-sm">{savedMessage}</div>}
+      {hasUnsavedChanges && (
+        <div className="alert alert-warning text-sm">
+          You have unsaved profile changes. Save or discard them before leaving this page.
+        </div>
+      )}
       {!isNew && !profile && !error && <span className="loading loading-spinner" />}
 
       {(isNew || profile) && (
         <div className="card bg-base-100 p-4 shadow">
-          <h2 className="mb-2 text-xl font-semibold">{isNew ? "Create profile" : profile?.name}</h2>
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">{isNew ? "Create profile" : profile?.name}</h2>
+              {!isNew && profile && (
+                <p className="mt-1 text-sm opacity-70">
+                  Updated {new Date(profile.updated_at).toLocaleString()} · ID{" "}
+                  <span className="font-mono text-xs">{profile.id}</span>
+                </p>
+              )}
+            </div>
+            {hasUnsavedChanges && <span className="badge badge-warning">Unsaved</span>}
+          </div>
           {!isNew && profile && (
-            <p className="mb-4 text-sm opacity-70">
-              Updated {new Date(profile.updated_at).toLocaleString()} · ID{" "}
-              <span className="font-mono text-xs">{profile.id}</span>
-            </p>
+            <div className="tabs tabs-boxed mb-4 w-fit">
+              <button type="button" className={sectionButtonClass("basics")} onClick={() => setActiveSection("basics")}>
+                Basics
+              </button>
+              <button
+                type="button"
+                className={sectionButtonClass("education")}
+                onClick={() => setActiveSection("education")}
+              >
+                Education
+              </button>
+              <button type="button" className={sectionButtonClass("writing")} onClick={() => setActiveSection("writing")}>
+                Writing
+              </button>
+            </div>
           )}
           <form className="space-y-3" onSubmit={isNew ? onCreate : onSaveEdit}>
-            <label className="form-control w-full">
-              <span className="label-text">Name</span>
-              <input
-                className="input input-bordered w-full"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                autoFocus={isNew}
-              />
-            </label>
-            <label className="form-control w-full">
-              <span className="label-text">Location</span>
-              <input
-                className="input input-bordered w-full"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                required={isNew}
-              />
-            </label>
-            <label className="form-control w-full">
-              <span className="label-text">Email</span>
-              <input
-                className="input input-bordered w-full"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required={isNew}
-              />
-            </label>
-            <label className="form-control w-full">
-              <span className="label-text">Phone</span>
-              <input
-                className="input input-bordered w-full"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                required={isNew}
-              />
-            </label>
+            {(isNew || activeSection === "basics") && (
+              <section className="space-y-3" aria-label="Profile basics">
+                <label className="form-control w-full">
+                  <span className="label-text">Name</span>
+                  <input
+                    className="input input-bordered w-full"
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      setSavedMessage(null);
+                    }}
+                    required
+                    autoFocus={isNew}
+                    disabled={!canEditProfiles}
+                  />
+                </label>
+                <label className="form-control w-full">
+                  <span className="label-text">Location</span>
+                  <input
+                    className="input input-bordered w-full"
+                    value={location}
+                    onChange={(e) => {
+                      setLocation(e.target.value);
+                      setSavedMessage(null);
+                    }}
+                    required={isNew}
+                    disabled={!canEditProfiles}
+                  />
+                </label>
+                <label className="form-control w-full">
+                  <span className="label-text">Email</span>
+                  <input
+                    className="input input-bordered w-full"
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setSavedMessage(null);
+                    }}
+                    required={isNew}
+                    disabled={!canEditProfiles}
+                  />
+                </label>
+                <label className="form-control w-full">
+                  <span className="label-text">Phone</span>
+                  <input
+                    className="input input-bordered w-full"
+                    value={phone}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      setSavedMessage(null);
+                    }}
+                    required={isNew}
+                    disabled={!canEditProfiles}
+                  />
+                </label>
+              </section>
+            )}
 
-            <div>
+            {(isNew || activeSection === "education") && (
+            <section aria-label="Profile education">
               <div className="mb-1 flex items-center justify-between">
                 <span className="label-text font-medium">Education</span>
                 <button
@@ -290,7 +445,9 @@ export const ProfileDetailPage = () => {
                         const next = [...edRows];
                         next[idx] = { ...next[idx], university_name: e.target.value };
                         setEdRows(next);
+                        setSavedMessage(null);
                       }}
+                      disabled={!canEditProfiles}
                     />
                     <input
                       className="input input-bordered input-sm w-24"
@@ -302,7 +459,9 @@ export const ProfileDetailPage = () => {
                         const next = [...edRows];
                         next[idx] = { ...next[idx], from_year: e.target.value };
                         setEdRows(next);
+                        setSavedMessage(null);
                       }}
+                      disabled={!canEditProfiles}
                     />
                     <input
                       className="input input-bordered input-sm w-24"
@@ -314,7 +473,9 @@ export const ProfileDetailPage = () => {
                         const next = [...edRows];
                         next[idx] = { ...next[idx], to_year: e.target.value };
                         setEdRows(next);
+                        setSavedMessage(null);
                       }}
+                      disabled={!canEditProfiles}
                     />
                     {edRows.length > 1 && (
                       <button
@@ -336,67 +497,88 @@ export const ProfileDetailPage = () => {
                 ))}
               </div>
               {isNew && <p className="mt-1 text-xs opacity-60">At least one row with a university name is required.</p>}
-            </div>
+            </section>
+            )}
 
-            <div className="form-control w-full">
-              <div className="label items-start pb-1 pt-0">
-                <span className="label-text">Bio (markdown)</span>
-                {bioMd.trim() ? (
-                  <button
-                    type="button"
-                    className="link link-primary label-text-alt text-sm font-medium"
-                    onClick={() => setBioPreviewOpen(true)}
-                  >
-                    View markdown
-                  </button>
-                ) : null}
-              </div>
-              <textarea
-                className="textarea textarea-bordered min-h-[100px] w-full font-mono text-sm"
-                value={bioMd}
-                onChange={(e) => setBioMd(e.target.value)}
-                required={isNew}
-                aria-label="Bio markdown"
-              />
-            </div>
-            <div className="form-control w-full">
-              <div className="label items-start pb-1 pt-0">
-                <span className="label-text">Niche (markdown)</span>
-                {nicheMd.trim() ? (
-                  <button
-                    type="button"
-                    className="link link-primary label-text-alt text-sm font-medium"
-                    onClick={() => setNichePreviewOpen(true)}
-                  >
-                    View markdown
-                  </button>
-                ) : null}
-              </div>
-              <textarea
-                className="textarea textarea-bordered min-h-[100px] w-full font-mono text-sm"
-                value={nicheMd}
-                onChange={(e) => setNicheMd(e.target.value)}
-                required={isNew}
-                aria-label="Niche markdown"
-              />
-            </div>
-            <label className="form-control w-full">
-              <span className="label-text">Resume (markdown, optional)</span>
-              <textarea
-                className="textarea textarea-bordered min-h-[80px] w-full font-mono text-sm"
-                value={resumeMd}
-                onChange={(e) => setResumeMd(e.target.value)}
-              />
-            </label>
+            {(isNew || activeSection === "writing") && (
+              <section className="space-y-3" aria-label="Profile writing">
+                <div className="form-control w-full">
+                  <div className="label items-start pb-1 pt-0">
+                    <span className="label-text">Bio (markdown)</span>
+                    {bioMd.trim() ? (
+                      <button
+                        type="button"
+                        className="link link-primary label-text-alt text-sm font-medium"
+                        onClick={() => setBioPreviewOpen(true)}
+                      >
+                        View markdown
+                      </button>
+                    ) : null}
+                  </div>
+                  <textarea
+                    className="textarea textarea-bordered min-h-[100px] w-full font-mono text-sm"
+                    value={bioMd}
+                    onChange={(e) => {
+                      setBioMd(e.target.value);
+                      setSavedMessage(null);
+                    }}
+                    required={isNew}
+                    aria-label="Bio markdown"
+                    disabled={!canEditProfiles}
+                  />
+                </div>
+                <div className="form-control w-full">
+                  <div className="label items-start pb-1 pt-0">
+                    <span className="label-text">Niche (markdown)</span>
+                    {nicheMd.trim() ? (
+                      <button
+                        type="button"
+                        className="link link-primary label-text-alt text-sm font-medium"
+                        onClick={() => setNichePreviewOpen(true)}
+                      >
+                        View markdown
+                      </button>
+                    ) : null}
+                  </div>
+                  <textarea
+                    className="textarea textarea-bordered min-h-[100px] w-full font-mono text-sm"
+                    value={nicheMd}
+                    onChange={(e) => {
+                      setNicheMd(e.target.value);
+                      setSavedMessage(null);
+                    }}
+                    required={isNew}
+                    aria-label="Niche markdown"
+                    disabled={!canEditProfiles}
+                  />
+                </div>
+                <label className="form-control w-full">
+                  <span className="label-text">Resume (markdown, optional)</span>
+                  <textarea
+                    className="textarea textarea-bordered min-h-[80px] w-full font-mono text-sm"
+                    value={resumeMd}
+                    onChange={(e) => {
+                      setResumeMd(e.target.value);
+                      setSavedMessage(null);
+                    }}
+                    disabled={!canEditProfiles}
+                  />
+                </label>
+              </section>
+            )}
 
             <div className="flex flex-wrap gap-2 pt-2">
               {canEditProfiles && (
-                <button type="submit" className="btn btn-primary" disabled={saving || hasEducationYearErrors}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={saving || hasEducationYearErrors || (!isNew && !hasUnsavedChanges)}
+                >
                   {saving ? "Saving…" : isNew ? "Create profile" : "Save changes"}
                 </button>
               )}
               {!isNew && canEditProfiles && (
-                <button type="button" className="btn btn-outline btn-error" onClick={() => void onDelete()}>
+                <button type="button" className="btn btn-outline btn-error" onClick={() => setDeleteOpen(true)}>
                   Delete profile
                 </button>
               )}
@@ -419,6 +601,40 @@ export const ProfileDetailPage = () => {
         markdown={nicheMd}
         size="full"
       />
+      <Modal open={deleteOpen} onClose={() => !deleting && setDeleteOpen(false)} title="Delete profile">
+        <div className="space-y-4 text-sm">
+          <p>
+            Delete <span className="font-semibold">{profile?.name}</span>? This removes the profile from JobCRM and
+            cannot be undone.
+          </p>
+          {profile?.email && <p className="opacity-70">Email: {profile.email}</p>}
+          <div className="modal-action">
+            <button type="button" className="btn btn-ghost" disabled={deleting} onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn-error" disabled={deleting} onClick={() => void onDelete()}>
+              {deleting ? "Deleting..." : "Delete profile"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={leaveConfirmOpen}
+        onClose={() => setLeaveConfirmOpen(false)}
+        title="Discard unsaved profile changes?"
+      >
+        <div className="space-y-4 text-sm">
+          <p>You have unsaved changes on this profile. Leaving now will discard edits that have not been saved.</p>
+          <div className="modal-action">
+            <button type="button" className="btn btn-ghost" onClick={() => setLeaveConfirmOpen(false)}>
+              Keep editing
+            </button>
+            <button type="button" className="btn btn-warning" onClick={() => navigate("/profiles")}>
+              Discard and leave
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

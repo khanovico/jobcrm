@@ -35,9 +35,9 @@ Clear:
 - [x] Map profile list/detail, destructive confirm, and profile summary API flows. _(Worker A scope)_
 - [x] Add server-backed profile search and active/frozen filters. _(Worker A scope)_
 - [x] Add profile list tests and backend tests for search/filter query behavior. _(Worker A scope)_
-- [ ] Replace native destructive confirms with app modal flows and tests.
-- [ ] Improve profile detail sections, save-in-place feedback, and dirty navigation guard.
-- [ ] Add/update targeted frontend tests for every cleared issue.
+- [x] Replace native destructive confirms with app modal flows and tests.
+- [x] Improve profile detail sections, save-in-place feedback, and dirty navigation guard.
+- [x] Add/update targeted frontend tests for every cleared issue.
 - [ ] Run targeted frontend/backend tests and `npm run build`.
 - [ ] Run code-reviewer and scalability-reviewer and address actionable findings.
 - [ ] Update audit rows for cleared Batch 12 issues.
