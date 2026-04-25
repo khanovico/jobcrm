@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NotificationsPage } from "./NotificationsPage";
 
-const { listNotifications, markNotificationRead, markNotificationsReadBulk, deleteNotificationsBulk } = vi.hoisted(() => ({
-  listNotifications: vi.fn(),
+const { listNotificationsPage, markNotificationRead, markNotificationsReadBulk, deleteNotificationsBulk } = vi.hoisted(() => ({
+  listNotificationsPage: vi.fn(),
   markNotificationRead: vi.fn(),
   markNotificationsReadBulk: vi.fn(),
   deleteNotificationsBulk: vi.fn()
@@ -14,12 +14,18 @@ const { listNotifications, markNotificationRead, markNotificationsReadBulk, dele
 
 vi.mock("../api", () => ({
   api: {
-    listNotifications,
+    listNotificationsPage,
     markNotificationRead,
     markNotificationsReadBulk,
     deleteNotificationsBulk
   }
 }));
+
+const pageOf = <T,>(items: T[], total = items.length, hasNext = false) => ({
+  items,
+  total,
+  has_next: hasNext
+});
 
 describe("NotificationsPage", () => {
   afterEach(() => {
@@ -27,7 +33,7 @@ describe("NotificationsPage", () => {
   });
 
   beforeEach(() => {
-    listNotifications.mockReset();
+    listNotificationsPage.mockReset();
     markNotificationRead.mockReset();
     markNotificationsReadBulk.mockReset();
     deleteNotificationsBulk.mockReset();
@@ -36,7 +42,7 @@ describe("NotificationsPage", () => {
   });
 
   it("renders active notifications by default with compact tooltip message", async () => {
-    listNotifications.mockResolvedValueOnce([
+    listNotificationsPage.mockResolvedValueOnce(pageOf([
       {
         id: "n1",
         user_id: "u1",
@@ -49,7 +55,7 @@ describe("NotificationsPage", () => {
         read_at: null,
         link: "/applications/a1"
       }
-    ]);
+    ]));
 
     render(
       <MemoryRouter>
@@ -63,7 +69,7 @@ describe("NotificationsPage", () => {
     expect(screen.getByText("Check")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View" })).toHaveAttribute("href", "/applications/a1");
     expect(screen.getByRole("checkbox", { name: "Show only active notifications" })).toBeChecked();
-    expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 11 });
+    expect(listNotificationsPage).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 10 });
     expect(screen.getByLabelText("Notification message: Application is ready")).toHaveAttribute(
       "title",
       "Application is ready"
@@ -73,7 +79,7 @@ describe("NotificationsPage", () => {
   it("expands long notification messages inline", async () => {
     const longMessage =
       "Application preparation finished with several details that are too long for a compact table cell.";
-    listNotifications.mockResolvedValueOnce([
+    listNotificationsPage.mockResolvedValueOnce(pageOf([
       {
         id: "n1",
         user_id: "u1",
@@ -86,7 +92,7 @@ describe("NotificationsPage", () => {
         read_at: null,
         link: null
       }
-    ]);
+    ]));
 
     render(
       <MemoryRouter>
@@ -105,8 +111,8 @@ describe("NotificationsPage", () => {
   });
 
   it("shows read notifications when active-only toggle is disabled", async () => {
-    listNotifications
-      .mockResolvedValueOnce([
+    listNotificationsPage
+      .mockResolvedValueOnce(pageOf([
         {
           id: "n1",
           user_id: "u1",
@@ -119,8 +125,8 @@ describe("NotificationsPage", () => {
           read_at: null,
           link: "/applications/a1"
         }
-      ])
-      .mockResolvedValueOnce([
+      ]))
+      .mockResolvedValueOnce(pageOf([
         {
           id: "n2",
           user_id: "u1",
@@ -133,7 +139,7 @@ describe("NotificationsPage", () => {
           read_at: "2026-01-02T01:00:00Z",
           link: null
         }
-      ]);
+      ]));
 
     render(
       <MemoryRouter>
@@ -145,12 +151,12 @@ describe("NotificationsPage", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Show only active notifications" }));
 
     expect(await screen.findByText("Read notification")).toBeInTheDocument();
-    expect(listNotifications).toHaveBeenLastCalledWith({ unreadOnly: false, skip: 0, limit: 11 });
+    expect(listNotificationsPage).toHaveBeenLastCalledWith({ unreadOnly: false, skip: 0, limit: 10 });
     expect(screen.getByText("Read")).toBeInTheDocument();
   });
 
   it("supports pagination through next page", async () => {
-    const pageOne = Array.from({ length: 11 }).map((_, idx) => ({
+    const pageOne = Array.from({ length: 10 }).map((_, idx) => ({
       id: `n-${idx + 1}`,
       user_id: "u1",
       notification: "COMPANY_UPDATE" as const,
@@ -163,9 +169,9 @@ describe("NotificationsPage", () => {
       link: `/companies/c-${idx + 1}`
     }));
 
-    listNotifications
-      .mockResolvedValueOnce(pageOne)
-      .mockResolvedValueOnce([
+    listNotificationsPage
+      .mockResolvedValueOnce(pageOf(pageOne, 11, true))
+      .mockResolvedValueOnce(pageOf([
         {
           id: "n1",
           user_id: "u1",
@@ -178,7 +184,7 @@ describe("NotificationsPage", () => {
           read_at: "2026-01-01T01:00:00Z",
           link: "/companies/c1"
         }
-      ]);
+      ], 11, false));
 
     render(
       <MemoryRouter>
@@ -189,12 +195,12 @@ describe("NotificationsPage", () => {
     await screen.findByText("Company changed 1");
     await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
     await screen.findByText("Company changed");
-    expect(listNotifications).toHaveBeenCalledTimes(2);
-    expect(listNotifications).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 11 });
+    expect(listNotificationsPage).toHaveBeenCalledTimes(2);
+    expect(listNotificationsPage).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 10 });
   });
 
   it("marks notification as read optimistically without blocking on reload", async () => {
-    listNotifications.mockResolvedValueOnce([
+    listNotificationsPage.mockResolvedValueOnce(pageOf([
       {
         id: "n1",
         user_id: "u1",
@@ -207,7 +213,7 @@ describe("NotificationsPage", () => {
         read_at: null,
         link: "/companies/c1"
       }
-    ]);
+    ]));
     markNotificationRead.mockResolvedValueOnce(undefined);
 
     render(
@@ -222,12 +228,14 @@ describe("NotificationsPage", () => {
     await waitFor(() => {
       expect(markNotificationRead).toHaveBeenCalledWith("n1");
     });
-    expect(screen.getByText("Read")).toBeInTheDocument();
-    expect(listNotifications).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Company changed")).not.toBeInTheDocument();
+    expect(screen.getByText("No notifications on this page")).toBeInTheDocument();
+    expect(screen.getByText("No active notifications.")).toBeInTheDocument();
+    expect(listNotificationsPage).toHaveBeenCalledTimes(1);
   });
 
   it("confirms before bulk deleting selected notifications", async () => {
-    listNotifications.mockResolvedValueOnce([
+    listNotificationsPage.mockResolvedValueOnce(pageOf([
       {
         id: "n1",
         user_id: "u1",
@@ -252,7 +260,7 @@ describe("NotificationsPage", () => {
         read_at: null,
         link: null
       }
-    ]);
+    ]));
 
     render(
       <MemoryRouter>
@@ -272,11 +280,12 @@ describe("NotificationsPage", () => {
     await waitFor(() => {
       expect(deleteNotificationsBulk).toHaveBeenCalledWith(["n1", "n2"]);
     });
+    expect(screen.getByText("No notifications on this page")).toBeInTheDocument();
     expect(screen.getByText("No active notifications.")).toBeInTheDocument();
   });
 
   it("cancels bulk delete without removing selected notifications", async () => {
-    listNotifications.mockResolvedValueOnce([
+    listNotificationsPage.mockResolvedValueOnce(pageOf([
       {
         id: "n1",
         user_id: "u1",
@@ -289,7 +298,7 @@ describe("NotificationsPage", () => {
         read_at: null,
         link: null
       }
-    ]);
+    ]));
 
     render(
       <MemoryRouter>
@@ -308,7 +317,7 @@ describe("NotificationsPage", () => {
   });
 
   it("bulk marks selected unread notifications with one request", async () => {
-    listNotifications.mockResolvedValueOnce([
+    listNotificationsPage.mockResolvedValueOnce(pageOf([
       {
         id: "n1",
         user_id: "u1",
@@ -333,7 +342,7 @@ describe("NotificationsPage", () => {
         read_at: null,
         link: null
       }
-    ]);
+    ]));
 
     render(
       <MemoryRouter>
@@ -349,11 +358,12 @@ describe("NotificationsPage", () => {
       expect(markNotificationsReadBulk).toHaveBeenCalledWith(["n1", "n2"]);
     });
     expect(markNotificationRead).not.toHaveBeenCalled();
-    expect(screen.getAllByText("Read")).toHaveLength(2);
+    expect(screen.getByText("No notifications on this page")).toBeInTheDocument();
+    expect(screen.getByText("No active notifications.")).toBeInTheDocument();
   });
 
   it("select all toggles selection on current page", async () => {
-    listNotifications.mockResolvedValueOnce([
+    listNotificationsPage.mockResolvedValueOnce(pageOf([
       {
         id: "n1",
         user_id: "u1",
@@ -366,7 +376,7 @@ describe("NotificationsPage", () => {
         read_at: null,
         link: null
       }
-    ]);
+    ]));
 
     render(
       <MemoryRouter>

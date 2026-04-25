@@ -7,10 +7,10 @@ import { resetIndustryCatalogCacheForTests } from "../state/industryCatalog";
 import { CompanyDetailPage } from "./CompanyDetailPage";
 import type { Company } from "../types";
 
-const { getCompany, listApplications, listIndustryOptions, getCompanyApplicationCount, markApplied, updateCompany } = vi.hoisted(
+const { getCompany, listApplicationsPage, listIndustryOptions, getCompanyApplicationCount, markApplied, updateCompany } = vi.hoisted(
   () => ({
     getCompany: vi.fn(),
-    listApplications: vi.fn(),
+    listApplicationsPage: vi.fn(),
     listIndustryOptions: vi.fn(),
     getCompanyApplicationCount: vi.fn(),
     markApplied: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("../components/ApplicationWorkflowOverrideModal", () => ({
 vi.mock("../api", () => ({
   api: {
     getCompany,
-    listApplications,
+    listApplicationsPage,
     listIndustryOptions,
     updateCompany,
     deleteCompany: vi.fn(),
@@ -61,12 +61,12 @@ function renderPage(companyId = "co1") {
 describe("CompanyDetailPage", () => {
   beforeEach(() => {
     getCompany.mockReset();
-    listApplications.mockReset();
+    listApplicationsPage.mockReset();
     listIndustryOptions.mockReset();
     getCompanyApplicationCount.mockReset();
     markApplied.mockReset();
     updateCompany.mockReset();
-    listApplications.mockResolvedValue([]);
+    listApplicationsPage.mockResolvedValue({ items: [], total: 0, has_next: false });
     listIndustryOptions.mockResolvedValue({ selected: [], options: [] });
     getCompanyApplicationCount.mockResolvedValue({ count: 0 });
     markApplied.mockResolvedValue({ id: "a1", applied: true } as never);
@@ -121,7 +121,7 @@ describe("CompanyDetailPage", () => {
 
     await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
     expect(screen.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true");
-    expect(listApplications).not.toHaveBeenCalled();
+    expect(listApplicationsPage).not.toHaveBeenCalled();
     expect(listIndustryOptions).not.toHaveBeenCalled();
     expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
@@ -267,11 +267,11 @@ describe("CompanyDetailPage", () => {
         updated_at: "2026-02-01T00:00:00Z"
       }
     ];
-    listApplications.mockImplementation((params?: URLSearchParams) => {
+    listApplicationsPage.mockImplementation((params?: URLSearchParams) => {
       if (params?.get("skip") === "20") {
-        return Promise.resolve(secondPageApplications);
+        return Promise.resolve({ items: secondPageApplications, total: 21, has_next: false });
       }
-      return Promise.resolve(firstPageApplications);
+      return Promise.resolve({ items: firstPageApplications.slice(0, 20), total: 21, has_next: true });
     });
 
     renderPage();
@@ -291,18 +291,22 @@ describe("CompanyDetailPage", () => {
 
   it("shows application action failures in the applications section", async () => {
     getCompany.mockResolvedValue(baseCompany());
-    listApplications.mockResolvedValue([
-      {
-        id: "a-1",
-        company_id: "co1",
-        status: "application_ready",
-        applied: false,
-        email_sent: false,
-        applied_at: null,
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z"
-      }
-    ]);
+    listApplicationsPage.mockResolvedValue({
+      items: [
+        {
+          id: "a-1",
+          company_id: "co1",
+          status: "application_ready",
+          applied: false,
+          email_sent: false,
+          applied_at: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z"
+        }
+      ],
+      total: 1,
+      has_next: false
+    });
     markApplied.mockRejectedValue(new Error("Application update failed"));
 
     renderPage();

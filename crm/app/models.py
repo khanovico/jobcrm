@@ -346,6 +346,11 @@ class CompanyApplicationCountResponse(BaseModel):
     count: int
 
 
+class PageMeta(BaseModel):
+    total: int
+    has_next: bool
+
+
 class CompanyArchiveResponse(BaseModel):
     applications_archived: int
 
@@ -661,6 +666,24 @@ class ApplicationListItem(Application):
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
 
 
+class ApplicationListPage(BaseModel):
+    items: list[ApplicationListItem]
+    total: int
+    has_next: bool
+
+
+class CompanyListPage(BaseModel):
+    items: list[CompanyListItem]
+    total: int
+    has_next: bool
+
+
+class ProfileListPage(BaseModel):
+    items: list[ProfileListItem]
+    total: int
+    has_next: bool
+
+
 class ApplicationAppliedProfileFacetsResponse(BaseModel):
     profile_names: list[str] = Field(default_factory=list)
 
@@ -826,6 +849,18 @@ class UserNotification(BaseModel):
 class NotificationSummaryResponse(BaseModel):
     unread_count: int
     newest_unread: list[UserNotification]
+
+
+class NotificationListPage(BaseModel):
+    items: list[UserNotification]
+    total: int
+    has_next: bool
+
+
+class AuditEventListPage(BaseModel):
+    items: list[AuditEvent]
+    total: int
+    has_next: bool
 
 
 class AgentApiKeyCreate(BaseModel):

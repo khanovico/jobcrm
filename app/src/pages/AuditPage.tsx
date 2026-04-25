@@ -34,6 +34,7 @@ export const AuditPage = () => {
   const [pendingFilters, setPendingFilters] = useState<AuditFilters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
@@ -59,10 +60,11 @@ export const AuditPage = () => {
         if (filters.fromDate) params.set("from_ts", toFromTimestamp(filters.fromDate));
         if (filters.toDate) params.set("to_ts", toToTimestamp(filters.toDate));
         params.set("skip", String((targetPage - 1) * AUDIT_PAGE_SIZE));
-        params.set("limit", String(AUDIT_PAGE_SIZE + 1));
-        const nextRows = await api.listAuditEvents(params);
-        setRows(nextRows.slice(0, AUDIT_PAGE_SIZE));
-        setHasNextPage(nextRows.length > AUDIT_PAGE_SIZE);
+        params.set("limit", String(AUDIT_PAGE_SIZE));
+        const response = await api.listAuditEventsPage(params);
+        setRows(response.items);
+        setTotal(response.total);
+        setHasNextPage(response.has_next);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -287,6 +289,7 @@ export const AuditPage = () => {
         onPageChange={setPage}
         pageSize={AUDIT_PAGE_SIZE}
         visibleCount={rows.length}
+        totalCount={total}
         itemLabel="events"
       />
     </div>

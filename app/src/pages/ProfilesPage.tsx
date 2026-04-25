@@ -23,6 +23,7 @@ export const ProfilesPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProfileStatusFilter>("all");
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [pendingAction, setPendingAction] = useState<ProfileListAction | null>(null);
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const canEditProfiles = user?.role === "admin";
@@ -33,7 +34,7 @@ export const ProfilesPage = () => {
         setError(null);
         const params = new URLSearchParams({
           skip: String((targetPage - 1) * PAGE_SIZE),
-          limit: String(PAGE_SIZE + 1)
+          limit: String(PAGE_SIZE)
         });
         if (searchQuery.trim()) {
           params.set("search", searchQuery.trim());
@@ -41,9 +42,10 @@ export const ProfilesPage = () => {
         if (statusFilter !== "all") {
           params.set("frozen", String(statusFilter === "frozen"));
         }
-        const response = await api.listProfileSummaries(params);
-        setItems(response.slice(0, PAGE_SIZE));
-        setHasNextPage(response.length > PAGE_SIZE);
+        const response = await api.listProfileSummariesPage(params);
+        setItems(response.items);
+        setTotal(response.total);
+        setHasNextPage(response.has_next);
       } catch (err) {
         setError((err as Error).message);
       }
@@ -251,6 +253,7 @@ export const ProfilesPage = () => {
           onPageChange={setPage}
           pageSize={PAGE_SIZE}
           visibleCount={items.length}
+          totalCount={total}
           itemLabel="profiles"
         />
         <p className="mt-2 text-xs opacity-60">

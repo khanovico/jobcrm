@@ -31,7 +31,10 @@ describe("ApplicationsPage", () => {
     vi.unstubAllGlobals();
   });
 
-  const isApplicationsListRequest = (url: string) => url.split("?")[0].endsWith("/applications");
+  const isApplicationsListRequest = (url: string) => {
+    const path = url.split("?")[0];
+    return path.endsWith("/applications") || path.endsWith("/applications/page");
+  };
   const isApplicationsFacetRequest = (url: string) =>
     url.split("?")[0].endsWith("/applications/applied-profile-facets");
 
@@ -79,7 +82,7 @@ describe("ApplicationsPage", () => {
     );
 
     expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
-    expect(screen.getByText("Showing 1-1 applications")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1-1 of 1 applications")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: "Acme" }));
     expect(await screen.findByTestId("app-detail")).toBeInTheDocument();
   });
@@ -295,7 +298,7 @@ describe("ApplicationsPage", () => {
     });
 
     const cachedBeforeCreate = await getCompanySummariesPage({ page: 1, pageSize: 10 });
-    expect(cachedBeforeCreate[0].has_application).toBe(false);
+    expect(cachedBeforeCreate.items[0].has_application).toBe(false);
 
     render(
       <MemoryRouter>
@@ -317,7 +320,7 @@ describe("ApplicationsPage", () => {
     });
     const refreshedAfterCreate = await getCompanySummariesPage({ page: 1, pageSize: 10 });
     expect(summaryCalls).toBe(2);
-    expect(refreshedAfterCreate[0].has_application).toBe(true);
+    expect(refreshedAfterCreate.items[0].has_application).toBe(true);
   });
 
   it("sends company search to the application list API instead of filtering the current page", async () => {

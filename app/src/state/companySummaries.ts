@@ -1,11 +1,13 @@
 import { api } from "../api";
-import type { CompanyListItem } from "../types";
+import type { CompanyListItem, PagedResponse } from "../types";
 
 const CACHE_TTL_MS = 30 * 1000;
 const ALL_COMPANIES_PAGE_SIZE = 200;
 
 type CachedCompanyPage = {
   items: CompanyListItem[];
+  total?: number;
+  hasNext?: boolean;
   fetchedAt: number;
 };
 
@@ -34,26 +36,35 @@ export const getCompanySummariesPage = async (options: {
   force?: boolean;
   /** Extra query params (sort, filters); included in cache key */
   extraParams?: URLSearchParams;
-}): Promise<CompanyListItem[]> => {
+}): Promise<PagedResponse<CompanyListItem>> => {
   const fingerprint = options.extraParams?.toString() ?? "";
   const key = pageKey(options.page, options.pageSize, fingerprint);
   const cached = companyPages.get(key);
   if (!options.force && cached && isFresh(cached.fetchedAt)) {
-    return cached.items;
+    return {
+      items: cached.items,
+      total: cached.total ?? cached.items.length,
+      has_next: cached.hasNext ?? false
+    };
   }
 
   const params = new URLSearchParams({
     skip: String((options.page - 1) * options.pageSize),
-    limit: String(options.pageSize + 1)
+    limit: String(options.pageSize)
   });
   if (options.extraParams) {
     options.extraParams.forEach((value, name) => {
       params.set(name, value);
     });
   }
-  const items = await api.listCompanySummaries(params);
-  companyPages.set(key, { items, fetchedAt: Date.now() });
-  return items;
+  const response = await api.listCompanySummariesPage(params);
+  companyPages.set(key, {
+    items: response.items,
+    total: response.total,
+    hasNext: response.has_next,
+    fetchedAt: Date.now()
+  });
+  return response;
 };
 
 const fetchAllCompanySummaries = async (): Promise<CompanyListItem[]> => {
