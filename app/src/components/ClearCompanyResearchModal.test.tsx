@@ -48,7 +48,7 @@ describe("ClearCompanyResearchModal", () => {
 
     expect(await screen.findByText(/tied to this company/)).toBeInTheDocument();
     expect(
-      screen.getByText(/reset deletes generated per-profile analysis and emails for related applications/i)
+      screen.getByText(/can archive related applications or delete generated per-profile analysis and emails/i)
     ).toBeInTheDocument();
     const archiveButton = screen.getByRole("button", { name: "Archive related applications" });
     const resetButton = screen.getByRole("button", { name: "Delete prep artifacts and reset applications" });
@@ -57,7 +57,7 @@ describe("ClearCompanyResearchModal", () => {
 
     await userEvent.click(
       screen.getByRole("checkbox", {
-        name: /i understand reset deletes generated per-profile analysis and emails for related applications/i
+        name: /i understand this can archive related applications or delete generated per-profile analysis and emails/i
       })
     );
     expect(archiveButton).not.toBeDisabled();
@@ -106,6 +106,8 @@ describe("ClearCompanyResearchModal", () => {
     expect(
       await screen.findByText(/i understand related application count is unavailable, and this action only deletes/i)
     ).toBeInTheDocument();
+    expect(screen.getByText(/fallback action only deletes company prep artifacts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0 applications tied to this company/i)).not.toBeInTheDocument();
     const clearButton = screen.getByRole("button", { name: "Delete company prep artifacts only" });
     expect(clearButton).toBeDisabled();
 
@@ -145,7 +147,7 @@ describe("ClearCompanyResearchModal", () => {
     await screen.findByText(/tied to this company/);
     await userEvent.click(
       screen.getByRole("checkbox", {
-        name: /i understand reset deletes generated per-profile analysis and emails for related applications/i
+        name: /i understand this can archive related applications or delete generated per-profile analysis and emails/i
       })
     );
     await userEvent.click(screen.getByRole("button", { name: "Archive related applications" }));

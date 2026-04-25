@@ -31,14 +31,14 @@ Clear:
 
 ## TODO
 
-- [ ] Map existing CompaniesPage archived restore, CompanyDetailPage sections/actions, and clear-company modal tests.
+- [x] Map existing CompaniesPage archived restore, CompanyDetailPage sections/actions, and clear-company modal tests.
 - [x] Replace archived-company restore second-submit with an explicit restore modal and tests.
-- [ ] Restructure CompanyDetailPage review/edit flow and hidden enrichment preview.
+- [x] Restructure CompanyDetailPage review/edit flow and hidden enrichment preview.
 - [x] Make clear-company destructive labels explicit and test modal copy/submit locking.
-- [ ] Add contextual company-detail action errors and tests.
-- [ ] Run targeted frontend tests and `npm run build`.
-- [ ] Run code-reviewer and scalability-reviewer and address actionable findings.
-- [ ] Update audit rows for cleared Batch 13 issues.
+- [x] Add contextual company-detail action errors and tests.
+- [x] Run targeted frontend tests and `npm run build`.
+- [x] Run code-reviewer and scalability-reviewer and address actionable findings.
+- [x] Update audit rows for cleared Batch 13 issues.
 - [ ] Commit Batch 13 and merge back into `codex/ux-performance-audit`.
 
 ## Parallel Work

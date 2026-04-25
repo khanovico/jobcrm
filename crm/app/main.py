@@ -119,7 +119,9 @@ def _resolve_company_create(repo: BaseRepository, payload: CompanyCreate) -> Com
                     "code": "archived_company_name_exists",
                     "company_id": existing.id,
                     "name": existing.name,
+                    "website": existing.website,
                     "archive_reason": existing.archive_reason,
+                    "archived_at": existing.archived_at.isoformat() if existing.archived_at else None,
                 },
             )
         unarchived = repo.unarchive_company(existing.id, payload)

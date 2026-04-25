@@ -1251,13 +1251,19 @@ def test_create_company_409_when_name_matches_archived_without_ack() -> None:
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
-    c = client.post("/api/v1/companies", json={"name": "Once Co"}, headers=headers).json()
+    c = client.post(
+        "/api/v1/companies",
+        json={"name": "Once Co", "website": "https://once.example"},
+        headers=headers,
+    ).json()
     client.post(f"/api/v1/companies/{c['id']}/archive", json={"archive_reason": "gone"}, headers=headers)
     hit = client.post("/api/v1/companies", json={"name": "Once Co"}, headers=headers)
     assert hit.status_code == 409
     d = hit.json()["detail"]
     assert d["code"] == "archived_company_name_exists"
+    assert d["website"] == "https://once.example"
     assert d["archive_reason"] == "gone"
+    assert d["archived_at"]
 
 
 def test_create_company_unarchives_archived_name_when_acknowledged() -> None:

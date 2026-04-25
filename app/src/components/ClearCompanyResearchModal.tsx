@@ -101,10 +101,15 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
             {relatedApplicationCount === null && !loadError && (
               <p className="text-sm opacity-70">Loading related applications…</p>
             )}
-            {relatedReady && (
+            {relatedReady && !loadError && (
               <p className="text-sm leading-relaxed opacity-90">
                 <strong>{n}</strong> application{n === 1 ? "" : "s"} tied to this company
                 {n === 0 ? "." : ". Choose what to do with them:"}
+              </p>
+            )}
+            {loadError && (
+              <p className="text-sm leading-relaxed opacity-90">
+                Related application count is unavailable. This fallback action only deletes company prep artifacts.
               </p>
             )}
             {relatedReady && n > 0 && (
@@ -130,7 +135,8 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
                   disabled={submitting}
                 />
                 <span className="label-text text-sm leading-relaxed">
-                  I understand reset deletes generated per-profile analysis and emails for related applications.
+                  I understand this can archive related applications or delete generated per-profile analysis and emails
+                  when resetting related applications.
                 </span>
               </label>
             )}
