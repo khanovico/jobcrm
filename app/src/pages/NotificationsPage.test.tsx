@@ -63,7 +63,7 @@ describe("NotificationsPage", () => {
     expect(screen.getByText("Check")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View" })).toHaveAttribute("href", "/applications/a1");
     expect(screen.getByRole("checkbox", { name: "Show only active notifications" })).toBeChecked();
-    expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 10 });
+    expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true, skip: 0, limit: 11 });
     expect(screen.getByLabelText("Notification message: Application is ready")).toHaveAttribute(
       "title",
       "Application is ready"
@@ -145,20 +145,20 @@ describe("NotificationsPage", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Show only active notifications" }));
 
     expect(await screen.findByText("Read notification")).toBeInTheDocument();
-    expect(listNotifications).toHaveBeenLastCalledWith({ unreadOnly: false, skip: 0, limit: 10 });
+    expect(listNotifications).toHaveBeenLastCalledWith({ unreadOnly: false, skip: 0, limit: 11 });
     expect(screen.getByText("Read")).toBeInTheDocument();
   });
 
   it("supports pagination through next page", async () => {
-    const pageOne = Array.from({ length: 10 }).map((_, idx) => ({
+    const pageOne = Array.from({ length: 11 }).map((_, idx) => ({
       id: `n-${idx + 1}`,
       user_id: "u1",
       notification: "COMPANY_UPDATE" as const,
       type: "WARN" as const,
-      timestamp: `2026-01-01T00:00:0${idx}Z`,
+      timestamp: `2026-01-01T00:00:${String(idx).padStart(2, "0")}Z`,
       check: false,
       payload: { id: `c-${idx + 1}`, message: `Company changed ${idx + 1}` },
-      created_at: `2026-01-01T00:00:0${idx}Z`,
+      created_at: `2026-01-01T00:00:${String(idx).padStart(2, "0")}Z`,
       read_at: null,
       link: `/companies/c-${idx + 1}`
     }));
@@ -190,7 +190,7 @@ describe("NotificationsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
     await screen.findByText("Company changed");
     expect(listNotifications).toHaveBeenCalledTimes(2);
-    expect(listNotifications).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 10 });
+    expect(listNotifications).toHaveBeenNthCalledWith(2, { unreadOnly: true, skip: 10, limit: 11 });
   });
 
   it("marks notification as read optimistically without blocking on reload", async () => {

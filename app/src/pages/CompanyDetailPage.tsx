@@ -128,11 +128,11 @@ export const CompanyDetailPage = () => {
         const params = new URLSearchParams({
           company_id: companyId,
           skip: String((targetPage - 1) * COMPANY_APPLICATIONS_PAGE_SIZE),
-          limit: String(COMPANY_APPLICATIONS_PAGE_SIZE)
+          limit: String(COMPANY_APPLICATIONS_PAGE_SIZE + 1)
         });
         const apps = await api.listApplications(params);
-        setApplications(apps);
-        setHasNextApplicationsPage(apps.length === COMPANY_APPLICATIONS_PAGE_SIZE);
+        setApplications(apps.slice(0, COMPANY_APPLICATIONS_PAGE_SIZE));
+        setHasNextApplicationsPage(apps.length > COMPANY_APPLICATIONS_PAGE_SIZE);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -623,6 +623,9 @@ export const CompanyDetailPage = () => {
                     page={applicationsPage}
                     hasNextPage={hasNextApplicationsPage}
                     onPageChange={setApplicationsPage}
+                    pageSize={COMPANY_APPLICATIONS_PAGE_SIZE}
+                    visibleCount={applications.length}
+                    itemLabel="applications"
                   />
                 </>
               )}

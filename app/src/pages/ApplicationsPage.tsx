@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
@@ -34,7 +34,6 @@ const PlusIcon = () => (
 export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
 
 export const ApplicationsPage = () => {
-  const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -162,10 +161,10 @@ export const ApplicationsPage = () => {
       try {
         const params = new URLSearchParams(listParamsKey);
         params.set("skip", String((targetPage - 1) * PAGE_SIZE));
-        params.set("limit", String(PAGE_SIZE));
+        params.set("limit", String(PAGE_SIZE + 1));
         const applicationItems = await api.listApplications(params);
-        setItems(applicationItems);
-        setHasNextPage(applicationItems.length === PAGE_SIZE);
+        setItems(applicationItems.slice(0, PAGE_SIZE));
+        setHasNextPage(applicationItems.length > PAGE_SIZE);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -390,12 +389,12 @@ export const ApplicationsPage = () => {
             </thead>
             <tbody>
               {items.map((application) => (
-                <tr
-                  key={application.id}
-                  className="cursor-pointer hover:bg-base-200"
-                  onClick={() => navigate(`/applications/${application.id}`)}
-                >
-                  <td className="font-medium">{application.company_name}</td>
+                <tr key={application.id} className="hover:bg-base-200">
+                  <td className="font-medium">
+                    <Link to={`/applications/${application.id}`} className="link link-primary">
+                      {application.company_name}
+                    </Link>
+                  </td>
                   <td>
                     <span className={`${applicationStatusBadgeClass(application.status)} badge-sm`}>
                       {formatApplicationStatusLabel(application.status)}
@@ -486,7 +485,14 @@ export const ApplicationsPage = () => {
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
         </div>
-        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
+        <TablePagination
+          page={page}
+          hasNextPage={hasNextPage}
+          onPageChange={setPage}
+          pageSize={PAGE_SIZE}
+          visibleCount={items.length}
+          itemLabel="applications"
+        />
         {appliedProfileFilterOpen && appliedProfilesFilterPosition ? (
           <>
             <button

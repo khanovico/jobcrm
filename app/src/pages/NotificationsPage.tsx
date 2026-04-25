@@ -45,10 +45,10 @@ export const NotificationsPage = () => {
       const response = await api.listNotifications({
         unreadOnly,
         skip: (targetPage - 1) * PAGE_SIZE,
-        limit: PAGE_SIZE
+        limit: PAGE_SIZE + 1
       });
-      setItems(response);
-      setHasNextPage(response.length === PAGE_SIZE);
+      setItems(response.slice(0, PAGE_SIZE));
+      setHasNextPage(response.length > PAGE_SIZE);
       dispatchNotificationsInboxChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -282,7 +282,15 @@ export const NotificationsPage = () => {
           </tbody>
         </table>
       </div>
-      <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} disabled={loading} />
+      <TablePagination
+        page={page}
+        hasNextPage={hasNextPage}
+        onPageChange={setPage}
+        disabled={loading}
+        pageSize={PAGE_SIZE}
+        visibleCount={items.length}
+        itemLabel="notifications"
+      />
       {items.length === 0 && !loading && (
         <p className="text-sm opacity-70">
           {showOnlyActive ? "No active notifications." : "No notifications."}

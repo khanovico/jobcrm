@@ -20,10 +20,10 @@ export const AuditPage = () => {
         const params = new URLSearchParams();
         if (actor) params.set("actor_type", actor);
         params.set("skip", String((targetPage - 1) * AUDIT_PAGE_SIZE));
-        params.set("limit", String(AUDIT_PAGE_SIZE));
+        params.set("limit", String(AUDIT_PAGE_SIZE + 1));
         const nextRows = await api.listAuditEvents(params);
-        setRows(nextRows);
-        setHasNextPage(nextRows.length === AUDIT_PAGE_SIZE);
+        setRows(nextRows.slice(0, AUDIT_PAGE_SIZE));
+        setHasNextPage(nextRows.length > AUDIT_PAGE_SIZE);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -92,7 +92,14 @@ export const AuditPage = () => {
         </table>
         {rows.length === 0 && <p className="p-4 text-sm opacity-70">No events.</p>}
       </div>
-      <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
+      <TablePagination
+        page={page}
+        hasNextPage={hasNextPage}
+        onPageChange={setPage}
+        pageSize={AUDIT_PAGE_SIZE}
+        visibleCount={rows.length}
+        itemLabel="events"
+      />
     </div>
   );
 };
