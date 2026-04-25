@@ -22,6 +22,7 @@ from app.models import (
     ApplicationBootstrapCreate,
     ApplicationCreate,
     ApplicationListItem,
+    ApplicationSearchSummary,
     ApplicationStatus,
     ApplicationUpdate,
     AuditEvent,
@@ -30,6 +31,7 @@ from app.models import (
     CompanyCreate,
     CompanyListItem,
     CompanyResearchStatus,
+    CompanySearchSummary,
     CompanyUpdate,
     ColdEmailPlan,
     Email,
@@ -46,6 +48,7 @@ from app.models import (
     Profile,
     ProfileCreate,
     ProfileListItem,
+    ProfileSearchSummary,
     ProfileUpdate,
     NotificationKind,
     NotificationPayload,
@@ -65,6 +68,10 @@ from app.models import (
 
 # When company research is cleared and the user chooses to archive related applications.
 RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON = "Related company research cleared"
+COMPANY_RESEARCH_APPLICATION_STATUSES = (
+    ApplicationStatus.company_research_pending,
+    ApplicationStatus.company_researching,
+)
 
 
 class _MongoPersistenceBatch:
@@ -121,6 +128,128 @@ def _cold_email_plan_ready_for_applied_list(plan: ColdEmailPlan | dict | None) -
     else:
         subs = plan.subjects or []
     return any(str(s or "").strip() for s in subs)
+
+
+def _compact_search_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    compact = " ".join(value.split())
+    return compact or None
+
+
+def _truncate_search_text(value: str | None, limit: int) -> str | None:
+    if not value:
+        return None
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 1].rstrip()}…"
+
+
+def _application_search_job_title(application: Application) -> str | None:
+    if not application.job_post:
+        return None
+    return _application_search_job_title_from_description(application.job_post.job_description)
+
+
+def _application_search_job_title_from_description(description: str | None) -> str | None:
+    description = description or ""
+    if not description.strip():
+        return None
+    for line in description.splitlines():
+        title = _compact_search_text(line)
+        if title and len(title) <= 120:
+            return title
+    return None
+
+
+def _application_search_description_excerpt(application: Application, job_title: str | None) -> str | None:
+    if not application.job_post:
+        return None
+    return _application_search_description_excerpt_from_description(
+        application.job_post.job_description, job_title
+    )
+
+
+def _application_search_description_excerpt_from_description(
+    description_value: str | None, job_title: str | None
+) -> str | None:
+    description = _compact_search_text(description_value)
+    if not description:
+        return None
+    excerpt = description
+    if job_title and excerpt.startswith(job_title):
+        excerpt = _compact_search_text(excerpt[len(job_title) :].lstrip(" -:|"))
+    if not excerpt or excerpt == job_title:
+        return None
+    return _truncate_search_text(excerpt, 180)
+
+
+def _application_search_summary(application: Application, company_name: str) -> ApplicationSearchSummary:
+    job_title = _application_search_job_title(application)
+    return ApplicationSearchSummary(
+        id=application.id,
+        company_id=application.company_id,
+        company_name=company_name,
+        status=application.status,
+        updated_at=application.updated_at,
+        job_link=application.job_post.job_link if application.job_post else None,
+        job_title=job_title,
+        job_description_excerpt=_application_search_description_excerpt(application, job_title),
+    )
+
+
+def _application_search_summary_from_doc(doc: dict, company_name: str) -> ApplicationSearchSummary:
+    job_post = doc.get("job_post") if isinstance(doc.get("job_post"), dict) else {}
+    job_description = job_post.get("job_description") if isinstance(job_post, dict) else None
+    job_title = _application_search_job_title_from_description(job_description)
+    return ApplicationSearchSummary(
+        id=str(doc["_id"]),
+        company_id=str(doc["company_id"]),
+        company_name=company_name,
+        status=migrate_legacy_application_status(str(doc["status"]))[0],
+        updated_at=doc["updated_at"],
+        job_link=job_post.get("job_link") if isinstance(job_post, dict) else None,
+        job_title=job_title,
+        job_description_excerpt=_application_search_description_excerpt_from_description(
+            job_description, job_title
+        ),
+    )
+
+
+def _company_search_summary(company: Company) -> CompanySearchSummary:
+    return CompanySearchSummary(
+        id=company.id,
+        name=company.name,
+        website=company.website,
+        research_status=company.research_status,
+    )
+
+
+def _profile_search_summary(profile: Profile) -> ProfileSearchSummary:
+    return ProfileSearchSummary(
+        id=profile.id,
+        name=profile.name,
+        location=profile.location,
+        email=profile.email,
+    )
+
+
+def _company_search_summary_from_doc(doc: dict) -> CompanySearchSummary:
+    return CompanySearchSummary(
+        id=str(doc["_id"]),
+        name=doc["name"],
+        website=doc.get("website"),
+        research_status=CompanyResearchStatus(doc.get("research_status") or CompanyResearchStatus.pending.value),
+    )
+
+
+def _profile_search_summary_from_doc(doc: dict) -> ProfileSearchSummary:
+    return ProfileSearchSummary(
+        id=str(doc["_id"]),
+        name=doc["name"],
+        location=doc.get("location"),
+        email=doc.get("email"),
+    )
 
 
 def _normalized_optional_text_filter(value: str | None) -> str | None:
@@ -318,6 +447,7 @@ class BaseRepository:
         created_by_user_id: str | None = None,
         company_search: str | None = None,
         applied_profile_names: list[str] | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> list[ApplicationListItem]:
         raise NotImplementedError
 
@@ -332,6 +462,7 @@ class BaseRepository:
         created_by_user_id: str | None = None,
         company_search: str | None = None,
         limit: int = APPLICATION_PROFILE_FACET_LIMIT,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> list[str]:
         raise NotImplementedError
 
@@ -1137,8 +1268,11 @@ class InMemoryRepository(BaseRepository):
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
         company_search: str | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> list[Application]:
         values = list(self.applications.values())
+        if workflow_filter == "company_research":
+            values = [a for a in values if a.status in COMPANY_RESEARCH_APPLICATION_STATUSES]
         if status:
             values = [a for a in values if a.status == status]
         if exclude_status:
@@ -1175,6 +1309,7 @@ class InMemoryRepository(BaseRepository):
         created_by_user_id: str | None = None,
         company_search: str | None = None,
         applied_profile_names: list[str] | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> list[ApplicationListItem]:
         values = self._filter_applications_for_list(
             status=status,
@@ -1184,6 +1319,7 @@ class InMemoryRepository(BaseRepository):
             exclude_status=exclude_status,
             created_by_user_id=created_by_user_id,
             company_search=company_search,
+            workflow_filter=workflow_filter,
         )
         selected_profile_names = set(_normalized_nonempty_text_list(applied_profile_names))
         if selected_profile_names:
@@ -1221,6 +1357,7 @@ class InMemoryRepository(BaseRepository):
         created_by_user_id: str | None = None,
         company_search: str | None = None,
         limit: int = APPLICATION_PROFILE_FACET_LIMIT,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> list[str]:
         values = self._filter_applications_for_list(
             status=status,
@@ -1230,6 +1367,7 @@ class InMemoryRepository(BaseRepository):
             exclude_status=exclude_status,
             created_by_user_id=created_by_user_id,
             company_search=company_search,
+            workflow_filter=workflow_filter,
         )
         first_profile_name_by_app = self._first_applied_profile_name_by_application_ids(
             [application.id for application in values]
@@ -1458,22 +1596,30 @@ class InMemoryRepository(BaseRepository):
         if not q:
             return GlobalSearchResult(companies=[], profiles=[], applications=[])
         companies = [
-            c
+            _company_search_summary(c)
             for c in self.companies.values()
             if not c.archived
             and (q in c.name.lower() or (c.overview and q in c.overview.lower()))
         ][:limit]
         profiles = [
-            p
+            _profile_search_summary(p)
             for p in self.profiles.values()
             if q in p.name.lower() or (p.bio_md and q in p.bio_md.lower())
         ][:limit]
-        applications = []
+        applications: list[ApplicationSearchSummary] = []
         for a in self.applications.values():
-            if a.notes and q in a.notes.lower():
-                applications.append(a)
-                if len(applications) >= limit:
-                    break
+            company = self.companies.get(a.company_id)
+            company_name = company.name if company else a.company_id
+            search_fields = [
+                a.notes,
+                a.job_post.job_description if a.job_post else None,
+                a.job_post.job_link if a.job_post else None,
+                company_name,
+            ]
+            if any(field and q in field.lower() for field in search_fields):
+                applications.append(_application_search_summary(a, company_name))
+            if len(applications) >= limit:
+                break
         return GlobalSearchResult(
             companies=companies[:limit], profiles=profiles[:limit], applications=applications[:limit]
         )
@@ -1507,6 +1653,8 @@ class InMemoryRepository(BaseRepository):
         rows = list(self.audit_events.values())
         if query.actor_type:
             rows = [r for r in rows if r.actor_type == query.actor_type]
+        if query.action:
+            rows = [r for r in rows if r.action == query.action]
         if query.entity_type:
             rows = [r for r in rows if r.entity_type == query.entity_type]
         if query.from_ts:
@@ -1757,15 +1905,25 @@ class MongoRepository(InMemoryRepository):
         self.db.companies.create_index([("archived", 1), ("research_status", 1), ("updated_at", -1)])
         self.db.companies.create_index([("archived", 1), ("research_status", 1), ("created_at", 1)])
         self.db.companies.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
+        self.db.companies.create_index([("name", "text"), ("overview", "text")])
         self.db.industries.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.profiles.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
+        self.db.profiles.create_index([("name", "text"), ("bio_md", "text")])
         self.db.profiles.create_index([("frozen", 1), ("created_at", 1)])
         self.db.profiles.create_index([("frozen", 1), ("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.applications.create_index([("status", 1), ("updated_at", -1)])
         self.db.applications.create_index([("status", 1), ("created_at", 1)])
         self.db.applications.create_index([("company_id", 1), ("updated_at", -1)])
         self.db.applications.create_index([("created_by_user_id", 1), ("updated_at", -1)])
+        self.db.applications.create_index(
+            [("notes", "text"), ("job_post.job_description", "text"), ("job_post.job_link", "text")]
+        )
         self.db.audit_events.create_index([("actor_type", 1), ("entity_type", 1), ("created_at", -1)])
+        self.db.audit_events.create_index([("action", 1), ("created_at", -1)])
+        self.db.audit_events.create_index([("created_at", -1)])
+        self.db.audit_events.create_index([("actor_type", 1), ("created_at", -1)])
+        self.db.audit_events.create_index([("entity_type", 1), ("created_at", -1)])
+        self.db.audit_events.create_index([("actor_type", 1), ("action", 1), ("entity_type", 1), ("created_at", -1)])
         self.db.notifications.create_index([("user_id", 1), ("read_at", 1), ("timestamp", -1)])
         self.db.per_profile_applications.create_index(
             [("application_id", 1), ("order_index", 1), ("created_at", 1)]
@@ -1945,6 +2103,19 @@ class MongoRepository(InMemoryRepository):
             if migrate_legacy_application_status(raw)[0] == status
         }
         return sorted(values)
+
+    def _application_status_values_for_workflow_filter(
+        self, workflow_filter: Literal["company_research"]
+    ) -> list[str]:
+        if workflow_filter == "company_research":
+            return sorted(
+                {
+                    value
+                    for status in COMPANY_RESEARCH_APPLICATION_STATUSES
+                    for value in self._application_status_values_for_query(status)
+                }
+            )
+        return []
 
     def _company_sort_spec(self, sort: str) -> list[tuple[str, int]]:
         if sort == "created_at_desc":
@@ -2451,17 +2622,31 @@ class MongoRepository(InMemoryRepository):
         exclude_status: ApplicationStatus | None = None,
         created_by_user_id: str | None = None,
         company_search: str | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> dict[str, object] | None:
         query: dict[str, object] = {}
+        status_clauses: list[dict[str, object]] = []
+        if workflow_filter:
+            status_clauses.append(
+                {"status": {"$in": self._application_status_values_for_workflow_filter(workflow_filter)}}
+            )
         if status and exclude_status:
-            query["$and"] = [
-                {"status": {"$in": self._application_status_values_for_query(status)}},
-                {"status": {"$nin": self._application_status_values_for_query(exclude_status)}},
-            ]
+            status_clauses.extend(
+                [
+                    {"status": {"$in": self._application_status_values_for_query(status)}},
+                    {"status": {"$nin": self._application_status_values_for_query(exclude_status)}},
+                ]
+            )
         elif status:
-            query["status"] = {"$in": self._application_status_values_for_query(status)}
+            status_clauses.append({"status": {"$in": self._application_status_values_for_query(status)}})
         elif exclude_status:
-            query["status"] = {"$nin": self._application_status_values_for_query(exclude_status)}
+            status_clauses.append(
+                {"status": {"$nin": self._application_status_values_for_query(exclude_status)}}
+            )
+        if len(status_clauses) == 1:
+            query.update(status_clauses[0])
+        elif status_clauses:
+            query["$and"] = status_clauses
         if company_id:
             query["company_id"] = company_id
         normalized_company_search = _normalized_optional_text_filter(company_search)
@@ -2582,6 +2767,7 @@ class MongoRepository(InMemoryRepository):
         created_by_user_id: str | None = None,
         company_search: str | None = None,
         applied_profile_names: list[str] | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> list[ApplicationListItem]:
         query = self._mongo_application_query(
             status=status,
@@ -2591,6 +2777,7 @@ class MongoRepository(InMemoryRepository):
             exclude_status=exclude_status,
             created_by_user_id=created_by_user_id,
             company_search=company_search,
+            workflow_filter=workflow_filter,
         )
         if query is None:
             return []
@@ -2655,6 +2842,7 @@ class MongoRepository(InMemoryRepository):
         created_by_user_id: str | None = None,
         company_search: str | None = None,
         limit: int = APPLICATION_PROFILE_FACET_LIMIT,
+        workflow_filter: Literal["company_research"] | None = None,
     ) -> list[str]:
         query = self._mongo_application_query(
             status=status,
@@ -2664,6 +2852,7 @@ class MongoRepository(InMemoryRepository):
             exclude_status=exclude_status,
             created_by_user_id=created_by_user_id,
             company_search=company_search,
+            workflow_filter=workflow_filter,
         )
         if query is None:
             return []
@@ -2725,6 +2914,8 @@ class MongoRepository(InMemoryRepository):
         mongo_query: dict[str, object] = {}
         if query.actor_type:
             mongo_query["actor_type"] = query.actor_type.value
+        if query.action:
+            mongo_query["action"] = query.action
         if query.entity_type:
             mongo_query["entity_type"] = query.entity_type
         created_at: dict[str, str] = {}
@@ -2741,6 +2932,80 @@ class MongoRepository(InMemoryRepository):
             sort=[("created_at", -1)],
             skip=query.skip,
             limit=query.limit,
+        )
+
+    def global_search(self, query: str, limit: int) -> GlobalSearchResult:
+        q = query.strip()
+        if not q:
+            return GlobalSearchResult(companies=[], profiles=[], applications=[])
+
+        company_docs = self._mongo_find_docs(
+            "companies",
+            {
+                "archived": {"$ne": True},
+                "$text": {"$search": q},
+            },
+            sort=[("updated_at", -1)],
+            limit=limit,
+            projection={"_id": 1, "name": 1, "website": 1, "research_status": 1},
+        )
+        companies = [_company_search_summary_from_doc(doc) for doc in company_docs]
+        profiles = [
+            _profile_search_summary_from_doc(doc)
+            for doc in self._mongo_find_docs(
+                "profiles",
+                {"$text": {"$search": q}},
+                sort=[("updated_at", -1)],
+                limit=limit,
+                projection={"_id": 1, "name": 1, "location": 1, "email": 1},
+            )
+        ]
+
+        matching_company_ids = [company.id for company in companies]
+        application_search_terms: list[dict[str, object]] = [{"$text": {"$search": q}}]
+        if matching_company_ids:
+            application_search_terms.append({"company_id": {"$in": matching_company_ids}})
+        application_docs = self._mongo_find_docs(
+            "applications",
+            {"$or": application_search_terms},
+            sort=[("updated_at", -1)],
+            limit=limit,
+            projection={
+                "_id": 1,
+                "company_id": 1,
+                "status": 1,
+                "updated_at": 1,
+                "job_post.job_link": 1,
+                "job_post.job_description": 1,
+            },
+        )
+        company_name_by_id = {company.id: company.name for company in companies}
+        missing_company_ids = [
+            company_id
+            for company_id in dict.fromkeys([str(doc["company_id"]) for doc in application_docs])
+            if company_id not in company_name_by_id
+        ]
+        if missing_company_ids:
+            company_name_by_id.update(
+                {
+                    str(doc["_id"]): doc["name"]
+                    for doc in self._mongo_find_docs(
+                        "companies",
+                        {"_id": {"$in": missing_company_ids}},
+                        projection={"_id": 1, "name": 1},
+                        limit=len(missing_company_ids),
+                    )
+                }
+            )
+        return GlobalSearchResult(
+            companies=companies[:limit],
+            profiles=profiles[:limit],
+            applications=[
+                _application_search_summary_from_doc(
+                    doc, company_name_by_id.get(str(doc["company_id"]), str(doc["company_id"]))
+                )
+                for doc in application_docs[:limit]
+            ],
         )
 
     def list_notifications(self, user_id: str, q: NotificationListQuery) -> list[UserNotification]:

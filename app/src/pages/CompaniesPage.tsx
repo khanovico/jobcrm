@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
@@ -75,7 +75,16 @@ const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
   return "badge-warning";
 };
 
+const parseResearchFilter = (search: string): CompanyResearchStatus | "all" => {
+  const value = new URLSearchParams(search).get("research_status");
+  return value === "pending" || value === "indexing" || value === "indexed" || value === "invalid"
+    ? value
+    : "all";
+};
+
 export const CompaniesPage = () => {
+  const location = useLocation();
+  const initialResearchFilter = useMemo(() => parseResearchFilter(location.search), [location.search]);
   const [items, setItems] = useState<CompanyListItem[]>([]);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
@@ -88,7 +97,7 @@ export const CompaniesPage = () => {
   const [loading, setLoading] = useState(false);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [sort, setSort] = useState<CompanySort>("updated_at_desc");
-  const [researchFilter, setResearchFilter] = useState<CompanyResearchStatus | "all">("all");
+  const [researchFilter, setResearchFilter] = useState<CompanyResearchStatus | "all">(initialResearchFilter);
   const [applicationRecordFilter, setApplicationRecordFilter] = useState<ApplicationRecordFilter>("all");
   const lastForegroundRefreshAtRef = useRef(0);
 
@@ -110,6 +119,11 @@ export const CompaniesPage = () => {
   const [archivedConflict, setArchivedConflict] = useState<ArchivedCompanyConflict | null>(null);
   const [restoreSubmitting, setRestoreSubmitting] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setResearchFilter(parseResearchFilter(location.search));
+    setPage(1);
+  }, [location.search]);
 
   const load = useCallback(
     async (targetPage = page, options?: { force?: boolean }) => {

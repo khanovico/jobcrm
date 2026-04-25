@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
@@ -32,13 +32,27 @@ const PlusIcon = () => (
 );
 
 export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
+type ApplicationWorkflowFilter = "" | "company_research";
+
+const parseRouteFilters = (search: string) => {
+  const params = new URLSearchParams(search);
+  const status = params.get("status_filter") ?? "";
+  const workflow = params.get("workflow_filter") === "company_research" ? "company_research" : "";
+  return { status, workflow } as const;
+};
 
 export const ApplicationsPage = () => {
+  const location = useLocation();
+  const initialRouteFilters = useMemo(() => parseRouteFilters(location.search), [location.search]);
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [markAppliedBusyId, setMarkAppliedBusyId] = useState<string | null>(null);
-  const [listMode, setListMode] = useState<ApplicationListMode>("pending");
+  const [listMode, setListMode] = useState<ApplicationListMode>(
+    initialRouteFilters.status || initialRouteFilters.workflow ? "all" : "pending"
+  );
+  const [statusFilter, setStatusFilter] = useState(initialRouteFilters.status);
+  const [workflowFilter, setWorkflowFilter] = useState<ApplicationWorkflowFilter>(initialRouteFilters.workflow);
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
   const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(
     () => getSelectedAppliedProfileNames()
@@ -64,6 +78,8 @@ export const ApplicationsPage = () => {
   const [debouncedCompanySearch, setDebouncedCompanySearch] = useState("");
   const previousAvailableProfileNamesRef = useRef<string[]>([]);
   const lastWorkerForegroundRefreshAtRef = useRef(0);
+  const profileNamesCacheRef = useRef<Map<string, string[]>>(new Map());
+  const profileNamesRequestSeq = useRef(0);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -73,6 +89,18 @@ export const ApplicationsPage = () => {
   }, [companySearch]);
 
   const availableAppliedProfileNames = profileNamesForFilter;
+
+  useEffect(() => {
+    const routeFilters = parseRouteFilters(location.search);
+    setStatusFilter(routeFilters.status);
+    setWorkflowFilter(routeFilters.workflow);
+    if (routeFilters.status || routeFilters.workflow) {
+      setListMode("all");
+    } else {
+      setListMode("pending");
+    }
+    setPage(1);
+  }, [location.search]);
 
   useEffect(() => {
     if (!profileNamesLoaded) return;
@@ -106,7 +134,11 @@ export const ApplicationsPage = () => {
 
   const applicationFilterParams = useMemo(() => {
     const p = new URLSearchParams();
-    if (listMode === "pending") {
+    if (statusFilter) {
+      p.set("status_filter", statusFilter);
+    } else if (workflowFilter) {
+      p.set("workflow_filter", workflowFilter);
+    } else if (listMode === "pending") {
       p.set("exclude_status", "archived");
       p.set("applied", "false");
     } else if (listMode === "applied") {
@@ -119,21 +151,35 @@ export const ApplicationsPage = () => {
       p.set("company_search", debouncedCompanySearch);
     }
     return p;
-  }, [debouncedCompanySearch, listMode]);
+  }, [debouncedCompanySearch, listMode, statusFilter, workflowFilter]);
+  const applicationFilterParamsKey = useMemo(() => applicationFilterParams.toString(), [applicationFilterParams]);
 
   const loadProfileNamesForFilter = useCallback(async () => {
+    const cachedNames = profileNamesCacheRef.current.get(applicationFilterParamsKey);
+    if (cachedNames) {
+      setProfileNamesForFilter(cachedNames);
+      setProfileNamesLoaded(true);
+      return;
+    }
+    const requestSeq = profileNamesRequestSeq.current + 1;
+    profileNamesRequestSeq.current = requestSeq;
     try {
-      const facets = await api.listApplicationAppliedProfileFacets(applicationFilterParams);
+      const facets = await api.listApplicationAppliedProfileFacets(new URLSearchParams(applicationFilterParams));
       const names = Array.from(
         new Set(facets.profile_names.map((name) => name.trim()).filter((name) => name.length > 0))
       ).sort((a, b) => a.localeCompare(b));
+      if (requestSeq !== profileNamesRequestSeq.current) return;
+      profileNamesCacheRef.current.set(applicationFilterParamsKey, names);
       setProfileNamesForFilter(names);
     } catch {
+      if (requestSeq !== profileNamesRequestSeq.current) return;
       setProfileNamesForFilter([]);
     } finally {
-      setProfileNamesLoaded(true);
+      if (requestSeq === profileNamesRequestSeq.current) {
+        setProfileNamesLoaded(true);
+      }
     }
-  }, [applicationFilterParams]);
+  }, [applicationFilterParams, applicationFilterParamsKey]);
 
   const listParamsKey = useMemo(() => {
     const p = new URLSearchParams(applicationFilterParams);
@@ -174,7 +220,7 @@ export const ApplicationsPage = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [listMode, debouncedCompanySearch]);
+  }, [listMode, debouncedCompanySearch, statusFilter, workflowFilter]);
 
   useEffect(() => {
     setPage(1);
@@ -182,8 +228,14 @@ export const ApplicationsPage = () => {
 
   useEffect(() => {
     setProfileNamesLoaded(false);
+    setProfileNamesForFilter([]);
+    previousAvailableProfileNamesRef.current = [];
+  }, [applicationFilterParamsKey]);
+
+  useEffect(() => {
+    if (!appliedProfileFilterOpen || profileNamesLoaded) return;
     void loadProfileNamesForFilter();
-  }, [loadProfileNamesForFilter]);
+  }, [appliedProfileFilterOpen, loadProfileNamesForFilter, profileNamesLoaded]);
 
   const loadWorkerSummary = useCallback(async (options?: { force?: boolean }) => {
     setWorkerState(await getWorkerSummaryCached(options));
@@ -317,7 +369,11 @@ export const ApplicationsPage = () => {
                   key={value}
                   type="button"
                   className={`btn btn-sm join-item ${listMode === value ? "btn-active" : "btn-ghost"}`}
-                  onClick={() => setListMode(value)}
+                  onClick={() => {
+                    setStatusFilter("");
+                    setWorkflowFilter("");
+                    setListMode(value);
+                  }}
                 >
                   {label}
                 </button>
@@ -554,9 +610,6 @@ export const ApplicationsPage = () => {
             </div>
           </>
         ) : null}
-        <p className="mt-2 text-xs opacity-60">
-          Click a row to open application detail. Use <strong>Pending</strong> for in-flight work, <strong>Applied</strong> for already-submitted applications, <strong>Archived</strong> to review closed pipelines, <strong>All</strong> for everything.
-        </p>
       </section>
 
       <NewApplicationModal

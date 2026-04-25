@@ -906,10 +906,35 @@ class AgentNotificationCreate(BaseModel):
         return self
 
 
+class ApplicationSearchSummary(BaseModel):
+    id: str
+    company_id: str
+    company_name: str
+    status: ApplicationStatus
+    updated_at: datetime
+    job_link: str | None = None
+    job_title: str | None = None
+    job_description_excerpt: str | None = None
+
+
+class CompanySearchSummary(BaseModel):
+    id: str
+    name: str
+    website: str | None = None
+    research_status: CompanyResearchStatus = CompanyResearchStatus.pending
+
+
+class ProfileSearchSummary(BaseModel):
+    id: str
+    name: str
+    location: str | None = None
+    email: EmailStr | None = None
+
+
 class GlobalSearchResult(BaseModel):
-    companies: list[Company]
-    profiles: list[Profile]
-    applications: list[Application]
+    companies: list[CompanySearchSummary]
+    profiles: list[ProfileSearchSummary]
+    applications: list[ApplicationSearchSummary]
 
 
 class ApplicationListQuery(BaseModel):
@@ -920,6 +945,7 @@ class ApplicationListQuery(BaseModel):
     company_id: str | None = None
     applied: bool | None = None
     email_sent: bool | None = None
+    workflow_filter: Literal["company_research"] | None = None
     sort: Literal["created_at_desc", "created_at_asc", "updated_at_desc"] = "created_at_desc"
 
 
@@ -927,6 +953,7 @@ class AuditListQuery(BaseModel):
     skip: int = 0
     limit: int = 100
     actor_type: ActorType | None = None
+    action: str | None = None
     entity_type: str | None = None
     from_ts: datetime | None = None
     to_ts: datetime | None = None

@@ -719,6 +719,7 @@ def list_applications(
     limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     status_filter: ApplicationStatus | None = None,
     exclude_status: ApplicationStatus | None = None,
+    workflow_filter: Literal["company_research"] | None = None,
     company_id: str | None = None,
     company_search: str | None = None,
     applied_profile_names: list[str] | None = Query(default=None),
@@ -744,6 +745,7 @@ def list_applications(
         exclude_status=exclude_status,
         company_search=_normalized_query_text(company_search),
         applied_profile_names=_normalized_query_text_list(applied_profile_names),
+        workflow_filter=workflow_filter,
     )
 
 
@@ -754,6 +756,7 @@ def list_applications(
 def list_application_applied_profile_facets(
     status_filter: ApplicationStatus | None = None,
     exclude_status: ApplicationStatus | None = None,
+    workflow_filter: Literal["company_research"] | None = None,
     company_id: str | None = None,
     company_search: str | None = None,
     applied: bool | None = None,
@@ -771,6 +774,7 @@ def list_application_applied_profile_facets(
             exclude_status=exclude_status,
             company_search=_normalized_query_text(company_search),
             limit=limit,
+            workflow_filter=workflow_filter,
         )
     )
 
@@ -1259,6 +1263,7 @@ def list_audit(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     actor_type: ActorType | None = None,
+    action: str | None = Query(default=None, min_length=1),
     entity_type: str | None = None,
     from_ts: str | None = None,
     to_ts: str | None = None,
@@ -1274,6 +1279,7 @@ def list_audit(
         skip=skip,
         limit=limit,
         actor_type=actor_type,
+        action=action.strip() if action else None,
         entity_type=entity_type,
         from_ts=_parse(from_ts),
         to_ts=_parse(to_ts),
@@ -1565,6 +1571,7 @@ def agent_list_applications(
     limit: int = 200,
     status_filter: ApplicationStatus | None = None,
     exclude_status: ApplicationStatus | None = None,
+    workflow_filter: Literal["company_research"] | None = None,
     company_id: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
@@ -1587,6 +1594,7 @@ def agent_list_applications(
         email_sent=email_sent,
         sort=sort,
         exclude_status=exclude_status,
+        workflow_filter=workflow_filter,
     )
 
 

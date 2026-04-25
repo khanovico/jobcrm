@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -106,6 +106,77 @@ describe("ApplicationsPage", () => {
     );
 
     await screen.findByRole("cell", { name: "Acme" });
+    expect(
+      fetchMock.mock.calls
+        .map(([input]) => (typeof input === "string" ? input : input.toString()))
+        .some((url) => isApplicationsFacetRequest(url))
+    ).toBe(false);
+  });
+
+  it("syncs dashboard workflow query links into application list API filters", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (isApplicationsListRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify([applicationRow]), { status: 200 }));
+      }
+      if (isApplicationsFacetRequest(url)) {
+        return Promise.resolve(new Response(JSON.stringify({ profile_names: [] }), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/applications?status_filter=application_ready"]}>
+        <Routes>
+          <Route
+            path="/applications"
+            element={
+              <>
+                <Link to="/applications?workflow_filter=company_research">Research queue</Link>
+                <Link to="/applications">Applications index</Link>
+                <ApplicationsPage />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("cell", { name: "Acme" });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls
+          .map(([input]) => String(input))
+          .filter((url) => isApplicationsListRequest(url))
+          .some((url) => url.includes("status_filter=application_ready"))
+      ).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Research queue" }));
+
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .filter((url) => isApplicationsListRequest(url));
+      expect(listCalls.some((url) => url.includes("workflow_filter=company_research"))).toBe(true);
+      expect(listCalls[listCalls.length - 1]).not.toContain("status_filter=application_ready");
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Applications index" }));
+
+    await waitFor(() => {
+      const listCalls = fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .filter((url) => isApplicationsListRequest(url));
+      const latestCall = listCalls[listCalls.length - 1];
+      expect(latestCall).toContain("exclude_status=archived");
+      expect(latestCall).toContain("applied=false");
+      expect(latestCall).not.toContain("workflow_filter=company_research");
+    });
   });
 
   it("opens Set application status from the actions column", async () => {
@@ -812,7 +883,7 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
-    expect(screen.getByRole("checkbox", { name: "Alice Park" })).toBeChecked();
+    expect(await screen.findByRole("checkbox", { name: "Alice Park" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Bob Stone" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Carla Kim" })).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
@@ -980,6 +1051,7 @@ describe("ApplicationsPage", () => {
     expect(screen.getByRole("cell", { name: "Core" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Applied profiles filter" }));
+    await screen.findByRole("checkbox", { name: "Carla Kim" });
     fireEvent.click(screen.getByRole("button", { name: "Unselect all profiles" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Carla Kim" }));
     expect(await screen.findByRole("cell", { name: "Core" })).toBeInTheDocument();

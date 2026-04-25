@@ -156,6 +156,31 @@ export type ApplicationListItem = Application & {
   applied_profiles: AppliedProfileName[];
 };
 
+export type ApplicationSearchSummary = {
+  id: string;
+  company_id: string;
+  company_name: string;
+  status: ApplicationStatus;
+  updated_at: string;
+  job_link?: string | null;
+  job_title?: string | null;
+  job_description_excerpt?: string | null;
+};
+
+export type CompanySearchSummary = {
+  id: string;
+  name: string;
+  website?: string | null;
+  research_status: CompanyResearchStatus;
+};
+
+export type ProfileSearchSummary = {
+  id: string;
+  name: string;
+  location?: string | null;
+  email?: string | null;
+};
+
 export type ApplicationAppliedProfileFacets = {
   profile_names: string[];
 };
@@ -289,7 +314,7 @@ export type UserNotification = {
 };
 
 export type GlobalSearchResult = {
-  companies: Company[];
-  profiles: Profile[];
-  applications: Application[];
+  companies: CompanySearchSummary[];
+  profiles: ProfileSearchSummary[];
+  applications: ApplicationSearchSummary[];
 };
