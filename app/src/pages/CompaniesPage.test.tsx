@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetCompanySummariesCacheForTests } from "../state/companySummaries";
@@ -166,6 +166,56 @@ describe("CompaniesPage", () => {
     expect(calledUrls.some((url) => url.includes("/api/v1/companies/summary"))).toBe(true);
     expect(calledUrls.some((url) => url.includes("/api/v1/settings/workers"))).toBe(false);
     expect(calledUrls.filter((url) => url.includes("/api/v1/workers/summary"))).toHaveLength(1);
+  });
+
+  it("syncs same-route research_status query changes into company summary filters", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/companies?research_status=indexed"]}>
+        <Routes>
+          <Route
+            path="/companies"
+            element={
+              <>
+                <Link to="/companies?research_status=pending">Pending companies</Link>
+                <CompaniesPage />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("cell", { name: "Acme Corp" });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls
+          .map(([input]) => String(input))
+          .filter((url) => url.includes("/api/v1/companies/summary"))
+          .some((url) => url.includes("research_status=indexed"))
+      ).toBe(true);
+    });
+
+    await userEvent.click(screen.getByRole("link", { name: "Pending companies" }));
+
+    await waitFor(() => {
+      const companyCalls = fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .filter((url) => url.includes("/api/v1/companies/summary"));
+      expect(companyCalls.some((url) => url.includes("research_status=pending"))).toBe(true);
+      expect(companyCalls[companyCalls.length - 1]).not.toContain("research_status=indexed");
+    });
   });
 
   it("refreshes cached company summaries when the tab returns to the foreground", async () => {

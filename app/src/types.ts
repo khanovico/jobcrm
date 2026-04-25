@@ -167,6 +167,20 @@ export type ApplicationSearchSummary = {
   job_description_excerpt?: string | null;
 };
 
+export type CompanySearchSummary = {
+  id: string;
+  name: string;
+  website?: string | null;
+  research_status: CompanyResearchStatus;
+};
+
+export type ProfileSearchSummary = {
+  id: string;
+  name: string;
+  location?: string | null;
+  email?: string | null;
+};
+
 export type ApplicationAppliedProfileFacets = {
   profile_names: string[];
 };
@@ -300,7 +314,7 @@ export type UserNotification = {
 };
 
 export type GlobalSearchResult = {
-  companies: Company[];
-  profiles: Profile[];
+  companies: CompanySearchSummary[];
+  profiles: ProfileSearchSummary[];
   applications: ApplicationSearchSummary[];
 };

@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../api";
+import { GlobalSearchResult } from "../types";
 import { DashboardPage } from "./DashboardPage";
 
 vi.mock("../api", () => ({
@@ -35,9 +36,7 @@ describe("DashboardPage", () => {
         {
           id: "company-1",
           name: "Acme Labs",
-          research_status: "indexed",
-          created_at: "2026-02-01T00:00:00Z",
-          updated_at: "2026-02-03T00:00:00Z"
+          research_status: "indexed"
         }
       ],
       profiles: [
@@ -45,10 +44,7 @@ describe("DashboardPage", () => {
           id: "profile-1",
           name: "Jordan Candidate",
           location: "Remote",
-          email: "jordan@example.com",
-          phone: "123",
-          created_at: "2026-02-01T00:00:00Z",
-          updated_at: "2026-02-03T00:00:00Z"
+          email: "jordan@example.com"
         }
       ],
       applications: [
@@ -72,13 +68,13 @@ describe("DashboardPage", () => {
     );
 
     expect(await screen.findByText("4")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Review companies" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Review research queue" })).toHaveAttribute(
       "href",
-      "/companies?research_status=pending"
+      "/applications?workflow_filter=company_research"
     );
     expect(screen.getByRole("link", { name: "Open ready applications" })).toHaveAttribute(
       "href",
-      "/applications?status=application_ready"
+      "/applications?status_filter=application_ready"
     );
 
     await userEvent.type(screen.getByRole("textbox", { name: "Search dashboard" }), "  platform  ");
@@ -99,12 +95,12 @@ describe("DashboardPage", () => {
   });
 
   it("shows busy and empty states for search", async () => {
-    let resolveSearch: ((value: Awaited<ReturnType<typeof api.globalSearch>>) => void) | null = null;
-    vi.mocked(api.globalSearch).mockReturnValue(
-      new Promise((resolve) => {
-        resolveSearch = resolve;
-      })
-    );
+    const emptyResult: GlobalSearchResult = { companies: [], profiles: [], applications: [] };
+    let resolveSearch: (value: GlobalSearchResult) => void = () => undefined;
+    const searchPromise = new Promise<GlobalSearchResult>((resolve) => {
+      resolveSearch = resolve;
+    });
+    vi.mocked(api.globalSearch).mockReturnValue(searchPromise);
 
     render(
       <MemoryRouter>
@@ -119,11 +115,68 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("button", { name: "Searching..." })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("Searching across dashboard records...");
 
-    resolveSearch?.({ companies: [], profiles: [], applications: [] });
+    resolveSearch(emptyResult);
 
     expect(await screen.findByText('No matches for "Nope".')).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps slower search responses from replacing the newest result", async () => {
+    let resolveSlowSearch: (value: GlobalSearchResult) => void = () => undefined;
+    const slowSearch = new Promise<GlobalSearchResult>((resolve) => {
+      resolveSlowSearch = resolve;
+    });
+    vi.mocked(api.globalSearch)
+      .mockReturnValueOnce(slowSearch)
+      .mockResolvedValueOnce({
+        companies: [],
+        profiles: [],
+        applications: [
+          {
+            id: "application-fast",
+            company_id: "company-fast",
+            company_name: "Fast Result",
+            status: "application_ready",
+            updated_at: "2026-02-04T10:00:00Z",
+            job_title: "Newest Query"
+          }
+        ]
+      });
+
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("5");
+    const searchInput = screen.getByRole("textbox", { name: "Search dashboard" });
+    await userEvent.type(searchInput, "slow");
+    await userEvent.click(screen.getByRole("button", { name: "Search" }));
+    await userEvent.clear(searchInput);
+    await userEvent.type(searchInput, "fast");
+    fireEvent.submit(searchInput.closest("form") as HTMLFormElement);
+
+    expect(await screen.findByText("Newest Query")).toBeInTheDocument();
+    resolveSlowSearch({
+      companies: [],
+      profiles: [],
+      applications: [
+        {
+          id: "application-slow",
+          company_id: "company-slow",
+          company_name: "Slow Result",
+          status: "application_ready",
+          updated_at: "2026-02-03T10:00:00Z",
+          job_title: "Stale Query"
+        }
+      ]
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Stale Query")).not.toBeInTheDocument();
     });
   });
 });

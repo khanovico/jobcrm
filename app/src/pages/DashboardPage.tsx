@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api } from "../api";
@@ -14,15 +14,15 @@ const metricCards: Array<{
   {
     key: "company_research_pipeline",
     title: "Company research pipeline",
-    description: "Companies still waiting for research coverage.",
-    href: "/companies?research_status=pending",
-    actionLabel: "Review companies"
+    description: "Applications still waiting for company research coverage.",
+    href: "/applications?workflow_filter=company_research",
+    actionLabel: "Review research queue"
   },
   {
     key: "application_ready",
     title: "Application ready",
     description: "Prepared applications that are ready for action.",
-    href: "/applications?status=application_ready",
+    href: "/applications?status_filter=application_ready",
     actionLabel: "Open ready applications"
   },
   {
@@ -105,6 +105,7 @@ export const DashboardPage = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [lastSearchQuery, setLastSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const searchRequestSeq = useRef(0);
 
   useEffect(() => {
     void (async () => {
@@ -126,18 +127,29 @@ export const DashboardPage = () => {
     const trimmedQuery = q.trim();
     setError(null);
     if (!trimmedQuery) {
+      searchRequestSeq.current += 1;
       setLastSearchQuery("");
       setSearchResult(null);
+      setIsSearching(false);
       return;
     }
+    const requestSeq = searchRequestSeq.current + 1;
+    searchRequestSeq.current = requestSeq;
     setIsSearching(true);
     setLastSearchQuery(trimmedQuery);
     try {
-      setSearchResult(await api.globalSearch(trimmedQuery));
+      const result = await api.globalSearch(trimmedQuery);
+      if (requestSeq === searchRequestSeq.current) {
+        setSearchResult(result);
+      }
     } catch (e) {
-      setError((e as Error).message);
+      if (requestSeq === searchRequestSeq.current) {
+        setError((e as Error).message);
+      }
     } finally {
-      setIsSearching(false);
+      if (requestSeq === searchRequestSeq.current) {
+        setIsSearching(false);
+      }
     }
   };
 

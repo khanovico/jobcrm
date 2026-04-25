@@ -183,6 +183,38 @@ def test_list_applications_exclude_archived() -> None:
     assert only_arch[0]["archive_reason"] == "done"
 
 
+def test_list_applications_supports_company_research_workflow_filter() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+    company = client.post("/api/v1/companies", json={"name": "Workflow Co"}, headers=headers).json()
+    pending = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    researching = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_researching"},
+        headers=headers,
+    ).json()
+    client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "application_ready"},
+        headers=headers,
+    )
+
+    listed = client.get(
+        "/api/v1/applications",
+        params={"workflow_filter": "company_research"},
+        headers=headers,
+    ).json()
+
+    assert [row["id"] for row in listed] == [researching["id"], pending["id"]]
+
+
 def test_list_applications_tolerates_ppa_cold_email_plan_stored_as_dict() -> None:
     """Mongo / model_construct can leave nested cold_email_plan as a dict; list must not 500."""
     repo = InMemoryRepository()
@@ -1927,6 +1959,31 @@ def _mongo_doc(item) -> dict:
     return payload
 
 
+def _mongo_field_value(row: dict, key: str):
+    value = row
+    for part in key.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _mongo_text_values(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        values: list[str] = []
+        for nested in value.values():
+            values.extend(_mongo_text_values(nested))
+        return values
+    if isinstance(value, list):
+        values: list[str] = []
+        for nested in value:
+            values.extend(_mongo_text_values(nested))
+        return values
+    return [str(value)]
+
+
 def _matches_mongo_query(row: dict, query: dict) -> bool:
     for key, expected in query.items():
         if key == "$and":
@@ -1937,7 +1994,13 @@ def _matches_mongo_query(row: dict, query: dict) -> bool:
             if not any(_matches_mongo_query(row, part) for part in expected):
                 return False
             continue
-        actual = row.get(key)
+        if key == "$text":
+            search = str(expected.get("$search", "")).lower() if isinstance(expected, dict) else ""
+            haystack = " ".join(_mongo_text_values(row)).lower()
+            if search not in haystack:
+                return False
+            continue
+        actual = _mongo_field_value(row, key)
         if isinstance(expected, dict):
             if "$exists" in expected and (key in row) is not bool(expected["$exists"]):
                 return False
@@ -2160,6 +2223,7 @@ def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
         [("name", 1)],
         {"collation": {"locale": "en", "strength": 2}},
     ) in db.companies.indexes
+    assert ([("name", "text"), ("overview", "text")], {}) in db.companies.indexes
     assert (
         [("name", 1)],
         {"collation": {"locale": "en", "strength": 2}},
@@ -2168,9 +2232,14 @@ def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
         [("name", 1)],
         {"collation": {"locale": "en", "strength": 2}},
     ) in db.profiles.indexes
+    assert ([("name", "text"), ("bio_md", "text")], {}) in db.profiles.indexes
     assert ([("status", 1), ("updated_at", -1)], {}) in db.applications.indexes
     assert ([("status", 1), ("created_at", 1)], {}) in db.applications.indexes
     assert ([("company_id", 1), ("updated_at", -1)], {}) in db.applications.indexes
+    assert (
+        [("notes", "text"), ("job_post.job_description", "text"), ("job_post.job_link", "text")],
+        {},
+    ) in db.applications.indexes
     assert ([("user_id", 1), ("read_at", 1), ("timestamp", -1)], {}) in db.notifications.indexes
     assert (
         [("archived", 1), ("research_status", 1), ("created_at", 1)],
@@ -2178,6 +2247,14 @@ def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
     ) in db.companies.indexes
     assert (
         [("actor_type", 1), ("entity_type", 1), ("created_at", -1)],
+        {},
+    ) in db.audit_events.indexes
+    assert ([("action", 1), ("created_at", -1)], {}) in db.audit_events.indexes
+    assert ([("created_at", -1)], {}) in db.audit_events.indexes
+    assert ([("actor_type", 1), ("created_at", -1)], {}) in db.audit_events.indexes
+    assert ([("entity_type", 1), ("created_at", -1)], {}) in db.audit_events.indexes
+    assert (
+        [("actor_type", 1), ("action", 1), ("entity_type", 1), ("created_at", -1)],
         {},
     ) in db.audit_events.indexes
     assert (
@@ -2499,6 +2576,27 @@ def test_mongo_repository_list_applications_uses_query_page_and_bounded_enrichme
             {"status": {"$in": ["analysis_ready", "ppa_pending"]}},
             {"status": {"$nin": ["archived"]}},
         ]
+    }
+
+    workflow_rows = repo.list_applications(
+        skip=0,
+        limit=20,
+        status=None,
+        sort="updated_at_desc",
+        workflow_filter="company_research",
+    )
+
+    assert [row.id for row in workflow_rows] == [first.id]
+    assert db.applications.find_queries[-1] == {
+        "status": {
+            "$in": [
+                "company_research_pending",
+                "company_researching",
+                "draft",
+                "pending_preparation",
+                "researching",
+            ]
+        }
     }
 
 
@@ -2981,6 +3079,7 @@ def test_mongo_repository_audit_and_notification_lists_use_query_pagination() ->
             skip=0,
             limit=5,
             actor_type=ActorType.user,
+            action="create",
             entity_type="company",
             from_ts=event.created_at,
             to_ts=event.created_at,
@@ -2993,6 +3092,7 @@ def test_mongo_repository_audit_and_notification_lists_use_query_pagination() ->
     assert [row.id for row in audit_rows] == [event.id]
     assert db.audit_events.find_queries[-1] == {
         "actor_type": "user",
+        "action": "create",
         "entity_type": "company",
         "created_at": {
             "$gte": event.created_at.isoformat().replace("+00:00", "Z"),
@@ -3007,6 +3107,75 @@ def test_mongo_repository_audit_and_notification_lists_use_query_pagination() ->
     assert db.notifications.sorts[-1] == [("timestamp", -1)]
     assert db.notifications.skips[-1] == 1
     assert db.notifications.limits[-1] == 3
+
+
+def test_mongo_repository_global_search_returns_compact_application_summaries_from_queries() -> None:
+    seed = InMemoryRepository()
+    company = seed.create_company(CompanyCreate(name="Acme Search Co"))
+    application = seed.create_application(
+        ApplicationCreate(
+            company_id=company.id,
+            status=ApplicationStatus.application_ready,
+            job_post={
+                "job_link": "https://jobs.example.com/acme",
+                "job_description": "Search Platform Engineer\nOwn query-backed dashboards.",
+            },
+            notes="private internal note",
+        ),
+        created_by_user_id=None,
+    )
+    profile = seed.create_profile(
+        ProfileCreate.model_validate(
+            {**_valid_profile_create_payload(), "name": "Acme Search Candidate"}
+        )
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.companies.docs = [_mongo_doc(company)]
+    db.profiles.docs = [_mongo_doc(profile)]
+    db.applications.docs = [_mongo_doc(application)]
+
+    result = repo.global_search("Acme Search", limit=5)
+
+    assert [row.id for row in result.companies] == [company.id]
+    assert result.companies[0].model_dump(mode="json") == {
+        "id": company.id,
+        "name": "Acme Search Co",
+        "website": None,
+        "research_status": "pending",
+    }
+    assert [row.id for row in result.profiles] == [profile.id]
+    assert result.profiles[0].model_dump(mode="json") == {
+        "id": profile.id,
+        "name": "Acme Search Candidate",
+        "location": profile.location,
+        "email": profile.email,
+    }
+    assert len(result.applications) == 1
+    summary = result.applications[0]
+    assert summary.id == application.id
+    assert summary.company_id == company.id
+    assert summary.company_name == "Acme Search Co"
+    assert summary.status == ApplicationStatus.application_ready
+    assert summary.job_link == "https://jobs.example.com/acme"
+    assert summary.job_title == "Search Platform Engineer"
+    assert db.companies.find_queries[0] == {"archived": {"$ne": True}, "$text": {"$search": "Acme Search"}}
+    assert db.companies.projections[0] == {"_id": 1, "name": 1, "website": 1, "research_status": 1}
+    assert db.profiles.find_queries[0] == {"$text": {"$search": "Acme Search"}}
+    assert db.profiles.projections[0] == {"_id": 1, "name": 1, "location": 1, "email": 1}
+    assert db.applications.find_queries[-1] == {
+        "$or": [
+            {"$text": {"$search": "Acme Search"}},
+            {"company_id": {"$in": [company.id]}},
+        ]
+    }
+    assert db.applications.projections[-1] == {
+        "_id": 1,
+        "company_id": 1,
+        "status": 1,
+        "updated_at": 1,
+        "job_post.job_link": 1,
+        "job_post.job_description": 1,
+    }
 
 
 def test_mongo_repository_updates_company_and_related_apps_without_full_sync() -> None:
