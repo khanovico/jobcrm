@@ -32,7 +32,7 @@ Clear:
 ## TODO
 
 - [ ] Map existing CompaniesPage archived restore, CompanyDetailPage sections/actions, and clear-company modal tests.
-- [ ] Replace archived-company restore second-submit with an explicit restore modal and tests.
+- [x] Replace archived-company restore second-submit with an explicit restore modal and tests.
 - [ ] Restructure CompanyDetailPage review/edit flow and hidden enrichment preview.
 - [x] Make clear-company destructive labels explicit and test modal copy/submit locking.
 - [ ] Add contextual company-detail action errors and tests.
