@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProfileDetailPage } from "./ProfileDetailPage";
@@ -32,6 +32,7 @@ vi.mock("../components/MarkdownModal", () => ({
 const renderAtPath = (path: string) =>
   render(
     <MemoryRouter initialEntries={[path]}>
+      <Link to="/profiles">Sidebar Profiles</Link>
       <Routes>
         <Route path="/profiles/:profileId" element={<ProfileDetailPage />} />
         <Route path="/profiles" element={<div>Profiles list</div>} />
@@ -194,12 +195,37 @@ describe("ProfileDetailPage education year validation", () => {
 
     renderAtPath("/profiles/p1");
     fireEvent.change(await screen.findByLabelText("Location"), { target: { value: "Remote" } });
-    fireEvent.click(screen.getByRole("button", { name: "Profiles" }));
+    fireEvent.click(screen.getByRole("link", { name: "Sidebar Profiles" }));
 
     expect(await screen.findByRole("heading", { name: "Discard unsaved profile changes?" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(screen.queryByRole("heading", { name: "Discard unsaved profile changes?" })).not.toBeInTheDocument();
     expect(screen.queryByText("Profiles list")).not.toBeInTheDocument();
+  });
+
+  it("blocks empty profile name even after switching away from the basics tab", async () => {
+    getProfileMock.mockResolvedValue({
+      id: "p1",
+      name: "Existing Profile",
+      location: "NYC",
+      email: "existing@example.com",
+      phone: "555",
+      educations: [{ university_name: "College", from_year: 2021, to_year: 2023 }],
+      bio_md: "Bio",
+      niche_info_md: "Niche",
+      resume_md: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    });
+
+    renderAtPath("/profiles/p1");
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Education" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Name is required.")).toBeInTheDocument();
+    expect(updateProfileMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
   });
 
   it("deletes with an in-app confirmation instead of native confirm", async () => {

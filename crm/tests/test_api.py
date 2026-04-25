@@ -1030,6 +1030,24 @@ def test_profile_summary_endpoint_supports_search_and_frozen_filter() -> None:
     assert [row["name"] for row in frozen_only.json()] == ["Blair Ops"]
 
 
+def test_profile_update_rejects_empty_name() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+
+    response = client.put(
+        f"/api/v1/profiles/{profile['id']}",
+        json={"name": ""},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
 def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
@@ -2282,6 +2300,31 @@ def test_mongo_repository_list_profiles_uses_query_pagination() -> None:
     assert profile_limit == 5
     assert profile_collation == {"locale": "en", "strength": 2}
     assert db.profiles.find_queries[-1] == {"frozen": {"$ne": True}}
+
+    summary_rows = repo.list_profile_summaries(skip=0, limit=5, search="berlin", frozen=True)
+    assert [row.id for row in summary_rows] == [frozen.id]
+    assert db.profiles.find_queries[-1] == {
+        "frozen": True,
+        "$or": [
+            {"name": {"$regex": "berlin", "$options": "i"}},
+            {"email": {"$regex": "berlin", "$options": "i"}},
+            {"location": {"$regex": "berlin", "$options": "i"}},
+            {"niche_info_md": {"$regex": "berlin", "$options": "i"}},
+        ],
+    }
+    assert db.profiles.projections[-1] == {
+        "_id": 1,
+        "name": 1,
+        "frozen": 1,
+        "location": 1,
+        "email": 1,
+        "phone": 1,
+        "created_at": 1,
+        "updated_at": 1,
+    }
+    assert db.profiles.sorts[-1] == [("name", 1)]
+    assert db.profiles.limits[-1] == 5
+    assert db.profiles.collations[-1] == {"locale": "en", "strength": 2}
 
 
 def test_mongo_repository_industry_picker_helpers_use_query_paths() -> None:

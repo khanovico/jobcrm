@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { FormEvent, useContext, useEffect, useRef, useState } from "react";
+import { UNSAFE_NavigationContext, useNavigate, useParams } from "react-router-dom";
 
 import { MarkdownModal } from "../components/MarkdownModal";
 import { Modal } from "../components/Modal";
@@ -25,34 +25,16 @@ const emptyEdRow = (): EdRow => ({ university_name: "", from_year: "", to_year: 
 const MIN_EDUCATION_YEAR = 1900;
 const MAX_EDUCATION_YEAR = 2100;
 const YEAR_INPUT_PATTERN = /^\d{4}$/;
-const emptyProfileFormSnapshot = () =>
-  serializeProfileForm({
-    name: "",
-    location: "",
-    email: "",
-    phone: "",
-    bioMd: "",
-    nicheMd: "",
-    resumeMd: "",
-    edRows: [emptyEdRow()]
-  });
-
-const serializeProfileForm = (snapshot: ProfileFormSnapshot) =>
-  JSON.stringify({
-    ...snapshot,
-    edRows: snapshot.edRows.map((row) => ({
-      university_name: row.university_name,
-      from_year: row.from_year,
-      to_year: row.to_year
-    }))
-  });
 
 export const ProfileDetailPage = () => {
   const { profileId } = useParams<{ profileId: string }>();
   const navigate = useNavigate();
+  const navigation = useContext(UNSAFE_NavigationContext);
   const { user } = useAuth();
   const isNew = profileId === "new";
   const canEditProfiles = user?.role === "admin";
+  const pendingNavigationRef = useRef<(() => void) | null>(null);
+  const bypassNavigationGuardRef = useRef(false);
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState("");
@@ -69,10 +51,15 @@ export const ProfileDetailPage = () => {
   const [bioPreviewOpen, setBioPreviewOpen] = useState(false);
   const [nichePreviewOpen, setNichePreviewOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<ProfileSection>("basics");
-  const [lastSavedSnapshot, setLastSavedSnapshot] = useState(emptyProfileFormSnapshot);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+
+  const markDirty = () => {
+    setSavedMessage(null);
+    setHasUnsavedChanges(true);
+  };
 
   const profileToFormSnapshot = (p: Profile): ProfileFormSnapshot => ({
     name: p.name,
@@ -101,7 +88,7 @@ export const ProfileDetailPage = () => {
     setResumeMd(snapshot.resumeMd);
     setEdRows(snapshot.edRows);
     if (options?.markSaved) {
-      setLastSavedSnapshot(serializeProfileForm(snapshot));
+      setHasUnsavedChanges(false);
     }
   };
 
@@ -138,22 +125,6 @@ export const ProfileDetailPage = () => {
     void load();
   }, [profileId, isNew]);
 
-  const currentSnapshot = useMemo(
-    () =>
-      serializeProfileForm({
-        name,
-        location,
-        email,
-        phone,
-        bioMd,
-        nicheMd,
-        resumeMd,
-        edRows
-      }),
-    [bioMd, edRows, email, location, name, nicheMd, phone, resumeMd]
-  );
-  const hasUnsavedChanges = currentSnapshot !== lastSavedSnapshot;
-
   useEffect(() => {
     if (!hasUnsavedChanges) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -163,6 +134,38 @@ export const ProfileDetailPage = () => {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    const navigator = navigation.navigator;
+    const originalPush = navigator.push;
+    const originalReplace = navigator.replace;
+    const originalGo = navigator.go;
+
+    const blockOrRun = (run: () => void) => {
+      if (!hasUnsavedChanges || bypassNavigationGuardRef.current) {
+        run();
+        return;
+      }
+      pendingNavigationRef.current = run;
+      setLeaveConfirmOpen(true);
+    };
+
+    navigator.push = ((...args: Parameters<typeof originalPush>) => {
+      blockOrRun(() => originalPush(...args));
+    }) as typeof originalPush;
+    navigator.replace = ((...args: Parameters<typeof originalReplace>) => {
+      blockOrRun(() => originalReplace(...args));
+    }) as typeof originalReplace;
+    navigator.go = ((...args: Parameters<typeof originalGo>) => {
+      blockOrRun(() => originalGo(...args));
+    }) as typeof originalGo;
+
+    return () => {
+      navigator.push = originalPush;
+      navigator.replace = originalReplace;
+      navigator.go = originalGo;
+    };
+  }, [hasUnsavedChanges, navigation.navigator]);
 
   const parseYear = (s: string): number | null => {
     const t = s.trim();
@@ -213,6 +216,11 @@ export const ProfileDetailPage = () => {
     return null;
   };
 
+  const validateEdit = (): string | null => {
+    if (!name.trim()) return "Name is required.";
+    return null;
+  };
+
   const onCreate = async (event: FormEvent) => {
     event.preventDefault();
     if (!canEditProfiles) return;
@@ -258,6 +266,12 @@ export const ProfileDetailPage = () => {
       setError("Fix education year errors before saving.");
       return;
     }
+    const v = validateEdit();
+    if (v) {
+      setActiveSection("basics");
+      setError(v);
+      return;
+    }
     setSaving(true);
     setError(null);
     setSavedMessage(null);
@@ -296,11 +310,22 @@ export const ProfileDetailPage = () => {
   };
 
   const requestProfilesNavigation = () => {
-    if (hasUnsavedChanges) {
-      setLeaveConfirmOpen(true);
-      return;
-    }
     navigate("/profiles");
+  };
+
+  const confirmLeave = () => {
+    const pendingNavigation = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    setLeaveConfirmOpen(false);
+    bypassNavigationGuardRef.current = true;
+    if (pendingNavigation) {
+      pendingNavigation();
+    } else {
+      navigate("/profiles");
+    }
+    window.setTimeout(() => {
+      bypassNavigationGuardRef.current = false;
+    }, 0);
   };
 
   const sectionButtonClass = (section: ProfileSection) =>
@@ -369,10 +394,10 @@ export const ProfileDetailPage = () => {
                   <input
                     className="input input-bordered w-full"
                     value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      setSavedMessage(null);
-                    }}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    markDirty();
+                  }}
                     required
                     autoFocus={isNew}
                     disabled={!canEditProfiles}
@@ -383,10 +408,10 @@ export const ProfileDetailPage = () => {
                   <input
                     className="input input-bordered w-full"
                     value={location}
-                    onChange={(e) => {
-                      setLocation(e.target.value);
-                      setSavedMessage(null);
-                    }}
+                  onChange={(e) => {
+                    setLocation(e.target.value);
+                    markDirty();
+                  }}
                     required={isNew}
                     disabled={!canEditProfiles}
                   />
@@ -397,10 +422,10 @@ export const ProfileDetailPage = () => {
                     className="input input-bordered w-full"
                     type="email"
                     value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      setSavedMessage(null);
-                    }}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    markDirty();
+                  }}
                     required={isNew}
                     disabled={!canEditProfiles}
                   />
@@ -410,10 +435,10 @@ export const ProfileDetailPage = () => {
                   <input
                     className="input input-bordered w-full"
                     value={phone}
-                    onChange={(e) => {
-                      setPhone(e.target.value);
-                      setSavedMessage(null);
-                    }}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    markDirty();
+                  }}
                     required={isNew}
                     disabled={!canEditProfiles}
                   />
@@ -429,7 +454,10 @@ export const ProfileDetailPage = () => {
                   type="button"
                   className="btn btn-ghost btn-xs"
                   disabled={!canEditProfiles}
-                  onClick={() => setEdRows((rows) => [...rows, emptyEdRow()])}
+                  onClick={() => {
+                    setEdRows((rows) => [...rows, emptyEdRow()]);
+                    markDirty();
+                  }}
                 >
                   + Add row
                 </button>
@@ -445,7 +473,7 @@ export const ProfileDetailPage = () => {
                         const next = [...edRows];
                         next[idx] = { ...next[idx], university_name: e.target.value };
                         setEdRows(next);
-                        setSavedMessage(null);
+                        markDirty();
                       }}
                       disabled={!canEditProfiles}
                     />
@@ -459,7 +487,7 @@ export const ProfileDetailPage = () => {
                         const next = [...edRows];
                         next[idx] = { ...next[idx], from_year: e.target.value };
                         setEdRows(next);
-                        setSavedMessage(null);
+                        markDirty();
                       }}
                       disabled={!canEditProfiles}
                     />
@@ -473,7 +501,7 @@ export const ProfileDetailPage = () => {
                         const next = [...edRows];
                         next[idx] = { ...next[idx], to_year: e.target.value };
                         setEdRows(next);
-                        setSavedMessage(null);
+                        markDirty();
                       }}
                       disabled={!canEditProfiles}
                     />
@@ -482,7 +510,10 @@ export const ProfileDetailPage = () => {
                         type="button"
                         className="btn btn-ghost btn-xs"
                         disabled={!canEditProfiles}
-                        onClick={() => setEdRows((rows) => rows.filter((_, i) => i !== idx))}
+                        onClick={() => {
+                          setEdRows((rows) => rows.filter((_, i) => i !== idx));
+                          markDirty();
+                        }}
                       >
                         Remove
                       </button>
@@ -520,7 +551,7 @@ export const ProfileDetailPage = () => {
                     value={bioMd}
                     onChange={(e) => {
                       setBioMd(e.target.value);
-                      setSavedMessage(null);
+                      markDirty();
                     }}
                     required={isNew}
                     aria-label="Bio markdown"
@@ -545,7 +576,7 @@ export const ProfileDetailPage = () => {
                     value={nicheMd}
                     onChange={(e) => {
                       setNicheMd(e.target.value);
-                      setSavedMessage(null);
+                      markDirty();
                     }}
                     required={isNew}
                     aria-label="Niche markdown"
@@ -559,7 +590,7 @@ export const ProfileDetailPage = () => {
                     value={resumeMd}
                     onChange={(e) => {
                       setResumeMd(e.target.value);
-                      setSavedMessage(null);
+                      markDirty();
                     }}
                     disabled={!canEditProfiles}
                   />
@@ -601,7 +632,12 @@ export const ProfileDetailPage = () => {
         markdown={nicheMd}
         size="full"
       />
-      <Modal open={deleteOpen} onClose={() => !deleting && setDeleteOpen(false)} title="Delete profile">
+      <Modal
+        open={deleteOpen}
+        onClose={() => !deleting && setDeleteOpen(false)}
+        title="Delete profile"
+        closeDisabled={deleting}
+      >
         <div className="space-y-4 text-sm">
           <p>
             Delete <span className="font-semibold">{profile?.name}</span>? This removes the profile from JobCRM and
@@ -629,7 +665,7 @@ export const ProfileDetailPage = () => {
             <button type="button" className="btn btn-ghost" onClick={() => setLeaveConfirmOpen(false)}>
               Keep editing
             </button>
-            <button type="button" className="btn btn-warning" onClick={() => navigate("/profiles")}>
+            <button type="button" className="btn btn-warning" onClick={confirmLeave}>
               Discard and leave
             </button>
           </div>

@@ -45,6 +45,7 @@ from app.models import (
     PerProfileApplicationUpdate,
     Profile,
     ProfileCreate,
+    ProfileListItem,
     ProfileUpdate,
     NotificationKind,
     NotificationPayload,
@@ -258,6 +259,27 @@ class BaseRepository:
         frozen: bool | None = None,
     ) -> list[Profile]:
         raise NotImplementedError
+
+    def list_profile_summaries(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        frozen: bool | None = None,
+    ) -> list[ProfileListItem]:
+        return [
+            ProfileListItem(
+                id=profile.id,
+                name=profile.name,
+                frozen=profile.frozen,
+                location=profile.location,
+                email=profile.email,
+                phone=profile.phone,
+                created_at=profile.created_at,
+                updated_at=profile.updated_at,
+            )
+            for profile in self.list_profiles(skip=skip, limit=limit, search=search, frozen=frozen)
+        ]
 
     def list_profile_ids(self, skip: int, limit: int, include_frozen: bool = True) -> list[str]:
         raise NotImplementedError
@@ -1733,6 +1755,7 @@ class MongoRepository(InMemoryRepository):
         self.db.industries.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.profiles.create_index([("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.profiles.create_index([("frozen", 1), ("created_at", 1)])
+        self.db.profiles.create_index([("frozen", 1), ("name", 1)], collation={"locale": "en", "strength": 2})
         self.db.applications.create_index([("status", 1), ("updated_at", -1)])
         self.db.applications.create_index([("status", 1), ("created_at", 1)])
         self.db.applications.create_index([("company_id", 1), ("updated_at", -1)])
@@ -1853,12 +1876,18 @@ class MongoRepository(InMemoryRepository):
         query: dict,
         *,
         sort: list[tuple[str, int]] | None = None,
+        skip: int = 0,
         limit: int | None = None,
         projection: dict[str, int] | None = None,
+        collation: dict | None = None,
     ) -> list[dict]:
         cursor = self.db[collection_name].find(query, projection)
+        if collation and hasattr(cursor, "collation"):
+            cursor = cursor.collation(collation)
         if sort:
             cursor = cursor.sort(sort)
+        if skip:
+            cursor = cursor.skip(skip)
         if limit is not None:
             cursor = cursor.limit(limit)
         return list(cursor)
@@ -2230,6 +2259,58 @@ class MongoRepository(InMemoryRepository):
             limit=limit,
             collation={"locale": "en", "strength": 2},
         )
+
+    def list_profile_summaries(
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        frozen: bool | None = None,
+    ) -> list[ProfileListItem]:
+        query: dict[str, object] = {}
+        if frozen is True:
+            query["frozen"] = True
+        elif frozen is False:
+            query["frozen"] = {"$ne": True}
+        if search:
+            search_filter = self._literal_contains_filter(search)
+            query["$or"] = [
+                {"name": search_filter},
+                {"email": search_filter},
+                {"location": search_filter},
+                {"niche_info_md": search_filter},
+            ]
+        docs = self._mongo_find_docs(
+            "profiles",
+            query,
+            sort=[("name", 1)],
+            skip=skip,
+            limit=limit,
+            projection={
+                "_id": 1,
+                "name": 1,
+                "frozen": 1,
+                "location": 1,
+                "email": 1,
+                "phone": 1,
+                "created_at": 1,
+                "updated_at": 1,
+            },
+            collation={"locale": "en", "strength": 2},
+        )
+        return [
+            ProfileListItem(
+                id=str(doc["_id"]),
+                name=doc["name"],
+                frozen=bool(doc.get("frozen", False)),
+                location=doc.get("location"),
+                email=doc.get("email"),
+                phone=doc.get("phone"),
+                created_at=doc["created_at"],
+                updated_at=doc["updated_at"],
+            )
+            for doc in docs
+        ]
 
     def list_profile_names_by_ids(self, profile_ids: list[str]) -> dict[str, str]:
         ids = list(dict.fromkeys(profile_ids))

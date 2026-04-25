@@ -33,7 +33,7 @@ export const ProfilesPage = () => {
         setError(null);
         const params = new URLSearchParams({
           skip: String((targetPage - 1) * PAGE_SIZE),
-          limit: String(PAGE_SIZE)
+          limit: String(PAGE_SIZE + 1)
         });
         if (searchQuery.trim()) {
           params.set("search", searchQuery.trim());
@@ -42,8 +42,8 @@ export const ProfilesPage = () => {
           params.set("frozen", String(statusFilter === "frozen"));
         }
         const response = await api.listProfileSummaries(params);
-        setItems(response);
-        setHasNextPage(response.length === PAGE_SIZE);
+        setItems(response.slice(0, PAGE_SIZE));
+        setHasNextPage(response.length > PAGE_SIZE);
       } catch (err) {
         setError((err as Error).message);
       }
@@ -54,10 +54,6 @@ export const ProfilesPage = () => {
   useEffect(() => {
     void load(page);
   }, [load, page]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, statusFilter]);
 
   useEffect(() => {
     if (items.length === 0 && page > 1) {
@@ -135,6 +131,7 @@ export const ProfilesPage = () => {
           className="mb-3 flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
+            setPage(1);
             setSearchQuery(searchInput.trim());
           }}
         >
@@ -156,7 +153,10 @@ export const ProfilesPage = () => {
             <select
               className="select select-bordered select-sm w-full"
               value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as ProfileStatusFilter)}
+              onChange={(event) => {
+                setPage(1);
+                setStatusFilter(event.target.value as ProfileStatusFilter);
+              }}
               aria-label="Filter profiles by status"
             >
               <option value="all">All</option>
@@ -252,7 +252,13 @@ export const ProfilesPage = () => {
             : "Click a row to view profile details."}
         </p>
       </section>
-      <Modal open={pendingAction !== null} onClose={closeActionModal} title={actionTitle} size="md">
+      <Modal
+        open={pendingAction !== null}
+        onClose={closeActionModal}
+        title={actionTitle}
+        size="md"
+        closeDisabled={actionSubmitting}
+      >
         <div className="space-y-3">
           {pendingAction?.kind === "freeze" && (
             <p className="text-sm leading-relaxed opacity-90">

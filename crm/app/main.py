@@ -637,20 +637,7 @@ def list_profile_summaries(
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ProfileListItem]:
-    profiles = repo.list_profiles(skip=skip, limit=limit, search=search, frozen=frozen)
-    return [
-        ProfileListItem(
-            id=profile.id,
-            name=profile.name,
-            frozen=profile.frozen,
-            location=profile.location,
-            email=profile.email,
-            phone=profile.phone,
-            created_at=profile.created_at,
-            updated_at=profile.updated_at,
-        )
-        for profile in profiles
-    ]
+    return repo.list_profile_summaries(skip=skip, limit=limit, search=search, frozen=frozen)
 
 
 @app.post("/api/v1/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)

@@ -26,7 +26,7 @@ export const DestructiveConfirmModal = ({
   children
 }: Props) => {
   return (
-    <Modal open={open} onClose={onClose} title={title} size="md">
+    <Modal open={open} onClose={onClose} title={title} size="md" closeDisabled={submitting}>
       <div className="space-y-3">
         <div className="text-sm leading-relaxed opacity-90">{children}</div>
         {error && <p className="text-sm text-error">{error}</p>}

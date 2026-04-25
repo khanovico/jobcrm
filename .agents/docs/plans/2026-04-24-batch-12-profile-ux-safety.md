@@ -38,9 +38,9 @@ Clear:
 - [x] Replace native destructive confirms with app modal flows and tests.
 - [x] Improve profile detail sections, save-in-place feedback, and dirty navigation guard.
 - [x] Add/update targeted frontend tests for every cleared issue.
-- [ ] Run targeted frontend/backend tests and `npm run build`.
-- [ ] Run code-reviewer and scalability-reviewer and address actionable findings.
-- [ ] Update audit rows for cleared Batch 12 issues.
+- [x] Run targeted frontend/backend tests and `npm run build`.
+- [x] Run code-reviewer and scalability-reviewer and address actionable findings.
+- [x] Update audit rows for cleared Batch 12 issues.
 - [ ] Commit Batch 12 and merge back into `codex/ux-performance-audit`.
 
 ## Parallel Work

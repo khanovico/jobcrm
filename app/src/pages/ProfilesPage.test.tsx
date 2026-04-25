@@ -114,7 +114,7 @@ describe("ProfilesPage", () => {
   it("uses profile summaries endpoint with search, status filter, and pagination", async () => {
     const fetchMock = vi.mocked(fetch);
     const listCalls: string[] = [];
-    const firstPageRows = Array.from({ length: 20 }, (_, index) => ({
+    const firstPageRows = Array.from({ length: 21 }, (_, index) => ({
       id: `p${index + 1}`,
       name: `Profile ${index + 1}`,
       location: "Remote",
@@ -158,7 +158,7 @@ describe("ProfilesPage", () => {
 
     expect(await screen.findByText("Profile 1")).toBeInTheDocument();
     expect(listCalls[0]).toContain("skip=0");
-    expect(listCalls[0]).toContain("limit=20");
+    expect(listCalls[0]).toContain("limit=21");
 
     await userEvent.type(screen.getByRole("textbox", { name: "Search profiles" }), "berlin");
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
@@ -177,6 +177,50 @@ describe("ProfilesPage", () => {
     expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
     expect(screen.getByText("Profile 21")).toBeInTheDocument();
     expect(listCalls.some((url) => url.includes("skip=20") && url.includes("frozen=true"))).toBe(true);
+
+    listCalls.splice(0, listCalls.length);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Filter profiles by status" }), "active");
+    await waitFor(() => {
+      expect(listCalls.some((url) => url.includes("skip=0") && url.includes("frozen=false"))).toBe(true);
+    });
+    expect(listCalls.every((url) => !url.includes("skip=20"))).toBe(true);
+  });
+
+  it("does not show a next page when the API returns exactly one page", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/v1/profiles/summary") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              Array.from({ length: 20 }, (_, index) => ({
+                id: `p${index + 1}`,
+                name: `Profile ${index + 1}`,
+                location: "Remote",
+                email: `profile${index + 1}@example.com`,
+                phone: "123",
+                frozen: false,
+                created_at: "2026-01-01T00:00:00Z",
+                updated_at: "2026-01-01T00:00:00Z"
+              }))
+            ),
+            { status: 200 }
+          )
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <ProfilesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Profile 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to next page" })).toBeDisabled();
   });
 
   it("shows delete modal and removes profile after confirmation", async () => {
