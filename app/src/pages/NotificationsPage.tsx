@@ -33,6 +33,7 @@ export const NotificationsPage = () => {
   const [showOnlyActive, setShowOnlyActive] = useState(true);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set());
@@ -42,13 +43,14 @@ export const NotificationsPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.listNotifications({
+      const response = await api.listNotificationsPage({
         unreadOnly,
         skip: (targetPage - 1) * PAGE_SIZE,
-        limit: PAGE_SIZE + 1
+        limit: PAGE_SIZE
       });
-      setItems(response.slice(0, PAGE_SIZE));
-      setHasNextPage(response.length > PAGE_SIZE);
+      setItems(response.items);
+      setTotal(response.total);
+      setHasNextPage(response.has_next);
       dispatchNotificationsInboxChanged();
     } catch (e) {
       setError((e as Error).message);
@@ -77,6 +79,15 @@ export const NotificationsPage = () => {
     [items]
   );
 
+  const reduceVisibleTotal = (count: number) => {
+    if (count <= 0) return;
+    setTotal((current) => {
+      const next = Math.max(0, current - count);
+      setHasNextPage(page * PAGE_SIZE < next);
+      return next;
+    });
+  };
+
   const allOnPageSelected =
     selectableIds.size > 0 &&
     [...selectableIds].every((id) => selectedIds.has(id));
@@ -100,11 +111,15 @@ export const NotificationsPage = () => {
 
   const markReadOptimistic = (id: string) => {
     const ts = nowIso();
-    setItems((prev) =>
-      prev.map((n) =>
+    const row = items.find((n) => n.id === id);
+    const removeFromActiveView = showOnlyActive && row && !row.read_at;
+    setItems((prev) => {
+      if (removeFromActiveView) return prev.filter((n) => n.id !== id);
+      return prev.map((n) =>
         n.id === id ? { ...n, read_at: ts } : n
-      )
-    );
+      );
+    });
+    if (removeFromActiveView) reduceVisibleTotal(1);
     dispatchNotificationsInboxChanged();
     void api.markNotificationRead(id).catch(() => {
       void load(page, showOnlyActive);
@@ -114,9 +129,11 @@ export const NotificationsPage = () => {
   const deleteSelected = (ids: string[]) => {
     if (ids.length === 0) return;
     const idSet = new Set(ids);
+    const removedCount = items.filter((n) => idSet.has(n.id)).length;
     setItems((prev) => prev.filter((n) => !idSet.has(n.id)));
     setSelectedIds(new Set());
     setDeleteConfirmIds(null);
+    reduceVisibleTotal(removedCount);
     dispatchNotificationsInboxChanged();
     void api.deleteNotificationsBulk(ids).catch(() => {
       void load(page, showOnlyActive);
@@ -128,11 +145,17 @@ export const NotificationsPage = () => {
     if (unreadSelected.length === 0) return;
     const ids = unreadSelected.map((n) => n.id);
     const ts = nowIso();
-    setItems((prev) =>
-      prev.map((n) =>
-        selectedIds.has(n.id) && !n.read_at ? { ...n, read_at: ts } : n
-      )
-    );
+    if (showOnlyActive) {
+      const idSet = new Set(ids);
+      setItems((prev) => prev.filter((n) => !idSet.has(n.id)));
+      reduceVisibleTotal(ids.length);
+    } else {
+      setItems((prev) =>
+        prev.map((n) =>
+          selectedIds.has(n.id) && !n.read_at ? { ...n, read_at: ts } : n
+        )
+      );
+    }
     dispatchNotificationsInboxChanged();
     void api.markNotificationsReadBulk(ids).catch(() => {
       void load(page, showOnlyActive);
@@ -289,6 +312,7 @@ export const NotificationsPage = () => {
         disabled={loading}
         pageSize={PAGE_SIZE}
         visibleCount={items.length}
+        totalCount={total}
         itemLabel="notifications"
       />
       {items.length === 0 && !loading && (

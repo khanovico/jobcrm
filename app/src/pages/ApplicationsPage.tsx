@@ -72,6 +72,7 @@ export const ApplicationsPage = () => {
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [tableSort, setTableSort] = useState<ApplicationTableSort>("updated_at_desc");
   const [profileNamesForFilter, setProfileNamesForFilter] = useState<string[]>([]);
   const [companySearch, setCompanySearch] = useState("");
@@ -207,10 +208,11 @@ export const ApplicationsPage = () => {
       try {
         const params = new URLSearchParams(listParamsKey);
         params.set("skip", String((targetPage - 1) * PAGE_SIZE));
-        params.set("limit", String(PAGE_SIZE + 1));
-        const applicationItems = await api.listApplications(params);
-        setItems(applicationItems.slice(0, PAGE_SIZE));
-        setHasNextPage(applicationItems.length > PAGE_SIZE);
+        params.set("limit", String(PAGE_SIZE));
+        const applicationPage = await api.listApplicationsPage(params);
+        setItems(applicationPage.items);
+        setTotal(applicationPage.total);
+        setHasNextPage(applicationPage.has_next);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -547,6 +549,7 @@ export const ApplicationsPage = () => {
           onPageChange={setPage}
           pageSize={PAGE_SIZE}
           visibleCount={items.length}
+          totalCount={total}
           itemLabel="applications"
         />
         {appliedProfileFilterOpen && appliedProfilesFilterPosition ? (

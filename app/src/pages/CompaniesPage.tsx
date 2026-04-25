@@ -94,6 +94,7 @@ export const CompaniesPage = () => {
   const [applyCompanyId, setApplyCompanyId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [sort, setSort] = useState<CompanySort>("updated_at_desc");
@@ -136,8 +137,9 @@ export const CompaniesPage = () => {
           force: options?.force,
           extraParams: listExtraParams
         });
-        setItems(response.slice(0, PAGE_SIZE));
-        setHasNextPage(response.length > PAGE_SIZE);
+        setItems(response.items);
+        setTotal(response.total);
+        setHasNextPage(response.has_next);
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -415,6 +417,7 @@ export const CompaniesPage = () => {
           disabled={loading}
           pageSize={PAGE_SIZE}
           visibleCount={items.length}
+          totalCount={total}
           itemLabel="companies"
         />
         <p className="mt-2 text-xs opacity-60">Open the company name link to view and edit full company details.</p>

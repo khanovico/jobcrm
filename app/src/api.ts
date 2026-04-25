@@ -22,6 +22,7 @@ import {
   IndustryOptionsResponse,
   IndustryUpdatePayload,
   PerProfileApplication,
+  PagedResponse,
   Profile,
   ProfileCreatePayload,
   ProfileListItem,
@@ -96,6 +97,22 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
+const toPagedResponse = <T>(
+  response: PagedResponse<T> | T[],
+  params?: URLSearchParams
+): PagedResponse<T> => {
+  if (!Array.isArray(response)) return response;
+  const rawLimit = Number(params?.get("limit"));
+  const rawSkip = Number(params?.get("skip"));
+  const hasLimit = Number.isFinite(rawLimit) && rawLimit >= 0;
+  const skip = Number.isFinite(rawSkip) && rawSkip > 0 ? rawSkip : 0;
+  return {
+    items: hasLimit ? response.slice(0, rawLimit) : response,
+    total: skip + response.length,
+    has_next: hasLimit ? response.length > rawLimit : false
+  };
+};
+
 export const api = {
   async login(email: string, password: string): Promise<string> {
     const result = await request<{ access_token: string }>("/api/v1/auth/login", {
@@ -141,6 +158,12 @@ export const api = {
     request<Company[]>(`/api/v1/companies${params ? `?${params.toString()}` : ""}`),
   listCompanySummaries: (params?: URLSearchParams) =>
     request<CompanyListItem[]>(`/api/v1/companies/summary${params ? `?${params.toString()}` : ""}`),
+  listCompanySummariesPage: async (params?: URLSearchParams) => {
+    const response = await request<PagedResponse<CompanyListItem> | CompanyListItem[]>(
+      `/api/v1/companies/summary/page${params ? `?${params.toString()}` : ""}`
+    );
+    return toPagedResponse(response, params);
+  },
   createCompany: (
     payload: Partial<Company> & { name: string; acknowledge_reuse_of_archived_company?: boolean }
   ) => request<Company>("/api/v1/companies", { method: "POST", body: JSON.stringify(payload) }),
@@ -160,6 +183,12 @@ export const api = {
     request<Profile[]>(`/api/v1/profiles${params ? `?${params.toString()}` : ""}`),
   listProfileSummaries: (params?: URLSearchParams) =>
     request<ProfileListItem[]>(`/api/v1/profiles/summary${params ? `?${params.toString()}` : ""}`),
+  listProfileSummariesPage: async (params?: URLSearchParams) => {
+    const response = await request<PagedResponse<ProfileListItem> | ProfileListItem[]>(
+      `/api/v1/profiles/summary/page${params ? `?${params.toString()}` : ""}`
+    );
+    return toPagedResponse(response, params);
+  },
   getProfile: (id: string) => request<Profile>(`/api/v1/profiles/${id}`),
   createProfile: (payload: ProfileCreatePayload) =>
     request<Profile>("/api/v1/profiles", { method: "POST", body: JSON.stringify(payload) }),
@@ -168,6 +197,12 @@ export const api = {
   deleteProfile: (id: string) => request<void>(`/api/v1/profiles/${id}`, { method: "DELETE" }),
   listApplications: (params?: URLSearchParams) =>
     request<ApplicationListItem[]>(`/api/v1/applications${params ? `?${params.toString()}` : ""}`),
+  listApplicationsPage: async (params?: URLSearchParams) => {
+    const response = await request<PagedResponse<ApplicationListItem> | ApplicationListItem[]>(
+      `/api/v1/applications/page${params ? `?${params.toString()}` : ""}`
+    );
+    return toPagedResponse(response, params);
+  },
   listApplicationAppliedProfileFacets: (params?: URLSearchParams) =>
     request<ApplicationAppliedProfileFacets>(
       `/api/v1/applications/applied-profile-facets${params ? `?${params.toString()}` : ""}`
@@ -263,6 +298,16 @@ export const api = {
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
     return request<UserNotification[]>(`/api/v1/notifications?${params.toString()}`);
   },
+  listNotificationsPage: async (options?: { unreadOnly?: boolean; skip?: number; limit?: number }) => {
+    const params = new URLSearchParams();
+    params.set("unread_only", options?.unreadOnly ? "true" : "false");
+    if (options?.skip !== undefined) params.set("skip", String(options.skip));
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    const response = await request<PagedResponse<UserNotification> | UserNotification[]>(
+      `/api/v1/notifications/page?${params.toString()}`
+    );
+    return toPagedResponse(response, params);
+  },
   getUnreadNotificationsCount: () =>
     request<{ count: number }>("/api/v1/notifications/unread-count"),
   getNotificationsSummary: (latestLimit = 10) =>
@@ -284,5 +329,11 @@ export const api = {
       body: JSON.stringify({ ids })
     }),
   listAuditEvents: (params?: URLSearchParams) =>
-    request<AuditEvent[]>(`/api/v1/audit-events${params ? `?${params.toString()}` : ""}`)
+    request<AuditEvent[]>(`/api/v1/audit-events${params ? `?${params.toString()}` : ""}`),
+  listAuditEventsPage: async (params?: URLSearchParams) => {
+    const response = await request<PagedResponse<AuditEvent> | AuditEvent[]>(
+      `/api/v1/audit-events/page${params ? `?${params.toString()}` : ""}`
+    );
+    return toPagedResponse(response, params);
+  }
 };

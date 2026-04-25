@@ -158,7 +158,7 @@ describe("ProfilesPage", () => {
 
     expect(await screen.findByText("Profile 1")).toBeInTheDocument();
     expect(listCalls[0]).toContain("skip=0");
-    expect(listCalls[0]).toContain("limit=21");
+    expect(listCalls[0]).toContain("limit=20");
 
     await userEvent.type(screen.getByRole("textbox", { name: "Search profiles" }), "berlin");
     await userEvent.click(screen.getByRole("button", { name: "Search" }));

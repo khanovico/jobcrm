@@ -10,6 +10,7 @@ from app.models import (
     ApplicationCreate,
     ApplicationStatus,
     ActorType,
+    AgentApiKeyCreate,
     AuditListQuery,
     CompanyCreate,
     CompanyResearchStatus,
@@ -479,6 +480,80 @@ def test_company_summary_returns_compact_fields_and_respects_filters_sort_pagina
         "created_at",
         "updated_at",
     }
+
+
+def test_page_endpoints_return_total_metadata_and_bounded_items() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    company = client.post("/api/v1/companies", json={"name": "Acme"}, headers=headers).json()
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+    first_application = client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    ).json()
+    client.post(
+        "/api/v1/applications",
+        json={"company_id": company["id"], "status": "company_research_pending"},
+        headers=headers,
+    )
+    repo.create_notification(
+        user_id=repo.get_user_by_email("test@example.com").id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id=first_application["id"], message="Ready"),
+    )
+    repo.create_notification(
+        user_id=repo.get_user_by_email("test@example.com").id,
+        notification=NotificationKind.COMPANY_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id=company["id"], message="Company ready"),
+    )
+
+    company_page = client.get(
+        "/api/v1/companies/summary/page",
+        params={"limit": 1, "skip": 0},
+        headers=headers,
+    ).json()
+    profile_page = client.get(
+        "/api/v1/profiles/summary/page",
+        params={"limit": 1, "skip": 0},
+        headers=headers,
+    ).json()
+    application_page = client.get(
+        "/api/v1/applications/page",
+        params={"limit": 1, "skip": 0},
+        headers=headers,
+    ).json()
+    notification_page = client.get(
+        "/api/v1/notifications/page",
+        params={"limit": 1, "skip": 0, "unread_only": "true"},
+        headers=headers,
+    ).json()
+    audit_page = client.get(
+        "/api/v1/audit-events/page",
+        params={"limit": 1, "skip": 0},
+        headers=headers,
+    ).json()
+
+    assert company_page["total"] == 1
+    assert company_page["has_next"] is False
+    assert len(company_page["items"]) == 1
+    assert profile_page["total"] == 1
+    assert profile_page["items"][0]["id"] == profile["id"]
+    assert application_page["total"] == 2
+    assert application_page["has_next"] is True
+    assert len(application_page["items"]) == 1
+    assert notification_page["total"] == 2
+    assert notification_page["has_next"] is True
+    assert len(notification_page["items"]) == 1
+    assert audit_page["total"] >= 1
+    assert "items" in audit_page
+    assert "has_next" in audit_page
 
 
 def test_user_role_profiles_are_read_only() -> None:
@@ -2092,17 +2167,28 @@ class _FakeMongoCollection:
 
     def replace_one(self, query: dict, payload: dict, upsert: bool = False) -> None:
         self.replacements.append((query, payload, upsert))
+        for index, doc in enumerate(self.docs):
+            if _matches_mongo_query(doc, query):
+                self.docs[index] = payload
+                return
+        if upsert:
+            self.docs.append(payload)
 
     def delete_one(self, query: dict) -> None:
         self.deletes.append(query)
+        self.docs = [doc for doc in self.docs if not _matches_mongo_query(doc, query)]
 
     def delete_many(self, query: dict) -> None:
         if query == {}:
             self.full_rewrites.append(query)
+            self.docs = []
+        else:
+            self.docs = [doc for doc in self.docs if not _matches_mongo_query(doc, query)]
         self.deletes.append(query)
 
     def insert_many(self, docs: list[dict]) -> None:
         self.inserts.append(docs)
+        self.docs.extend(docs)
 
     def find(self, query: dict | None = None, projection: dict[str, int] | None = None):
         query = query or {}
@@ -2206,9 +2292,45 @@ def _sync_fake_mongo_docs_from_repo(
 
 def _mongo_repo_for_query_tests() -> tuple[MongoRepository, _FakeMongoDb]:
     repo = object.__new__(MongoRepository)
+    InMemoryRepository.__init__(repo)
     db = _FakeMongoDb()
     repo.db = db
     return repo, db
+
+
+def test_mongo_repository_startup_does_not_full_load_domain_collections(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = _FakeMongoDb()
+
+    class FakeMongoClient:
+        def __init__(self, uri: str) -> None:
+            self.uri = uri
+
+        def __getitem__(self, name: str) -> _FakeMongoDb:
+            return db
+
+    monkeypatch.setattr("app.repository.MongoClient", FakeMongoClient)
+
+    repo = MongoRepository()
+
+    assert repo.db is db
+    large_collections = {
+        "users",
+        "industries",
+        "companies",
+        "profiles",
+        "applications",
+        "audit_events",
+        "notifications",
+        "agent_api_keys",
+        "per_profile_applications",
+        "emails",
+    }
+    assert {
+        name: db[name].find_queries
+        for name in large_collections
+        if db[name].find_queries
+    } == {}
+    assert db.app_settings.find_queries == [{"_id": "worker_settings"}]
 
 
 def test_mongo_repository_ensures_indexes_for_query_backed_lists() -> None:
@@ -2506,6 +2628,68 @@ def test_mongo_repository_industry_picker_helpers_use_query_paths() -> None:
     assert db.industries.collations[-1] == {"locale": "en", "strength": 2}
 
 
+def test_mongo_repository_direct_reads_query_mongo_without_preloaded_caches() -> None:
+    seed = InMemoryRepository()
+    user = seed.create_user(
+        UserCreate(name="Admin", email="admin@example.com", password="secret1234", role="admin"),
+        "hashed",
+    )
+    industry = seed.create_industry(IndustryCreate(name="Analytics"))
+    company = seed.create_company(CompanyCreate(name="Acme Labs"))
+    profile = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    application = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=user.id,
+    )
+    ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+    )
+    email = seed.create_email(
+        EmailCreate(per_profile_application_id=ppa.id, kind=EmailKind.cold, content="Hello")
+    )
+    key = seed.create_agent_api_key(AgentApiKeyCreate(name="Agent", scopes=["applications:read"]), "hash-1")
+    notification = seed.create_notification(
+        user_id=user.id,
+        notification=NotificationKind.APPLICATION_UPDATE,
+        notification_type=NotificationSeverity.SUCCESS,
+        payload=NotificationPayload(id=application.id, message="Ready"),
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    for collection_name in [
+        "users",
+        "industries",
+        "companies",
+        "profiles",
+        "applications",
+        "per_profile_applications",
+        "emails",
+        "agent_api_keys",
+        "notifications",
+    ]:
+        db[collection_name].docs = [_mongo_doc(item) for item in getattr(seed, collection_name).values()]
+
+    assert repo.get_user_by_email(user.email).id == user.id
+    assert repo.get_user(user.id).email == user.email
+    assert repo.has_registered_user() is True
+    assert repo.get_industry(industry.id).name == "Analytics"
+    assert repo.get_company(company.id).has_application is True
+    assert repo.find_company_by_normalized_name("Acme Labs").id == company.id
+    assert repo.get_profile(profile.id).email == profile.email
+    assert repo.get_application(application.id).company_id == company.id
+    assert [row.id for row in repo.list_applications_by_status(ApplicationStatus.ppa_pending, 10)] == [
+        application.id
+    ]
+    assert repo.count_unread_notifications(user.id) == 1
+    assert repo.list_agent_api_keys()[0].id == key.id
+    assert repo.get_agent_api_key_by_hash("hash-1").id == key.id
+    assert repo.get_per_profile_application(ppa.id).profile_id == profile.id
+    assert [row.id for row in repo.list_emails_for_ppa(ppa.id)] == [email.id]
+    assert repo.get_email(email.id).content == "Hello"
+    assert db.users.find_queries[:2] == [{"email": user.email}, {"_id": user.id}]
+    assert db.users.count_queries[-1] == {}
+    assert db.notifications.count_queries[-1] == {"user_id": user.id, "read_at": None}
+
+
 def test_mongo_repository_list_applications_uses_query_page_and_bounded_enrichment() -> None:
     seed = InMemoryRepository()
     company = seed.create_company(CompanyCreate(name="Acme"))
@@ -2800,6 +2984,33 @@ def test_mongo_repository_application_profile_filter_uses_aggregation_when_avail
     assert {"$skip": 5} in pipeline
     assert {"$limit": 10} in pipeline
     assert db.applications.distinct_calls == []
+
+
+def test_mongo_repository_application_profile_count_uses_aggregation_when_available() -> None:
+    repo, db = _mongo_repo_for_query_tests()
+    aggregate_pipelines: list[list[dict]] = []
+
+    def aggregate(pipeline: list[dict]) -> list[dict]:
+        aggregate_pipelines.append(pipeline)
+        return [{"total": 7}]
+
+    db.applications.aggregate = aggregate  # type: ignore[attr-defined]
+
+    total = repo.count_applications(
+        status=ApplicationStatus.ppa_pending,
+        applied_profile_names=["Alex Dev"],
+    )
+
+    assert total == 7
+    pipeline = aggregate_pipelines[-1]
+    assert pipeline[0] == {"$match": {"status": {"$in": ["analysis_ready", "ppa_pending"]}}}
+    assert any(stage.get("$lookup", {}).get("from") == "per_profile_applications" for stage in pipeline)
+    assert any(stage.get("$lookup", {}).get("from") == "profiles" for stage in pipeline)
+    assert {"$match": {"first_profile.name": {"$in": ["Alex Dev"]}}} in pipeline
+    assert pipeline[-1] == {"$count": "total"}
+    assert db.applications.distinct_calls == []
+    assert db.per_profile_applications.find_queries == []
+    assert db.profiles.find_queries == []
 
 
 def test_mongo_repository_application_profile_facets_use_aggregation_when_available() -> None:
@@ -3205,6 +3416,58 @@ def test_mongo_repository_updates_company_and_related_apps_without_full_sync() -
     assert db.companies.replacements[-1][2] is True
     assert db.applications.replacements[-1][0] == {"_id": application.id}
     assert db.applications.replacements[-1][1]["status"] == ApplicationStatus.ppa_pending.value
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_repository_mutations_hydrate_only_target_documents_from_mongo() -> None:
+    seed = InMemoryRepository()
+    company = seed.create_company(CompanyCreate(name="Acme"))
+    profile = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    application = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    ppa = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+    )
+    email = seed.create_email(
+        EmailCreate(per_profile_application_id=ppa.id, kind=EmailKind.cold, content="Hello")
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    for collection_name in [
+        "companies",
+        "profiles",
+        "applications",
+        "per_profile_applications",
+        "emails",
+    ]:
+        db[collection_name].docs = [_mongo_doc(item) for item in getattr(seed, collection_name).values()]
+
+    updated = repo.update_company(
+        company.id,
+        CompanyUpdate(research_status=CompanyResearchStatus.indexed),
+    )
+
+    assert updated is not None
+    assert db.companies.find_queries[0] == {"_id": company.id}
+    assert db.applications.find_queries[0] == {"company_id": company.id}
+    assert db.applications.replacements[-1][0] == {"_id": application.id}
+    assert db.applications.replacements[-1][1]["status"] == ApplicationStatus.ppa_pending.value
+    db.assert_no_full_rewrites()
+    db.clear_ops()
+
+    reset = repo.clear_application_to_company_research_pending(application.id)
+
+    assert reset is not None
+    assert db.applications.find_queries[0] == {"_id": application.id}
+    assert db.per_profile_applications.find_queries[0] == {
+        "application_id": {"$in": [application.id]}
+    }
+    assert db.emails.find_queries[0] == {
+        "per_profile_application_id": {"$in": [ppa.id]}
+    }
+    assert {"_id": ppa.id} in db.per_profile_applications.deletes
+    assert {"_id": email.id} in db.emails.deletes
     db.assert_no_full_rewrites()
 
 

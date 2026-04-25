@@ -52,6 +52,7 @@ export const CompanyDetailPage = () => {
   const [applications, setApplications] = useState<Application[]>([]);
   const [applicationsPage, setApplicationsPage] = useState(1);
   const [hasNextApplicationsPage, setHasNextApplicationsPage] = useState(false);
+  const [applicationsTotal, setApplicationsTotal] = useState(0);
   const [industries, setIndustries] = useState<Industry[]>([]);
   const [industryOptions, setIndustryOptions] = useState<Industry[]>([]);
   const [industrySearchInput, setIndustrySearchInput] = useState("");
@@ -128,11 +129,12 @@ export const CompanyDetailPage = () => {
         const params = new URLSearchParams({
           company_id: companyId,
           skip: String((targetPage - 1) * COMPANY_APPLICATIONS_PAGE_SIZE),
-          limit: String(COMPANY_APPLICATIONS_PAGE_SIZE + 1)
+          limit: String(COMPANY_APPLICATIONS_PAGE_SIZE)
         });
-        const apps = await api.listApplications(params);
-        setApplications(apps.slice(0, COMPANY_APPLICATIONS_PAGE_SIZE));
-        setHasNextApplicationsPage(apps.length > COMPANY_APPLICATIONS_PAGE_SIZE);
+        const response = await api.listApplicationsPage(params);
+        setApplications(response.items);
+        setApplicationsTotal(response.total);
+        setHasNextApplicationsPage(response.has_next);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -625,6 +627,7 @@ export const CompanyDetailPage = () => {
                     onPageChange={setApplicationsPage}
                     pageSize={COMPANY_APPLICATIONS_PAGE_SIZE}
                     visibleCount={applications.length}
+                    totalCount={applicationsTotal}
                     itemLabel="applications"
                   />
                 </>

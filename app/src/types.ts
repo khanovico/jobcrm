@@ -156,6 +156,12 @@ export type ApplicationListItem = Application & {
   applied_profiles: AppliedProfileName[];
 };
 
+export type PagedResponse<T> = {
+  items: T[];
+  total: number;
+  has_next: boolean;
+};
+
 export type ApplicationSearchSummary = {
   id: string;
   company_id: string;

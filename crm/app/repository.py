@@ -347,6 +347,15 @@ class BaseRepository:
     ) -> list[CompanyListItem]:
         raise NotImplementedError
 
+    def count_company_summaries(
+        self,
+        *,
+        search: str | None,
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> int:
+        raise NotImplementedError
+
     def list_companies_unindexed(self, limit: int) -> list[Company]:
         """Companies with research_status=pending, oldest created first (FIFO)."""
         raise NotImplementedError
@@ -410,6 +419,9 @@ class BaseRepository:
             for profile in self.list_profiles(skip=skip, limit=limit, search=search, frozen=frozen)
         ]
 
+    def count_profile_summaries(self, *, search: str | None, frozen: bool | None = None) -> int:
+        raise NotImplementedError
+
     def list_profile_ids(self, skip: int, limit: int, include_frozen: bool = True) -> list[str]:
         raise NotImplementedError
 
@@ -449,6 +461,21 @@ class BaseRepository:
         applied_profile_names: list[str] | None = None,
         workflow_filter: Literal["company_research"] | None = None,
     ) -> list[ApplicationListItem]:
+        raise NotImplementedError
+
+    def count_applications(
+        self,
+        *,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        applied_profile_names: list[str] | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
+    ) -> int:
         raise NotImplementedError
 
     def list_application_applied_profile_facets(
@@ -565,6 +592,9 @@ class BaseRepository:
     def list_audit_events(self, query: AuditListQuery) -> list[AuditEvent]:
         raise NotImplementedError
 
+    def count_audit_events(self, query: AuditListQuery) -> int:
+        raise NotImplementedError
+
     def create_notification(
         self,
         *,
@@ -578,6 +608,9 @@ class BaseRepository:
         raise NotImplementedError
 
     def list_notifications(self, user_id: str, q: NotificationListQuery) -> list[UserNotification]:
+        raise NotImplementedError
+
+    def count_notifications(self, user_id: str, q: NotificationListQuery) -> int:
         raise NotImplementedError
 
     def count_unread_notifications(self, user_id: str) -> int:
@@ -851,6 +884,23 @@ class InMemoryRepository(BaseRepository):
                 has_application=has_application,
             )
         ]
+
+    def count_company_summaries(
+        self,
+        *,
+        search: str | None,
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> int:
+        return len(
+            self.list_companies(
+                skip=0,
+                limit=len(self.companies),
+                search=search,
+                research_status=research_status,
+                has_application=has_application,
+            )
+        )
 
     def list_companies_unindexed(self, limit: int) -> list[Company]:
         values = [
@@ -1157,6 +1207,16 @@ class InMemoryRepository(BaseRepository):
         values.sort(key=lambda p: p.name.lower())
         return values[skip : skip + limit]
 
+    def count_profile_summaries(self, *, search: str | None, frozen: bool | None = None) -> int:
+        return len(
+            self.list_profiles(
+                skip=0,
+                limit=len(self.profiles),
+                search=search,
+                frozen=frozen,
+            )
+        )
+
     def list_profile_ids(self, skip: int, limit: int, include_frozen: bool = True) -> list[str]:
         values = sorted(self.profiles.values(), key=lambda p: p.created_at)
         if not include_frozen:
@@ -1345,6 +1405,41 @@ class InMemoryRepository(BaseRepository):
             )
             for a in sliced
         ]
+
+    def count_applications(
+        self,
+        *,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        applied_profile_names: list[str] | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
+    ) -> int:
+        values = self._filter_applications_for_list(
+            status=status,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            created_by_user_id=created_by_user_id,
+            company_search=company_search,
+            workflow_filter=workflow_filter,
+        )
+        selected_profile_names = set(_normalized_nonempty_text_list(applied_profile_names))
+        if selected_profile_names:
+            first_profile_name_by_app = self._first_applied_profile_name_by_application_ids(
+                [application.id for application in values]
+            )
+            values = [
+                application
+                for application in values
+                if first_profile_name_by_app.get(application.id) in selected_profile_names
+            ]
+        return len(values)
 
     def list_application_applied_profile_facets(
         self,
@@ -1664,6 +1759,13 @@ class InMemoryRepository(BaseRepository):
         rows.sort(key=lambda r: r.created_at, reverse=True)
         return rows[query.skip : query.skip + query.limit]
 
+    def count_audit_events(self, query: AuditListQuery) -> int:
+        return len(
+            self.list_audit_events(
+                query.model_copy(update={"skip": 0, "limit": len(self.audit_events)})
+            )
+        )
+
     def create_notification(
         self,
         *,
@@ -1696,6 +1798,12 @@ class InMemoryRepository(BaseRepository):
             rows = [n for n in rows if n.read_at is None]
         rows.sort(key=lambda n: n.timestamp, reverse=True)
         return rows[q.skip : q.skip + q.limit]
+
+    def count_notifications(self, user_id: str, q: NotificationListQuery) -> int:
+        rows = [n for n in self.notifications.values() if n.user_id == user_id]
+        if q.unread_only:
+            rows = [n for n in rows if n.read_at is None]
+        return len(rows)
 
     def count_unread_notifications(self, user_id: str) -> int:
         return sum(1 for note in self.notifications.values() if note.user_id == user_id and note.read_at is None)
@@ -1897,7 +2005,6 @@ class MongoRepository(InMemoryRepository):
         self.client = MongoClient(settings.mongo_uri)
         self.db = self.client[settings.mongo_db_name]
         self._ensure_indexes()
-        self._load()
         self._load_workers_mongo()
 
     def _ensure_indexes(self) -> None:
@@ -2009,6 +2116,49 @@ class MongoRepository(InMemoryRepository):
 
     def _models_from_mongo_rows(self, rows: Iterable[dict], model):
         return [self._model_from_mongo_row(row, model) for row in rows]
+
+    def _cache_mongo_model(self, collection_name: str, item) -> None:
+        getattr(self, collection_name)[item.id] = item
+
+    def _get_mongo_model(self, collection_name: str, model, item_id: str):
+        doc = self.db[collection_name].find_one({"_id": item_id})
+        if not doc:
+            return None
+        item = self._model_from_mongo_row(doc, model)
+        self._cache_mongo_model(collection_name, item)
+        return item
+
+    def _hydrate_mongo_models(self, collection_name: str, model, query: dict) -> dict[str, object]:
+        items = self._mongo_find_page(collection_name, query, model)
+        target = getattr(self, collection_name)
+        for item in items:
+            target[item.id] = item
+        return {item.id: item for item in items}
+
+    def _hydrate_applications_for_company(self, company_id: str) -> dict[str, Application]:
+        return self._hydrate_mongo_models(
+            "applications", Application, {"company_id": company_id}
+        )
+
+    def _hydrate_ppas_for_applications(
+        self, application_ids: set[str]
+    ) -> dict[str, PerProfileApplication]:
+        if not application_ids:
+            return {}
+        return self._hydrate_mongo_models(
+            "per_profile_applications",
+            PerProfileApplication,
+            {"application_id": {"$in": sorted(application_ids)}},
+        )
+
+    def _hydrate_emails_for_ppas(self, ppa_ids: set[str]) -> dict[str, Email]:
+        if not ppa_ids:
+            return {}
+        return self._hydrate_mongo_models(
+            "emails",
+            Email,
+            {"per_profile_application_id": {"$in": sorted(ppa_ids)}},
+        )
 
     def _mongo_find_page(
         self,
@@ -2186,6 +2336,113 @@ class MongoRepository(InMemoryRepository):
             company_ids = list(self._company_ids_with_applications_mongo())
             query["_id"] = {"$in" if has_application else "$nin": company_ids}
         return query
+
+    def get_user_by_email(self, email: str) -> UserInDB | None:
+        doc = self.db.users.find_one({"email": email})
+        if not doc:
+            return None
+        user = self._model_from_mongo_row(doc, UserInDB)
+        self.users[user.id] = user
+        return user
+
+    def get_user(self, user_id: str) -> UserInDB | None:
+        return self._get_mongo_model("users", UserInDB, user_id)
+
+    def has_registered_user(self) -> bool:
+        return self.db.users.count_documents({}) > 0
+
+    def get_industry(self, industry_id: str) -> Industry | None:
+        return self._get_mongo_model("industries", Industry, industry_id)
+
+    def get_company(self, company_id: str) -> Company | None:
+        company = self._get_mongo_model("companies", Company, company_id)
+        if not company:
+            return None
+        return self._annotate_companies_has_application_mongo([company])[0]
+
+    def find_company_by_normalized_name(self, name: str) -> Company | None:
+        target = normalize_company_name(name)
+        candidates = self._mongo_find_page(
+            "companies",
+            {"name": self._literal_contains_filter(name)},
+            Company,
+            limit=25,
+            collation={"locale": "en", "strength": 2},
+        )
+        for company in candidates:
+            self.companies[company.id] = company
+            if normalize_company_name(company.name) == target:
+                return self._annotate_companies_has_application_mongo([company])[0]
+        return None
+
+    def list_companies_unindexed(self, limit: int) -> list[Company]:
+        return self._annotate_companies_has_application_mongo(
+            self._mongo_find_page(
+                "companies",
+                {
+                    "$and": [
+                        {"archived": {"$ne": True}},
+                        self._company_research_status_filter(CompanyResearchStatus.pending),
+                    ]
+                },
+                Company,
+                sort=[("created_at", 1)],
+                limit=limit,
+            )
+        )
+
+    def get_profile(self, profile_id: str) -> Profile | None:
+        return self._get_mongo_model("profiles", Profile, profile_id)
+
+    def get_application(self, application_id: str) -> Application | None:
+        return self._get_mongo_model("applications", Application, application_id)
+
+    def list_applications_by_status(self, status: ApplicationStatus, limit: int) -> list[Application]:
+        return self._mongo_find_page(
+            "applications",
+            {"status": {"$in": self._application_status_values_for_query(status)}},
+            Application,
+            sort=[("created_at", 1)],
+            limit=limit,
+        )
+
+    def count_unread_notifications(self, user_id: str) -> int:
+        return self.db.notifications.count_documents({"user_id": user_id, "read_at": None})
+
+    def list_agent_api_keys(self) -> list[AgentApiKeyInDB]:
+        keys = self._mongo_find_page(
+            "agent_api_keys",
+            {},
+            AgentApiKeyInDB,
+            sort=[("created_at", -1)],
+        )
+        for key in keys:
+            self.agent_api_keys[key.id] = key
+        return keys
+
+    def get_agent_api_key_by_hash(self, key_hash: str) -> AgentApiKeyInDB | None:
+        doc = self.db.agent_api_keys.find_one({"key_hash": key_hash})
+        if not doc:
+            return None
+        key = self._model_from_mongo_row(doc, AgentApiKeyInDB)
+        self.agent_api_keys[key.id] = key
+        return key
+
+    def get_per_profile_application(self, ppa_id: str) -> PerProfileApplication | None:
+        return self._get_mongo_model(
+            "per_profile_applications", PerProfileApplication, ppa_id
+        )
+
+    def list_emails_for_ppa(self, per_profile_application_id: str) -> list[Email]:
+        return self._mongo_find_page(
+            "emails",
+            {"per_profile_application_id": per_profile_application_id},
+            Email,
+            sort=[("created_at", 1)],
+        )
+
+    def get_email(self, email_id: str) -> Email | None:
+        return self._get_mongo_model("emails", Email, email_id)
 
     def _sync(self) -> None:
         # Repair/bootstrap fallback only. Normal writes must use targeted helpers below.
@@ -2397,6 +2654,17 @@ class MongoRepository(InMemoryRepository):
         )
         return self._annotate_company_summaries_has_application_mongo(companies)
 
+    def count_company_summaries(
+        self,
+        *,
+        search: str | None,
+        research_status: CompanyResearchStatus | None = None,
+        has_application: bool | None = None,
+    ) -> int:
+        return self.db.companies.count_documents(
+            self._company_list_query(search, research_status, has_application)
+        )
+
     def list_company_research_tasks(
         self, limit: int
     ) -> list[AgentCompanyResearchTaskSummary]:
@@ -2521,6 +2789,35 @@ class MongoRepository(InMemoryRepository):
             )
             for doc in docs
         ]
+
+    def _profile_list_query(
+        self,
+        search: str | None,
+        *,
+        include_frozen: bool = True,
+        frozen: bool | None = None,
+    ) -> dict[str, object]:
+        query: dict[str, object] = {}
+        if frozen is True:
+            query["frozen"] = True
+        elif frozen is False:
+            query["frozen"] = {"$ne": True}
+        elif not include_frozen:
+            query["frozen"] = {"$ne": True}
+        if search:
+            search_filter = self._literal_contains_filter(search)
+            query["$or"] = [
+                {"name": search_filter},
+                {"email": search_filter},
+                {"location": search_filter},
+                {"niche_info_md": search_filter},
+            ]
+        return query
+
+    def count_profile_summaries(self, *, search: str | None, frozen: bool | None = None) -> int:
+        return self.db.profiles.count_documents(
+            self._profile_list_query(search, frozen=frozen)
+        )
 
     def list_profile_names_by_ids(self, profile_ids: list[str]) -> dict[str, str]:
         ids = list(dict.fromkeys(profile_ids))
@@ -2739,6 +3036,23 @@ class MongoRepository(InMemoryRepository):
         pipeline.append({"$limit": limit})
         return list(aggregate(pipeline))
 
+    def _mongo_count_applications_by_first_profile(
+        self, *, query: dict[str, object], profile_names: list[str]
+    ) -> int | None:
+        aggregate = getattr(self.db.applications, "aggregate", None)
+        if not callable(aggregate):
+            return None
+        pipeline: list[dict[str, object]] = [
+            {"$match": query},
+            *self._mongo_application_first_profile_lookup_stages(),
+            {"$match": {"first_profile.name": {"$in": profile_names}}},
+            {"$count": "total"},
+        ]
+        rows = list(aggregate(pipeline))
+        if not rows:
+            return 0
+        return int(rows[0].get("total", 0))
+
     def _mongo_application_profile_facets_with_aggregation(
         self, *, query: dict[str, object], limit: int
     ) -> list[str] | None:
@@ -2870,6 +3184,46 @@ class MongoRepository(InMemoryRepository):
         )
         return sorted(set(first_profile_name_by_app.values()), key=lambda name: name.lower())[:limit]
 
+    def count_applications(
+        self,
+        *,
+        status: ApplicationStatus | None,
+        company_id: str | None = None,
+        applied: bool | None = None,
+        email_sent: bool | None = None,
+        exclude_status: ApplicationStatus | None = None,
+        created_by_user_id: str | None = None,
+        company_search: str | None = None,
+        applied_profile_names: list[str] | None = None,
+        workflow_filter: Literal["company_research"] | None = None,
+    ) -> int:
+        query = self._mongo_application_query(
+            status=status,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            created_by_user_id=created_by_user_id,
+            company_search=company_search,
+            workflow_filter=workflow_filter,
+        )
+        if query is None:
+            return 0
+        selected_profile_names = _normalized_nonempty_text_list(applied_profile_names)
+        if selected_profile_names:
+            aggregated_count = self._mongo_count_applications_by_first_profile(
+                query=query,
+                profile_names=selected_profile_names,
+            )
+            if aggregated_count is not None:
+                return aggregated_count
+            return len(
+                self._mongo_application_ids_matching_applied_profile_names(
+                    query, selected_profile_names
+                )
+            )
+        return int(self.db.applications.count_documents(query))
+
     def list_agent_application_tasks(
         self, status: ApplicationStatus, limit: int
     ) -> list[AgentApplicationTaskSummary]:
@@ -2911,6 +3265,17 @@ class MongoRepository(InMemoryRepository):
         ]
 
     def list_audit_events(self, query: AuditListQuery) -> list[AuditEvent]:
+        mongo_query = self._mongo_audit_query(query)
+        return self._mongo_find_page(
+            "audit_events",
+            mongo_query,
+            AuditEvent,
+            sort=[("created_at", -1)],
+            skip=query.skip,
+            limit=query.limit,
+        )
+
+    def _mongo_audit_query(self, query: AuditListQuery) -> dict[str, object]:
         mongo_query: dict[str, object] = {}
         if query.actor_type:
             mongo_query["actor_type"] = query.actor_type.value
@@ -2925,14 +3290,10 @@ class MongoRepository(InMemoryRepository):
             created_at["$lte"] = self._mongo_json_datetime(query.to_ts)
         if created_at:
             mongo_query["created_at"] = created_at
-        return self._mongo_find_page(
-            "audit_events",
-            mongo_query,
-            AuditEvent,
-            sort=[("created_at", -1)],
-            skip=query.skip,
-            limit=query.limit,
-        )
+        return mongo_query
+
+    def count_audit_events(self, query: AuditListQuery) -> int:
+        return int(self.db.audit_events.count_documents(self._mongo_audit_query(query)))
 
     def global_search(self, query: str, limit: int) -> GlobalSearchResult:
         q = query.strip()
@@ -3021,6 +3382,12 @@ class MongoRepository(InMemoryRepository):
             limit=q.limit,
         )
 
+    def count_notifications(self, user_id: str, q: NotificationListQuery) -> int:
+        query: dict[str, object] = {"user_id": user_id}
+        if q.unread_only:
+            query["read_at"] = None
+        return int(self.db.notifications.count_documents(query))
+
     def list_per_profile_for_application(
         self, application_id: str
     ) -> list[PerProfileApplication]:
@@ -3095,18 +3462,22 @@ class MongoRepository(InMemoryRepository):
         return industry
 
     def update_industry(self, industry_id: str, payload: IndustryUpdate) -> Industry | None:
+        self.get_industry(industry_id)
         industry = super().update_industry(industry_id, payload)
         if industry:
             self._persist_document("industries", industry)
         return industry
 
     def delete_industry(self, industry_id: str) -> bool:
+        self.get_industry(industry_id)
         deleted = super().delete_industry(industry_id)
         if deleted:
             self._delete_document("industries", industry_id)
         return deleted
 
     def update_company(self, company_id: str, payload: CompanyUpdate) -> Company | None:
+        self.get_company(company_id)
+        self._hydrate_applications_for_company(company_id)
         applications_before = self._applications_for_company(company_id)
         company = super().update_company(company_id, payload)
         if company:
@@ -3123,12 +3494,15 @@ class MongoRepository(InMemoryRepository):
         return company
 
     def unarchive_company(self, company_id: str, payload: CompanyCreate) -> Company | None:
+        self.get_company(company_id)
         company = super().unarchive_company(company_id, payload)
         if company:
             self._persist_document("companies", company)
         return company
 
     def archive_company(self, company_id: str, archive_reason: str) -> tuple[bool, int]:
+        self.get_company(company_id)
+        self._hydrate_applications_for_company(company_id)
         applications_before = self._applications_for_company(company_id)
         ok, n = super().archive_company(company_id, archive_reason)
         if ok:
@@ -3148,7 +3522,7 @@ class MongoRepository(InMemoryRepository):
         *,
         related_applications: Literal["none", "archive", "reset"] = "none",
     ) -> Company | None:
-        company = self.get_company(company_id)
+        company = self._get_mongo_model("companies", Company, company_id)
         if not company:
             return None
         cleared_company = self._clear_company_research_detail_model(company)
@@ -3157,6 +3531,9 @@ class MongoRepository(InMemoryRepository):
             self._persist_document("companies", cleared_company)
             if related_applications == "archive":
                 application_ids = self._mongo_application_ids_for_company(company_id)
+                self._hydrate_mongo_models(
+                    "applications", Application, {"_id": {"$in": sorted(application_ids)}}
+                )
                 for application_id in application_ids:
                     application = self.applications.get(application_id)
                     if application is None:
@@ -3170,9 +3547,12 @@ class MongoRepository(InMemoryRepository):
                 application_ids = self._mongo_application_ids_for_company(
                     company_id, include_archived=False
                 )
+                self._hydrate_mongo_models(
+                    "applications", Application, {"_id": {"$in": sorted(application_ids)}}
+                )
                 ppa_ids = self._mongo_ppa_ids_for_applications(application_ids)
                 email_ids = self._mongo_email_ids_for_ppas(ppa_ids)
-                next_status = self._initial_application_status_for_company(company_id)
+                next_status = ApplicationStatus.company_research_pending
                 for email_id in email_ids:
                     self.emails.pop(email_id, None)
                     self._delete_document("emails", email_id)
@@ -3225,12 +3605,14 @@ class MongoRepository(InMemoryRepository):
         return profile
 
     def update_profile(self, profile_id: str, payload: ProfileUpdate) -> Profile | None:
+        self.get_profile(profile_id)
         profile = super().update_profile(profile_id, payload)
         if profile:
             self._persist_document("profiles", profile)
         return profile
 
     def delete_profile(self, profile_id: str) -> bool:
+        self.get_profile(profile_id)
         deleted = super().delete_profile(profile_id)
         if deleted:
             self._delete_document("profiles", profile_id)
@@ -3253,6 +3635,7 @@ class MongoRepository(InMemoryRepository):
     def update_application(
         self, application_id: str, payload: ApplicationUpdate
     ) -> Application | None:
+        self.get_application(application_id)
         application = super().update_application(application_id, payload)
         if application:
             self._persist_document("applications", application)
@@ -3261,6 +3644,7 @@ class MongoRepository(InMemoryRepository):
     def mark_application_applied(
         self, application_id: str, applied: bool, *, force: bool = False
     ) -> Application | None:
+        self.get_application(application_id)
         application = super().mark_application_applied(application_id, applied, force=force)
         if application:
             self._persist_document("applications", application)
@@ -3269,12 +3653,14 @@ class MongoRepository(InMemoryRepository):
     def mark_application_email_sent(
         self, application_id: str, sent: bool
     ) -> Application | None:
+        self.get_application(application_id)
         application = super().mark_application_email_sent(application_id, sent)
         if application:
             self._persist_document("applications", application)
         return application
 
     def delete_application(self, application_id: str) -> bool:
+        self.get_application(application_id)
         deleted = super().delete_application(application_id)
         if deleted:
             self._delete_document("applications", application_id)
@@ -3282,7 +3668,10 @@ class MongoRepository(InMemoryRepository):
 
     def clear_application_to_company_research_pending(self, application_id: str) -> Application | None:
         application_ids = {application_id}
+        self.get_application(application_id)
+        self._hydrate_ppas_for_applications(application_ids)
         ppa_ids = self._ppa_ids_for_applications(application_ids)
+        self._hydrate_emails_for_ppas(ppa_ids)
         email_ids = self._email_ids_for_ppas(ppa_ids)
         application = super().clear_application_to_company_research_pending(application_id)
         if application:
@@ -3338,15 +3727,21 @@ class MongoRepository(InMemoryRepository):
         return note
 
     def mark_notification_read(self, user_id: str, notification_id: str) -> UserNotification | None:
+        self._get_mongo_model("notifications", UserNotification, notification_id)
         note = super().mark_notification_read(user_id, notification_id)
         if note:
             self._persist_document("notifications", note)
         return note
 
     def mark_notifications_read_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        ids = list(dict.fromkeys(notification_ids))
+        if ids:
+            self._hydrate_mongo_models(
+                "notifications", UserNotification, {"_id": {"$in": ids}}
+            )
         owned_ids = {
             note_id
-            for note_id in dict.fromkeys(notification_ids)
+            for note_id in ids
             if (
                 (note := self.notifications.get(note_id))
                 and note.user_id == user_id
@@ -3359,15 +3754,21 @@ class MongoRepository(InMemoryRepository):
         return n
 
     def delete_notification(self, user_id: str, notification_id: str) -> bool:
+        self._get_mongo_model("notifications", UserNotification, notification_id)
         ok = super().delete_notification(user_id, notification_id)
         if ok:
             self._delete_document("notifications", notification_id)
         return ok
 
     def delete_notifications_bulk(self, user_id: str, notification_ids: list[str]) -> int:
+        ids = list(dict.fromkeys(notification_ids))
+        if ids:
+            self._hydrate_mongo_models(
+                "notifications", UserNotification, {"_id": {"$in": ids}}
+            )
         owned_ids = {
             note_id
-            for note_id in dict.fromkeys(notification_ids)
+            for note_id in ids
             if (
                 (note := self.notifications.get(note_id))
                 and note.user_id == user_id
@@ -3384,6 +3785,7 @@ class MongoRepository(InMemoryRepository):
         return rec
 
     def revoke_agent_api_key(self, key_id: str) -> bool:
+        self._get_mongo_model("agent_api_keys", AgentApiKeyInDB, key_id)
         revoked = super().revoke_agent_api_key(key_id)
         if revoked:
             self._delete_document("agent_api_keys", key_id)
@@ -3391,6 +3793,7 @@ class MongoRepository(InMemoryRepository):
         return revoked
 
     def touch_agent_api_key_used(self, key_id: str) -> None:
+        self._get_mongo_model("agent_api_keys", AgentApiKeyInDB, key_id)
         super().touch_agent_api_key_used(key_id)
         key = self.agent_api_keys.get(key_id)
         if not key:
@@ -3409,12 +3812,14 @@ class MongoRepository(InMemoryRepository):
     def update_per_profile_application(
         self, ppa_id: str, payload: PerProfileApplicationUpdate
     ) -> PerProfileApplication | None:
+        self.get_per_profile_application(ppa_id)
         ppa = super().update_per_profile_application(ppa_id, payload)
         if ppa:
             self._persist_document("per_profile_applications", ppa)
         return ppa
 
     def delete_per_profile_application(self, ppa_id: str) -> bool:
+        self.get_per_profile_application(ppa_id)
         deleted = super().delete_per_profile_application(ppa_id)
         if deleted:
             self._delete_document("per_profile_applications", ppa_id)
@@ -3426,18 +3831,21 @@ class MongoRepository(InMemoryRepository):
         return email
 
     def update_email(self, email_id: str, payload: EmailUpdate) -> Email | None:
+        self.get_email(email_id)
         email = super().update_email(email_id, payload)
         if email:
             self._persist_document("emails", email)
         return email
 
     def mark_email_sent(self, email_id: str, sent: bool) -> Email | None:
+        self.get_email(email_id)
         email = super().mark_email_sent(email_id, sent)
         if email:
             self._persist_document("emails", email)
         return email
 
     def delete_email(self, email_id: str) -> bool:
+        self.get_email(email_id)
         deleted = super().delete_email(email_id)
         if deleted:
             self._delete_document("emails", email_id)
