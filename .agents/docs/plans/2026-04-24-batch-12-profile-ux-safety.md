@@ -41,7 +41,7 @@ Clear:
 - [x] Run targeted frontend/backend tests and `npm run build`.
 - [x] Run code-reviewer and scalability-reviewer and address actionable findings.
 - [x] Update audit rows for cleared Batch 12 issues.
-- [ ] Commit Batch 12 and merge back into `codex/ux-performance-audit`.
+- [x] Commit Batch 12 and merge back into `codex/ux-performance-audit`.
 
 ## Parallel Work
 
