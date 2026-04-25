@@ -33,7 +33,7 @@ Clear the final open audit rows:
 - [x] Run full backend tests, full frontend tests, and frontend build.
 - [x] Run reviewer and scalability review, then address findings.
 - [x] Update UX audit rows.
-- [ ] Merge Batch 16 back into `codex/ux-performance-audit`.
+- [x] Merge Batch 16 back into `codex/ux-performance-audit`.
 
 ## Parallel Work
 
