@@ -2692,6 +2692,37 @@ def test_mongo_repository_batch_loads_emails_for_ppas_with_one_query() -> None:
     assert db.emails.sorts[-1] == [("per_profile_application_id", 1), ("created_at", 1)]
 
 
+def test_mongo_repository_lists_per_profile_rows_for_application_with_query_sort() -> None:
+    seed = InMemoryRepository()
+    company = seed.create_company(CompanyCreate(name="Acme"))
+    profile = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    application = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    second = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id, order_index=2)
+    )
+    first = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id, order_index=1)
+    )
+    other_application = seed.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    other = seed.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=other_application.id, profile_id=profile.id, order_index=0)
+    )
+    repo, db = _mongo_repo_for_query_tests()
+    db.per_profile_applications.docs = [_mongo_doc(second), _mongo_doc(other), _mongo_doc(first)]
+
+    rows = repo.list_per_profile_for_application(application.id)
+
+    assert [row.id for row in rows] == [first.id, second.id]
+    assert db.per_profile_applications.find_queries[-1] == {"application_id": application.id}
+    assert db.per_profile_applications.sorts[-1] == [("order_index", 1), ("created_at", 1)]
+
+
 def test_mongo_repository_batch_loads_profile_names_with_projection() -> None:
     seed = InMemoryRepository()
     profile = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))

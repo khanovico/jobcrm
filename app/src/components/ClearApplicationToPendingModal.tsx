@@ -57,13 +57,13 @@ export const ClearApplicationToPendingModal = ({
     <Modal
       open={open}
       onClose={close}
-      title={`Reset to ${formatApplicationStatusLabel(targetStatus)}`}
+      title="Reset preparation"
       size="md"
     >
       <form className="space-y-3" onSubmit={onSubmit}>
         <p className="text-sm leading-relaxed opacity-90">
-          This will remove <strong>all per-profile rows</strong> and <strong>all emails</strong> tied to this
-          application for <span className="font-medium">{companyLabel}</span>, then set status to{" "}
+          This will delete <strong>all generated per-profile analysis</strong> and <strong>all generated emails</strong>{" "}
+          tied to this application for <span className="font-medium">{companyLabel}</span>, then set status to{" "}
           <strong>{formatApplicationStatusLabel(targetStatus)}</strong>. Application-level marks (applied, email
           sent) are cleared. This cannot be undone.
         </p>
@@ -73,7 +73,7 @@ export const ClearApplicationToPendingModal = ({
             Cancel
           </button>
           <button type="submit" className="btn btn-warning" disabled={submitting}>
-            {submitting ? "Resetting…" : "Clear and reset"}
+            {submitting ? "Resetting..." : "Delete prep artifacts and reset"}
           </button>
         </div>
       </form>

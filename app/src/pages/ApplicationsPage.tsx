@@ -37,9 +37,14 @@ export const ApplicationsPage = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [markAppliedBusyId, setMarkAppliedBusyId] = useState<string | null>(null);
   const [listMode, setListMode] = useState<ApplicationListMode>("pending");
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
-  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(null);
+  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(
+    () => getSelectedAppliedProfileNames()
+  );
+  const [profileNamesLoaded, setProfileNamesLoaded] = useState(false);
   const appliedProfilesFilterButtonRef = useRef<HTMLButtonElement | null>(null);
   const [appliedProfilesFilterPosition, setAppliedProfilesFilterPosition] = useState<{ top: number; left: number } | null>(
     null
@@ -71,6 +76,7 @@ export const ApplicationsPage = () => {
   const availableAppliedProfileNames = profileNamesForFilter;
 
   useEffect(() => {
+    if (!profileNamesLoaded) return;
     if (availableAppliedProfileNames.length === 0) {
       setSelectedAppliedProfileNamesState(null);
       previousAvailableProfileNamesRef.current = [];
@@ -90,7 +96,7 @@ export const ApplicationsPage = () => {
       setSelectedAppliedProfileNamesState(initializeSelectedAppliedProfileNames(next));
     }
     previousAvailableProfileNamesRef.current = next;
-  }, [availableAppliedProfileNames]);
+  }, [availableAppliedProfileNames, profileNamesLoaded]);
 
   const updateAppliedProfileSelection = (nextSelection: string[]) => {
     const sanitizedSelection = nextSelection.filter((name) => availableAppliedProfileNames.includes(name));
@@ -125,16 +131,19 @@ export const ApplicationsPage = () => {
       setProfileNamesForFilter(names);
     } catch {
       setProfileNamesForFilter([]);
+    } finally {
+      setProfileNamesLoaded(true);
     }
   }, [applicationFilterParams]);
 
   const listParamsKey = useMemo(() => {
     const p = new URLSearchParams(applicationFilterParams);
     const allProfilesSelected =
-      selectedAppliedProfileNames === null ||
-      (selectedAppliedProfileNames.length === availableAppliedProfileNames.length &&
-        availableAppliedProfileNames.every((name) => selectedAppliedProfileNames.includes(name)));
-    if (availableAppliedProfileNames.length > 0 && selectedAppliedProfileNames !== null && !allProfilesSelected) {
+      availableAppliedProfileNames.length > 0 &&
+      selectedAppliedProfileNames !== null &&
+      selectedAppliedProfileNames.length === availableAppliedProfileNames.length &&
+      availableAppliedProfileNames.every((name) => selectedAppliedProfileNames.includes(name));
+    if (selectedAppliedProfileNames !== null && !allProfilesSelected) {
       const namesToFilter =
         selectedAppliedProfileNames.length > 0
           ? selectedAppliedProfileNames
@@ -173,6 +182,7 @@ export const ApplicationsPage = () => {
   }, [tableSort]);
 
   useEffect(() => {
+    setProfileNamesLoaded(false);
     void loadProfileNamesForFilter();
   }, [loadProfileNamesForFilter]);
 
@@ -349,6 +359,11 @@ export const ApplicationsPage = () => {
           </div>
         </div>
         {error && !createOpen && <div className="alert alert-error mb-2 text-sm">{error}</div>}
+        {actionError ? (
+          <div role="alert" className="alert alert-error mb-2 text-sm">
+            {actionError}
+          </div>
+        ) : null}
         <div className="overflow-x-auto rounded-lg border border-base-300">
           <table className="table table-sm">
             <thead>
@@ -420,7 +435,10 @@ export const ApplicationsPage = () => {
                           <button
                             type="button"
                             className={`btn btn-xs ${application.applied ? "btn-outline" : "btn-success"}`}
-                            disabled={!application.applied && application.status !== "application_ready"}
+                            disabled={
+                              markAppliedBusyId === application.id ||
+                              (!application.applied && application.status !== "application_ready")
+                            }
                             title={
                               !application.applied && application.status !== "application_ready"
                                 ? "Mark applied only when status is Application ready"
@@ -428,12 +446,24 @@ export const ApplicationsPage = () => {
                             }
                             onClick={async (e) => {
                               e.stopPropagation();
+                              if (markAppliedBusyId === application.id) return;
                               const nextApplied = !application.applied;
-                              await api.markApplied(application.id, nextApplied);
-                              await load(page);
+                              setActionError(null);
+                              setMarkAppliedBusyId(application.id);
+                              try {
+                                await api.markApplied(application.id, nextApplied);
+                                await load(page);
+                              } catch (err) {
+                                const detail = err instanceof Error && err.message ? ` ${err.message}` : "";
+                                setActionError(
+                                  `Could not ${nextApplied ? "mark" : "unmark"} ${application.company_name} as applied.${detail}`
+                                );
+                              } finally {
+                                setMarkAppliedBusyId((current) => (current === application.id ? null : current));
+                              }
                             }}
                           >
-                            {application.applied ? "Unmark Applied" : "Mark Applied"}
+                            {markAppliedBusyId === application.id ? "Saving..." : application.applied ? "Unmark Applied" : "Mark Applied"}
                           </button>
                           <button
                             type="button"
@@ -491,12 +521,12 @@ export const ApplicationsPage = () => {
                 {availableAppliedProfileNames.length === 0 ? (
                   <p className="text-xs opacity-70">No profiles available</p>
                 ) : (
-                  availableAppliedProfileNames.map((profileName) => (
-                    <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
+	                  availableAppliedProfileNames.map((profileName) => (
+	                    <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
 	                      <input
 	                        type="checkbox"
 	                        className="checkbox checkbox-sm"
-	                        checked={(selectedAppliedProfileNames ?? []).includes(profileName)}
+	                        checked={selectedAppliedProfileNames === null || selectedAppliedProfileNames.includes(profileName)}
                         onChange={(event) => {
 	                          if (event.target.checked) {
 	                            updateAppliedProfileSelection(
@@ -504,11 +534,12 @@ export const ApplicationsPage = () => {
 	                                a.localeCompare(b)
 	                              )
 	                            );
-                            return;
-                          }
-	                          updateAppliedProfileSelection((selectedAppliedProfileNames ?? []).filter((name) => name !== profileName));
+	                            return;
+	                          }
+                          const currentSelection = selectedAppliedProfileNames ?? availableAppliedProfileNames;
+	                          updateAppliedProfileSelection(currentSelection.filter((name) => name !== profileName));
                         }}
-                      />
+	                      />
                       <span className="label-text text-xs">{profileName}</span>
                     </label>
                   ))
