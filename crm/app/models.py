@@ -437,7 +437,7 @@ class ProfileCreate(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     frozen: bool | None = None
     location: str | None = None
     email: EmailStr | None = None

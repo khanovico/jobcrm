@@ -981,6 +981,73 @@ def test_profile_summary_endpoint_returns_only_list_fields() -> None:
     assert "resume_md" not in rows[0]
 
 
+def test_profile_summary_endpoint_supports_search_and_frozen_filter() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    first = client.post(
+        "/api/v1/profiles",
+        json={**_valid_profile_create_payload(), "name": "Alex Dev", "email": "alex@example.com"},
+        headers=headers,
+    )
+    assert first.status_code == 201
+    second = client.post(
+        "/api/v1/profiles",
+        json={
+            **_valid_profile_create_payload(),
+            "name": "Blair Ops",
+            "email": "blair@example.com",
+            "location": "Berlin",
+            "niche_info_md": "Python + data pipelines",
+        },
+        headers=headers,
+    )
+    assert second.status_code == 201
+    frozen = client.put(
+        f"/api/v1/profiles/{second.json()['id']}",
+        json={"frozen": True},
+        headers=headers,
+    )
+    assert frozen.status_code == 200
+
+    active_only = client.get(
+        "/api/v1/profiles/summary",
+        params={"search": "alex", "frozen": "false"},
+        headers=headers,
+    )
+    assert active_only.status_code == 200
+    assert [row["name"] for row in active_only.json()] == ["Alex Dev"]
+
+    frozen_only = client.get(
+        "/api/v1/profiles/summary",
+        params={"search": "python", "frozen": "true"},
+        headers=headers,
+    )
+    assert frozen_only.status_code == 200
+    assert [row["name"] for row in frozen_only.json()] == ["Blair Ops"]
+
+
+def test_profile_update_rejects_empty_name() -> None:
+    repo = InMemoryRepository()
+    app.dependency_overrides[get_repository] = lambda: repo
+    client = TestClient(app)
+    token = _register_and_login(client)
+    headers = _auth_headers(token)
+
+    profile = client.post("/api/v1/profiles", json=_valid_profile_create_payload(), headers=headers).json()
+
+    response = client.put(
+        f"/api/v1/profiles/{profile['id']}",
+        json={"name": ""},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
 def test_clear_to_pending_uses_ppa_pending_when_company_indexed() -> None:
     repo = InMemoryRepository()
     app.dependency_overrides[get_repository] = lambda: repo
@@ -2199,30 +2266,65 @@ def test_mongo_repository_list_profiles_uses_query_pagination() -> None:
     active = seed.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
     frozen = seed.create_profile(
         ProfileCreate.model_validate(
-            {**_valid_profile_create_payload(), "email": "frozen@example.com", "name": "Frozen"}
+            {
+                **_valid_profile_create_payload(),
+                "email": "frozen@example.com",
+                "name": "Frozen",
+                "location": "Berlin",
+            }
         )
     )
     seed.profiles[frozen.id] = seed.profiles[frozen.id].model_copy(update={"frozen": True})
     repo, db = _mongo_repo_for_query_tests()
     db.profiles.docs = [_mongo_doc(seed.profiles[frozen.id]), _mongo_doc(active)]
 
-    rows = repo.list_profiles(skip=0, limit=5, search="general", include_frozen=False)
+    rows = repo.list_profiles(skip=0, limit=5, search="berlin", frozen=True)
     profile_query = db.profiles.find_queries[-1]
     profile_sort = db.profiles.sorts[-1]
     profile_limit = db.profiles.limits[-1]
     profile_collation = db.profiles.collations[-1]
     ids = repo.list_profile_ids(skip=0, limit=5, include_frozen=False)
 
-    assert [row.id for row in rows] == [active.id]
+    assert [row.id for row in rows] == [frozen.id]
     assert ids == [active.id]
     assert profile_query == {
-        "frozen": {"$ne": True},
-        "name": {"$regex": "general", "$options": "i"},
+        "frozen": True,
+        "$or": [
+            {"name": {"$regex": "berlin", "$options": "i"}},
+            {"email": {"$regex": "berlin", "$options": "i"}},
+            {"location": {"$regex": "berlin", "$options": "i"}},
+            {"niche_info_md": {"$regex": "berlin", "$options": "i"}},
+        ],
     }
     assert profile_sort == [("name", 1)]
     assert profile_limit == 5
     assert profile_collation == {"locale": "en", "strength": 2}
     assert db.profiles.find_queries[-1] == {"frozen": {"$ne": True}}
+
+    summary_rows = repo.list_profile_summaries(skip=0, limit=5, search="berlin", frozen=True)
+    assert [row.id for row in summary_rows] == [frozen.id]
+    assert db.profiles.find_queries[-1] == {
+        "frozen": True,
+        "$or": [
+            {"name": {"$regex": "berlin", "$options": "i"}},
+            {"email": {"$regex": "berlin", "$options": "i"}},
+            {"location": {"$regex": "berlin", "$options": "i"}},
+            {"niche_info_md": {"$regex": "berlin", "$options": "i"}},
+        ],
+    }
+    assert db.profiles.projections[-1] == {
+        "_id": 1,
+        "name": 1,
+        "frozen": 1,
+        "location": 1,
+        "email": 1,
+        "phone": 1,
+        "created_at": 1,
+        "updated_at": 1,
+    }
+    assert db.profiles.sorts[-1] == [("name", 1)]
+    assert db.profiles.limits[-1] == 5
+    assert db.profiles.collations[-1] == {"locale": "en", "strength": 2}
 
 
 def test_mongo_repository_industry_picker_helpers_use_query_paths() -> None:

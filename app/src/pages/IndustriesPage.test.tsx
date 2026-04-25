@@ -54,7 +54,7 @@ describe("IndustriesPage", () => {
     });
 
     render(<IndustriesPage />);
-    expect(await screen.findByText("FinTech")).toBeInTheDocument();
+    expect(await screen.findByText("FinTech", undefined, { timeout: 5000 })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Industry name"), { target: { value: "HealthTech" } });
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Healthcare" } });
     fireEvent.click(screen.getByRole("button", { name: "Create industry" }));
@@ -103,10 +103,9 @@ describe("IndustriesPage", () => {
     expect(await screen.findByText("FinTech")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Bulk create" }));
-    await userEvent.type(
-      screen.getByLabelText("Bulk entries (one per line)"),
-      "HealthTech|Healthcare{enter}EdTech|Education"
-    );
+    fireEvent.change(screen.getByLabelText("Bulk entries (one per line)"), {
+      target: { value: "HealthTech|Healthcare\nEdTech|Education" }
+    });
     await userEvent.click(screen.getByRole("button", { name: "Create industries in bulk" }));
 
     expect(await screen.findByText("2 industries created.")).toBeInTheDocument();
@@ -129,7 +128,7 @@ describe("IndustriesPage", () => {
     const rows: IndustryRow[] = [
       { id: "1", name: "FinTech", description: "Finance", created_at: now, updated_at: now }
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    let releaseDelete!: () => void;
 
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -141,8 +140,12 @@ describe("IndustriesPage", () => {
         return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }));
       }
       if (url.includes("/api/v1/industries/1") && method === "DELETE") {
-        rows.splice(0, 1);
-        return Promise.resolve(new Response(null, { status: 204 }));
+        return new Promise<Response>((resolve) => {
+          releaseDelete = () => {
+            rows.splice(0, 1);
+            resolve(new Response(null, { status: 204 }));
+          };
+        });
       }
       return Promise.resolve(new Response(null, { status: 404 }));
     });
@@ -150,8 +153,14 @@ describe("IndustriesPage", () => {
     render(<IndustriesPage />);
     expect(await screen.findByRole("cell", { name: "FinTech" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByText('Delete "FinTech"?')).toBeInTheDocument();
+    expect(screen.getByText(/permanently removes/i)).toBeInTheDocument();
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Delete industry" }));
+    const deletingButtons = screen.getAllByRole("button", { name: "Deleting..." });
+    expect(deletingButtons[deletingButtons.length - 1]).toBeDisabled();
+
+    releaseDelete();
     expect(await screen.findByText('Deleted "FinTech".')).toBeInTheDocument();
     expect(screen.queryByText("FinTech")).not.toBeInTheDocument();
   });

@@ -621,10 +621,11 @@ def list_profiles(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
+    frozen: bool | None = Query(default=None),
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Profile]:
-    return repo.list_profiles(skip=skip, limit=limit, search=search)
+    return repo.list_profiles(skip=skip, limit=limit, search=search, frozen=frozen)
 
 
 @app.get("/api/v1/profiles/summary", response_model=list[ProfileListItem])
@@ -632,23 +633,11 @@ def list_profile_summaries(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
+    frozen: bool | None = Query(default=None),
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ProfileListItem]:
-    profiles = repo.list_profiles(skip=skip, limit=limit, search=search)
-    return [
-        ProfileListItem(
-            id=profile.id,
-            name=profile.name,
-            frozen=profile.frozen,
-            location=profile.location,
-            email=profile.email,
-            phone=profile.phone,
-            created_at=profile.created_at,
-            updated_at=profile.updated_at,
-        )
-        for profile in profiles
-    ]
+    return repo.list_profile_summaries(skip=skip, limit=limit, search=search, frozen=frozen)
 
 
 @app.post("/api/v1/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)

@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { invalidateIndustryCatalogCache } from "../state/industryCatalog";
 import { Industry } from "../types";
+import { DestructiveConfirmModal } from "../components/DestructiveConfirmModal";
 import { TablePagination } from "../components/TablePagination";
 
 const PAGE_SIZE = 25;
@@ -28,6 +29,8 @@ export const IndustriesPage = () => {
   const [editDescription, setEditDescription] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Industry | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const industryPageParams = () => {
     const params = new URLSearchParams();
@@ -182,11 +185,11 @@ export const IndustriesPage = () => {
     }
   };
 
-  const removeIndustry = async (industry: Industry) => {
-    if (!window.confirm(`Delete "${industry.name}"? This action cannot be undone.`)) {
-      return;
-    }
+  const removeIndustry = async () => {
+    if (!deleteTarget) return;
+    const industry = deleteTarget;
     setDeletingId(industry.id);
+    setDeleteError(null);
     setError(null);
     setSuccess(null);
     try {
@@ -194,7 +197,9 @@ export const IndustriesPage = () => {
       invalidateIndustryCatalogCache();
       await Promise.all([load(), loadCount()]);
       setSuccess(`Deleted "${industry.name}".`);
+      setDeleteTarget(null);
     } catch (err) {
+      setDeleteError((err as Error).message);
       setError((err as Error).message);
     } finally {
       setDeletingId(null);
@@ -338,7 +343,12 @@ export const IndustriesPage = () => {
                                   type="button"
                                   className="btn btn-error btn-outline btn-xs"
                                   disabled={deletingId === industry.id}
-                                  onClick={() => void removeIndustry(industry)}
+                                  onClick={() => {
+                                    setDeleteTarget(industry);
+                                    setDeleteError(null);
+                                    setError(null);
+                                    setSuccess(null);
+                                  }}
                                 >
                                   {deletingId === industry.id ? "Deleting..." : "Delete"}
                                 </button>
@@ -439,6 +449,28 @@ export const IndustriesPage = () => {
           )}
         </aside>
       </div>
+      <DestructiveConfirmModal
+        open={deleteTarget != null}
+        onClose={() => {
+          if (deleteTarget && deletingId === deleteTarget.id) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+        onConfirm={() => {
+          void removeIndustry();
+        }}
+        title={deleteTarget ? `Delete "${deleteTarget.name}"?` : "Delete industry?"}
+        confirmLabel="Delete industry"
+        confirmingLabel="Deleting..."
+        submitting={deleteTarget != null && deletingId === deleteTarget.id}
+        error={deleteError}
+      >
+        <p>
+          This permanently removes <strong>{deleteTarget?.name ?? "this industry"}</strong> from the industry taxonomy.
+          This cannot be undone.
+        </p>
+        <p className="opacity-80">Company records and filters may no longer show this label after deletion.</p>
+      </DestructiveConfirmModal>
     </div>
   );
 };
