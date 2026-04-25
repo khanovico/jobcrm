@@ -621,10 +621,11 @@ def list_profiles(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
+    frozen: bool | None = Query(default=None),
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Profile]:
-    return repo.list_profiles(skip=skip, limit=limit, search=search)
+    return repo.list_profiles(skip=skip, limit=limit, search=search, frozen=frozen)
 
 
 @app.get("/api/v1/profiles/summary", response_model=list[ProfileListItem])
@@ -632,10 +633,11 @@ def list_profile_summaries(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
+    frozen: bool | None = Query(default=None),
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ProfileListItem]:
-    profiles = repo.list_profiles(skip=skip, limit=limit, search=search)
+    profiles = repo.list_profiles(skip=skip, limit=limit, search=search, frozen=frozen)
     return [
         ProfileListItem(
             id=profile.id,

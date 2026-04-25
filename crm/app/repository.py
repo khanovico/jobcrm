@@ -250,7 +250,12 @@ class BaseRepository:
         raise NotImplementedError
 
     def list_profiles(
-        self, skip: int, limit: int, search: str | None, include_frozen: bool = True
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        include_frozen: bool = True,
+        frozen: bool | None = None,
     ) -> list[Profile]:
         raise NotImplementedError
 
@@ -936,14 +941,35 @@ class InMemoryRepository(BaseRepository):
         return (True, n)
 
     def list_profiles(
-        self, skip: int, limit: int, search: str | None, include_frozen: bool = True
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        include_frozen: bool = True,
+        frozen: bool | None = None,
     ) -> list[Profile]:
         values = list(self.profiles.values())
-        if not include_frozen:
+        if frozen is True:
+            values = [p for p in values if p.frozen]
+        elif frozen is False:
+            values = [p for p in values if not p.frozen]
+        elif not include_frozen:
             values = [p for p in values if not p.frozen]
         if search:
             needle = search.lower()
-            values = [p for p in values if needle in p.name.lower()]
+            values = [
+                p
+                for p in values
+                if any(
+                    needle in value.lower()
+                    for value in [
+                        p.name,
+                        p.email or "",
+                        p.location or "",
+                        p.niche_info_md or "",
+                    ]
+                )
+            ]
         values.sort(key=lambda p: p.name.lower())
         return values[skip : skip + limit]
 
@@ -2173,13 +2199,28 @@ class MongoRepository(InMemoryRepository):
         ]
 
     def list_profiles(
-        self, skip: int, limit: int, search: str | None, include_frozen: bool = True
+        self,
+        skip: int,
+        limit: int,
+        search: str | None,
+        include_frozen: bool = True,
+        frozen: bool | None = None,
     ) -> list[Profile]:
         query: dict[str, object] = {}
-        if not include_frozen:
+        if frozen is True:
+            query["frozen"] = True
+        elif frozen is False:
+            query["frozen"] = {"$ne": True}
+        elif not include_frozen:
             query["frozen"] = {"$ne": True}
         if search:
-            query["name"] = self._literal_contains_filter(search)
+            search_filter = self._literal_contains_filter(search)
+            query["$or"] = [
+                {"name": search_filter},
+                {"email": search_filter},
+                {"location": search_filter},
+                {"niche_info_md": search_filter},
+            ]
         return self._mongo_find_page(
             "profiles",
             query,
