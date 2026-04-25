@@ -245,7 +245,7 @@ describe("CompanyDetailPage", () => {
 
   it("paginates company applications", async () => {
     getCompany.mockResolvedValue(baseCompany());
-    const firstPageApplications = Array.from({ length: 20 }, (_, index) => ({
+    const firstPageApplications = Array.from({ length: 21 }, (_, index) => ({
       id: `a-${index + 1}`,
       company_id: "co1",
       status: "application_ready",

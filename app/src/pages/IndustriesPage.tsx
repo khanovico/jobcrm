@@ -363,13 +363,17 @@ export const IndustriesPage = () => {
               </table>
             </div>
           )}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs opacity-70">
-              Showing {rangeStart}-{rangeEnd} of {total}
-              {searchQuery ? ` matching "${searchQuery}"` : ""}
-            </p>
-            <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} disabled={loading} />
-          </div>
+          <TablePagination
+            page={page}
+            hasNextPage={hasNextPage}
+            onPageChange={setPage}
+            disabled={loading}
+            pageSize={PAGE_SIZE}
+            visibleCount={items.length}
+            totalCount={total}
+            itemLabel="industries"
+            rangeSuffix={searchQuery ? ` matching "${searchQuery}"` : ""}
+          />
         </section>
 
         <aside

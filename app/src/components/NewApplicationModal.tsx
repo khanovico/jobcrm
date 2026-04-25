@@ -18,6 +18,29 @@ type ArchivedCompanyConflict = {
   archive_reason?: string | null;
 };
 
+type FormSnapshot = {
+  companyId: string;
+  companyName: string;
+  companyWebsite: string;
+  jobLink: string;
+  jobDescription: string;
+};
+
+const EMPTY_FORM_SNAPSHOT: FormSnapshot = {
+  companyId: "",
+  companyName: "",
+  companyWebsite: "",
+  jobLink: "",
+  jobDescription: ""
+};
+
+const hasFormChanges = (snapshot: FormSnapshot, initialSnapshot: FormSnapshot): boolean =>
+  snapshot.companyId !== initialSnapshot.companyId ||
+  snapshot.companyName !== initialSnapshot.companyName ||
+  snapshot.companyWebsite !== initialSnapshot.companyWebsite ||
+  snapshot.jobLink !== initialSnapshot.jobLink ||
+  snapshot.jobDescription !== initialSnapshot.jobDescription;
+
 const mergeCompanyOptions = (...groups: CompanyOption[][]): CompanyOption[] => {
   const seen = new Set<string>();
   const merged: CompanyOption[] = [];
@@ -61,6 +84,8 @@ export const NewApplicationModal = ({
   const [submitting, setSubmitting] = useState(false);
   const [archivedConflict, setArchivedConflict] = useState<ArchivedCompanyConflict | null>(null);
   const [duplicateCompany, setDuplicateCompany] = useState<CompanyOption | null>(null);
+  const [initialFormSnapshot, setInitialFormSnapshot] = useState<FormSnapshot>(EMPTY_FORM_SNAPSHOT);
+  const [modalKey, setModalKey] = useState(0);
   const companySearchRequestRef = useRef(0);
   const formResetKeyRef = useRef<string | null>(null);
   const selectedCompany = useMemo(
@@ -85,9 +110,22 @@ export const NewApplicationModal = ({
     setDuplicateCompany(null);
   };
 
+  const formSnapshot = useMemo<FormSnapshot>(
+    () => ({
+      companyId,
+      companyName,
+      companyWebsite,
+      jobLink,
+      jobDescription
+    }),
+    [companyId, companyName, companyWebsite, jobLink, jobDescription]
+  );
+  const isDirty = hasFormChanges(formSnapshot, initialFormSnapshot);
+
   useEffect(() => {
     if (!open) {
       formResetKeyRef.current = null;
+      setInitialFormSnapshot(EMPTY_FORM_SNAPSHOT);
       return;
     }
     const formResetKey = editing
@@ -100,17 +138,29 @@ export const NewApplicationModal = ({
       : companies;
     setCompanyOptions(initialCompanyOptions);
     if (editing) {
+      const initialJobLink = editing.job_post?.job_link ?? "";
+      const initialJobDescription = editing.job_post?.job_description ?? "";
       setCompanyId(editing.company_id);
       setCompanyName("");
       setCompanyWebsite("");
-      setJobLink(editing.job_post?.job_link ?? "");
-      setJobDescription(editing.job_post?.job_description ?? "");
+      setJobLink(initialJobLink);
+      setJobDescription(initialJobDescription);
+      setInitialFormSnapshot({
+        companyId: editing.company_id,
+        companyName: "",
+        companyWebsite: "",
+        jobLink: initialJobLink,
+        jobDescription: initialJobDescription
+      });
       return;
     }
     resetForm();
-    if (initialCompanyId && companies.some((c) => c.id === initialCompanyId)) {
-      setCompanyId(initialCompanyId);
-    }
+    const initialSelectedCompanyId = initialCompanyId && companies.some((c) => c.id === initialCompanyId) ? initialCompanyId : "";
+    if (initialSelectedCompanyId) setCompanyId(initialSelectedCompanyId);
+    setInitialFormSnapshot({
+      ...EMPTY_FORM_SNAPSHOT,
+      companyId: initialSelectedCompanyId
+    });
   }, [open, editing, initialCompanyId, companies]);
 
   const loadCompanyOptions = useCallback(
@@ -167,7 +217,16 @@ export const NewApplicationModal = ({
     return () => window.clearTimeout(timer);
   }, [companies, companySearch, editing, loadCompanyOptions, open]);
 
-  const closeModal = () => {
+  const closeModal = ({ skipDirtyCheck = false, reopenAfterCancel = false } = {}) => {
+    if (!skipDirtyCheck && isDirty) {
+      const shouldDiscard = window.confirm("Discard unsaved changes?");
+      if (!shouldDiscard) {
+        if (reopenAfterCancel) {
+          setModalKey((value) => value + 1);
+        }
+        return;
+      }
+    }
     companySearchRequestRef.current += 1;
     onClose();
     setError(null);
@@ -224,7 +283,7 @@ export const NewApplicationModal = ({
           acknowledge_reuse_of_archived_company: acknowledgeArchivedRestore
         });
       }
-      closeModal();
+      closeModal({ skipDirtyCheck: true });
       await onSuccess();
     } catch (err) {
       if (err instanceof ApiConflictError) {
@@ -270,7 +329,7 @@ export const NewApplicationModal = ({
         company_id: companyId,
         job_post: buildJobPostPayload() ?? null
       });
-      closeModal();
+      closeModal({ skipDirtyCheck: true });
       await onSuccess();
     } catch (err) {
       setError((err as Error).message);
@@ -282,7 +341,13 @@ export const NewApplicationModal = ({
   const modalTitle = editing ? "Edit application" : "New application";
 
   return (
-    <Modal open={open} onClose={closeModal} title={modalTitle} size="lg">
+    <Modal
+      key={modalKey}
+      open={open}
+      onClose={() => closeModal({ reopenAfterCancel: true })}
+      title={modalTitle}
+      size="lg"
+    >
       <form className="space-y-3" onSubmit={onSubmit} aria-label={modalTitle}>
         {!editing ? (
           <>
@@ -424,7 +489,7 @@ export const NewApplicationModal = ({
         </label>
         {error && <p className="text-sm text-error">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" className="btn btn-ghost" onClick={closeModal}>
+          <button type="button" className="btn btn-ghost" onClick={() => closeModal()}>
             Cancel
           </button>
           <button

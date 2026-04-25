@@ -44,7 +44,7 @@ export const getCompanySummariesPage = async (options: {
 
   const params = new URLSearchParams({
     skip: String((options.page - 1) * options.pageSize),
-    limit: String(options.pageSize)
+    limit: String(options.pageSize + 1)
   });
   if (options.extraParams) {
     options.extraParams.forEach((value, name) => {

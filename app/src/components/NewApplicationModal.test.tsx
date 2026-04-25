@@ -47,10 +47,12 @@ const deferredResponse = () => {
 describe("NewApplicationModal", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -348,5 +350,65 @@ describe("NewApplicationModal", () => {
       expect(screen.getByRole("form", { name: "New application" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Beta Labs/ })).not.toBeInTheDocument();
     });
+  });
+
+  it("warns on accidental close when the form is dirty and stays open if discard is canceled", async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+    const { onClose } = renderModal();
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "Unsaved Co");
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(window.confirm).toHaveBeenCalledWith("Discard unsaved changes?");
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect((screen.getByRole("dialog") as HTMLDialogElement).open).toBe(true);
+    });
+    expect(screen.getByRole("form", { name: "New application" })).toBeInTheDocument();
+  });
+
+  it("does not warn when only company search text changed", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      if (String(input).includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify(applicationResponse), { status: 200 }));
+    });
+    const { onClose } = renderModal();
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Use an existing company (optional)" }), "Acme");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes a pristine form without warning", async () => {
+    const { onClose } = renderModal();
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not warn when close is triggered by successful submit", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify(applicationResponse), { status: 201 }));
+    });
+    const { onSuccess } = renderModal();
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "Submit Co");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(window.confirm).not.toHaveBeenCalled();
   });
 });

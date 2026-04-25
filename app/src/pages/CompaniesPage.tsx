@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
@@ -76,7 +76,6 @@ const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
 };
 
 export const CompaniesPage = () => {
-  const navigate = useNavigate();
   const [items, setItems] = useState<CompanyListItem[]>([]);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
@@ -123,8 +122,8 @@ export const CompaniesPage = () => {
           force: options?.force,
           extraParams: listExtraParams
         });
-        setItems(response);
-        setHasNextPage(response.length === PAGE_SIZE);
+        setItems(response.slice(0, PAGE_SIZE));
+        setHasNextPage(response.length > PAGE_SIZE);
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -338,12 +337,12 @@ export const CompaniesPage = () => {
             </thead>
             <tbody>
               {items.map((company) => (
-                <tr
-                  key={company.id}
-                  className="cursor-pointer hover:bg-base-200"
-                  onClick={() => navigate(`/companies/${company.id}`)}
-                >
-                  <td className="font-medium">{company.name}</td>
+                <tr key={company.id} className="hover:bg-base-200">
+                  <td className="font-medium">
+                    <Link to={`/companies/${company.id}`} className="link link-primary">
+                      {company.name}
+                    </Link>
+                  </td>
                   <td>
                     <span className={`badge badge-sm ${researchBadgeClass(company.research_status)}`}>
                       {researchLabel(company.research_status)}
@@ -395,8 +394,16 @@ export const CompaniesPage = () => {
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No companies yet.</p>}
         </div>
-        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} disabled={loading} />
-        <p className="mt-2 text-xs opacity-60">Click a row to view and edit full company details.</p>
+        <TablePagination
+          page={page}
+          hasNextPage={hasNextPage}
+          onPageChange={setPage}
+          disabled={loading}
+          pageSize={PAGE_SIZE}
+          visibleCount={items.length}
+          itemLabel="companies"
+        />
+        <p className="mt-2 text-xs opacity-60">Open the company name link to view and edit full company details.</p>
       </section>
 
       <Modal

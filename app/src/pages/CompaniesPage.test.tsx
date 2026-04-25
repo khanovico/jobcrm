@@ -34,7 +34,7 @@ describe("CompaniesPage", () => {
     vi.unstubAllGlobals();
   });
 
-  it("navigates to company detail when a table row is clicked", async () => {
+  it("uses a primary link to navigate to company detail", async () => {
     const fetchMock = vi.mocked(fetch);
     const companyRow = {
       id: "c1",
@@ -70,7 +70,8 @@ describe("CompaniesPage", () => {
     expect(screen.getAllByText("Has application records").some((el) => el.classList.contains("badge"))).toBe(true);
     expect(screen.getAllByText("Applications").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("row", { name: /Acme Corp/i }));
+    expect(screen.getByText("Showing 1-1 companies")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Acme Corp" }));
     expect(await screen.findByTestId("company-detail")).toBeInTheDocument();
   });
 

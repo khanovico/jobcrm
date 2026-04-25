@@ -245,7 +245,14 @@ export const ProfilesPage = () => {
             </p>
           )}
         </div>
-        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
+        <TablePagination
+          page={page}
+          hasNextPage={hasNextPage}
+          onPageChange={setPage}
+          pageSize={PAGE_SIZE}
+          visibleCount={items.length}
+          itemLabel="profiles"
+        />
         <p className="mt-2 text-xs opacity-60">
           {canEditProfiles
             ? "Click a row to view and edit. Use + to create a profile (all fields except resume are required)."

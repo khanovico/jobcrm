@@ -53,7 +53,7 @@ describe("ApplicationsPage", () => {
     applied_profiles: [] as { profile_name: string }[]
   };
 
-  it("navigates to application detail when a table row is clicked", async () => {
+  it("uses a primary link to navigate to application detail", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -79,7 +79,8 @@ describe("ApplicationsPage", () => {
     );
 
     expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("row", { name: /Acme/i }));
+    expect(screen.getByText("Showing 1-1 applications")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("link", { name: "Acme" }));
     expect(await screen.findByTestId("app-detail")).toBeInTheDocument();
   });
 
@@ -650,7 +651,7 @@ describe("ApplicationsPage", () => {
           return Promise.resolve(new Response(JSON.stringify([secondPageRow]), { status: 200 }));
         }
         return Promise.resolve(
-          new Response(JSON.stringify(Array.from({ length: 15 }, (_, index) => ({ ...applicationRow, id: `a${index + 1}` }))), {
+          new Response(JSON.stringify(Array.from({ length: 16 }, (_, index) => ({ ...applicationRow, id: `a${index + 1}` }))), {
             status: 200
           })
         );
