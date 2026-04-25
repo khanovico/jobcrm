@@ -1030,8 +1030,8 @@ describe("ApplicationDetailPage", () => {
     expect(screen.getByText("Subject options")).toBeInTheDocument();
   });
 
-  it("deletes email after confirmation", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("deletes email after modal confirmation and disables submit while deleting", async () => {
+    let releaseDelete!: () => void;
     getApplication.mockResolvedValue({
       id: "a1",
       company_id: "c1",
@@ -1075,11 +1075,16 @@ describe("ApplicationDetailPage", () => {
         content: "Sent email",
         lifecycle_status: "drafted",
         sent: false,
+        to: { title: "Hiring Manager", name: "Benjamin", email: "benjamin@lawgoat.com" },
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z"
       }
     ]);
-    deleteEmail.mockResolvedValue({});
+    deleteEmail.mockReturnValue(
+      new Promise<void>((resolve) => {
+        releaseDelete = () => resolve();
+      })
+    );
 
     render(
       <MemoryRouter initialEntries={["/applications/a1"]}>
@@ -1090,9 +1095,22 @@ describe("ApplicationDetailPage", () => {
     );
 
     await screen.findByText("Email body");
-    fireEvent.click(screen.getByRole("button", { name: "Delete email" }));
-    expect(confirmSpy).toHaveBeenCalled();
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete email" });
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]);
+    expect(screen.getByText("Delete email?")).toBeInTheDocument();
+    expect(screen.getAllByText(/follow_up/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Profile One/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Hiring Manager - Benjamin/).length).toBeGreaterThan(0);
+
+    const modalDeleteButtons = screen.getAllByRole("button", { name: "Delete email" });
+    fireEvent.click(modalDeleteButtons[modalDeleteButtons.length - 1]);
+    expect(screen.getByRole("button", { name: "Deleting..." })).toBeDisabled();
     expect(deleteEmail).toHaveBeenCalledWith("e1");
+
+    releaseDelete();
+    await waitFor(() => {
+      expect(screen.getByText("No emails yet.")).toBeInTheDocument();
+    });
   });
 
   it("shows application status as plain text (no dropdown)", async () => {

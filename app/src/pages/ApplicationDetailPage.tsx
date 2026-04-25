@@ -4,6 +4,7 @@ import DOMPurify from "dompurify";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { ClearApplicationToPendingModal } from "../components/ClearApplicationToPendingModal";
+import { DestructiveConfirmModal } from "../components/DestructiveConfirmModal";
 import { api } from "../api";
 import {
   applicationStatusBadgeClass,
@@ -108,6 +109,13 @@ type ReadinessItem = {
   ready: boolean;
 };
 
+type EmailDeleteTarget = {
+  ppaId: string;
+  profileName: string;
+  email: Email;
+  recipientLabel: string | null;
+};
+
 const getActiveSubject = (
   subjects: string[] | undefined,
   selectedSubjectIndex: number | undefined
@@ -138,6 +146,7 @@ export const ApplicationDetailPage = () => {
   const [editingRecipientPpaId, setEditingRecipientPpaId] = useState<string | null>(null);
   const [recipientDraftByPpa, setRecipientDraftByPpa] = useState<Record<string, RecipientDraft>>({});
   const [recipientUpdateBusyPpaId, setRecipientUpdateBusyPpaId] = useState<string | null>(null);
+  const [emailDeleteTarget, setEmailDeleteTarget] = useState<EmailDeleteTarget | null>(null);
   const [actionBusyKeys, setActionBusyKeys] = useState<Set<string>>(() => new Set());
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const load = useCallback(async () => {
@@ -225,6 +234,8 @@ export const ApplicationDetailPage = () => {
   const hasSentSyncBusy = Array.from(actionBusyKeys).some(
     (key) => key.includes(":sent") || key === "application:email_sent"
   );
+  const deleteTargetBusyKey = emailDeleteTarget ? `email:${emailDeleteTarget.email.id}:delete` : null;
+  const deleteTargetSubmitting = deleteTargetBusyKey ? isActionBusy(deleteTargetBusyKey) : false;
 
   useEffect(() => {
     void load();
@@ -400,24 +411,26 @@ export const ApplicationDetailPage = () => {
     }
   };
 
-  const removeEmail = async (ppaId: string, em: Email) => {
-    if (!window.confirm("Delete this email?")) return;
-    const key = `email:${em.id}:delete`;
+  const removeEmail = async () => {
+    if (!emailDeleteTarget) return;
+    const { ppaId, email } = emailDeleteTarget;
+    const key = `email:${email.id}:delete`;
     clearActionError(key);
     setActionBusy(key, true);
     try {
-      await api.deleteEmail(em.id);
+      await api.deleteEmail(email.id);
       const nextPpas = ppaDetails.map((row) =>
         row.id === ppaId
           ? {
               ...row,
-              emails: row.emails.filter((email) => email.id !== em.id)
+              emails: row.emails.filter((rowEmail) => rowEmail.id !== email.id)
             }
           : row
       );
       setPpaDetails(nextPpas);
       const nextHasSentEmail = nextPpas.some((row) => row.emails.some((email) => email.sent));
       await syncApplicationEmailSent(nextHasSentEmail);
+      setEmailDeleteTarget(null);
     } catch (e) {
       setActionError(key, (e as Error).message);
     } finally {
@@ -837,7 +850,13 @@ export const ApplicationDetailPage = () => {
                                   aria-label="Delete email"
                                   disabled={isEmailBusy(em.id)}
                                   onClick={() => {
-                                    void removeEmail(ppa.id, em);
+                                    clearActionError(`email:${em.id}:delete`);
+                                    setEmailDeleteTarget({
+                                      ppaId: ppa.id,
+                                      profileName: ppa.profile_name,
+                                      email: em,
+                                      recipientLabel: formatRecipient(getRecipientForEmail(ppa, em))
+                                    });
                                   }}
                                 >
                                   {isActionBusy(`email:${em.id}:delete`) ? "Deleting..." : "Delete"}
@@ -903,6 +922,29 @@ export const ApplicationDetailPage = () => {
             targetStatus={clearResetTargetStatus(company)}
             onCleared={load}
           />
+          <DestructiveConfirmModal
+            open={emailDeleteTarget != null}
+            onClose={() => {
+              if (deleteTargetSubmitting) return;
+              setEmailDeleteTarget(null);
+            }}
+            onConfirm={() => {
+              void removeEmail();
+            }}
+            title="Delete email?"
+            confirmLabel="Delete email"
+            confirmingLabel="Deleting..."
+            submitting={deleteTargetSubmitting}
+            error={deleteTargetBusyKey ? actionErrors[deleteTargetBusyKey] ?? null : null}
+          >
+            <p>
+              This will permanently delete the <strong>{emailDeleteTarget?.email.kind ?? "selected"}</strong> email for{" "}
+              <strong>{emailDeleteTarget?.profileName ?? "this profile"}</strong>. This cannot be undone.
+            </p>
+            <p className="opacity-80">
+              Recipient: <strong>{emailDeleteTarget?.recipientLabel ?? "Not set"}</strong>
+            </p>
+          </DestructiveConfirmModal>
         </>
       )}
     </div>
