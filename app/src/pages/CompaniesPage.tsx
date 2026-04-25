@@ -21,6 +21,31 @@ type CompanySort =
 
 type ApplicationRecordFilter = "all" | "never" | "once";
 
+type ArchivedCompanyConflict = {
+  companyId: string | null;
+  name: string;
+  website: string | null;
+  archiveReason: string | null;
+  archivedAt: string | null;
+};
+
+const readOptionalConflictString = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const parseArchivedCompanyConflict = (
+  detail: Record<string, unknown>,
+  fallbackName: string
+): ArchivedCompanyConflict => ({
+  companyId: readOptionalConflictString(detail.company_id),
+  name: readOptionalConflictString(detail.name) ?? fallbackName,
+  website: readOptionalConflictString(detail.website),
+  archiveReason: readOptionalConflictString(detail.archive_reason),
+  archivedAt: readOptionalConflictString(detail.archived_at)
+});
+
 const companySortLabel = (s: CompanySort): string => {
   switch (s) {
     case "updated_at_desc":
@@ -82,7 +107,10 @@ export const CompaniesPage = () => {
     return p;
   }, [sort, researchFilter, applicationRecordFilter]);
   const [archiveTarget, setArchiveTarget] = useState<CompanyListItem | null>(null);
-  const [awaitingArchivedRestore, setAwaitingArchivedRestore] = useState(false);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [archivedConflict, setArchivedConflict] = useState<ArchivedCompanyConflict | null>(null);
+  const [restoreSubmitting, setRestoreSubmitting] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const load = useCallback(
     async (targetPage = page, options?: { force?: boolean }) => {
@@ -145,25 +173,34 @@ export const CompaniesPage = () => {
     }
   }, [items.length, page]);
 
+  const closeCreateModal = useCallback(() => {
+    setCreateOpen(false);
+    setError(null);
+    setRestoreError(null);
+  }, []);
+
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setRestoreError(null);
+    setArchivedConflict(null);
+    setCreateSubmitting(true);
     try {
       await api.createCompany({
         name,
         website: website.trim() || null,
-        acknowledge_reuse_of_archived_company: awaitingArchivedRestore
+        acknowledge_reuse_of_archived_company: false
       });
       invalidateCompanySummariesCache();
       setName("");
       setWebsite("");
-      setAwaitingArchivedRestore(false);
       setCreateOpen(false);
       await load(page, { force: true });
     } catch (err) {
       if (err instanceof ApiConflictError) {
         if (err.detail.code === "archived_company_name_exists") {
-          setAwaitingArchivedRestore(true);
+          setCreateOpen(false);
+          setArchivedConflict(parseArchivedCompanyConflict(err.detail, name.trim()));
           return;
         }
         if (err.detail.code === "company_name_exists") {
@@ -172,6 +209,32 @@ export const CompaniesPage = () => {
         }
       }
       setError((err as Error).message);
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  const onRestoreArchivedCompany = async () => {
+    if (!archivedConflict) return;
+    setRestoreError(null);
+    setRestoreSubmitting(true);
+    try {
+      await api.createCompany({
+        name,
+        website: website.trim() || null,
+        acknowledge_reuse_of_archived_company: true
+      });
+      invalidateCompanySummariesCache();
+      setName("");
+      setWebsite("");
+      setArchivedConflict(null);
+      setRestoreError(null);
+      setCreateOpen(false);
+      await load(page, { force: true });
+    } catch (err) {
+      setRestoreError((err as Error).message);
+    } finally {
+      setRestoreSubmitting(false);
     }
   };
 
@@ -208,7 +271,8 @@ export const CompaniesPage = () => {
               aria-label="New company"
               onClick={() => {
                 setError(null);
-                setAwaitingArchivedRestore(false);
+                setArchivedConflict(null);
+                setRestoreError(null);
                 setCreateOpen(true);
               }}
             >
@@ -337,11 +401,7 @@ export const CompaniesPage = () => {
 
       <Modal
         open={createOpen}
-        onClose={() => {
-          setCreateOpen(false);
-          setError(null);
-          setAwaitingArchivedRestore(false);
-        }}
+        onClose={closeCreateModal}
         title="New company"
         size="md"
       >
@@ -354,7 +414,8 @@ export const CompaniesPage = () => {
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                setAwaitingArchivedRestore(false);
+                setArchivedConflict(null);
+                setRestoreError(null);
               }}
               required
               autoFocus={createOpen}
@@ -368,26 +429,95 @@ export const CompaniesPage = () => {
               value={website}
               onChange={(e) => {
                 setWebsite(e.target.value);
-                setAwaitingArchivedRestore(false);
+                setArchivedConflict(null);
+                setRestoreError(null);
               }}
             />
           </label>
-          {awaitingArchivedRestore && (
-            <div className="alert alert-warning text-sm">
-              A company with this name is already archived. Confirm below to restore it and use it in your list, or
-              change the name to create a different record.
-            </div>
-          )}
           {error && <p className="text-sm text-error">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-ghost" onClick={() => setCreateOpen(false)}>
+            <button type="button" className="btn btn-ghost" onClick={closeCreateModal}>
               Cancel
             </button>
-            <button className="btn btn-primary" type="submit">
-              {awaitingArchivedRestore ? "Confirm restore" : "Create"}
+            <button className="btn btn-primary" type="submit" disabled={createSubmitting}>
+              {createSubmitting ? "Creating..." : "Create"}
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={archivedConflict !== null}
+        onClose={() => {
+          if (restoreSubmitting) return;
+          setArchivedConflict(null);
+          setRestoreError(null);
+          setCreateOpen(true);
+        }}
+        title="Restore archived company"
+        size="md"
+        closeDisabled={restoreSubmitting}
+      >
+        {archivedConflict && (
+          <div className="space-y-3 text-sm">
+            <p>
+              A company named <span className="font-medium">{archivedConflict.name}</span> already exists in the
+              archive.
+            </p>
+            <p className="opacity-80">
+              Restoring will reuse this archived record and return it to your active company list instead of creating
+              a second company with the same name.
+            </p>
+            <div className="rounded border border-base-300 bg-base-200 p-3">
+              <p>
+                <span className="font-medium">Name:</span> {archivedConflict.name}
+              </p>
+              {archivedConflict.website && (
+                <p className="mt-1">
+                  <span className="font-medium">Website:</span> {archivedConflict.website}
+                </p>
+              )}
+              {archivedConflict.archiveReason && (
+                <p className="mt-1">
+                  <span className="font-medium">Archived reason:</span> {archivedConflict.archiveReason}
+                </p>
+              )}
+              {archivedConflict.archivedAt && (
+                <p className="mt-1">
+                  <span className="font-medium">Archived at:</span> {new Date(archivedConflict.archivedAt).toLocaleString()}
+                </p>
+              )}
+              {archivedConflict.companyId && (
+                <p className="mt-1 opacity-70">
+                  <span className="font-medium">ID:</span> {archivedConflict.companyId}
+                </p>
+              )}
+            </div>
+            {restoreError && <p className="text-error">{restoreError}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={restoreSubmitting}
+                onClick={() => {
+                  setArchivedConflict(null);
+                  setRestoreError(null);
+                  setCreateOpen(true);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-warning"
+                disabled={restoreSubmitting}
+                onClick={() => void onRestoreArchivedCompany()}
+              >
+                {restoreSubmitting ? "Restoring..." : "Restore archived company"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <NewApplicationModal

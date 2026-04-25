@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,16 @@ const WORKER_STATE = {
   settings: { max_company_researcher: 1, max_ppa_analyser: 1, max_application_drafter: 1 },
   active: { company_researcher: 0, ppa_analyser: 0, application_drafter: 0 },
   max: { company_researcher: 1, ppa_analyser: 1, application_drafter: 1 }
+};
+
+const companySummaryRow = {
+  id: "c1",
+  name: "Acme Corp",
+  has_application: false,
+  research_status: "indexed",
+  website: "https://acme.example",
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-02T00:00:00Z"
 };
 
 describe("CompaniesPage", () => {
@@ -264,6 +274,176 @@ describe("CompaniesPage", () => {
       expect(JSON.parse((createCall![1] as RequestInit).body as string)).toMatchObject({
         company_id: "c1"
       });
+    });
+  });
+
+  it("opens an explicit restore modal when create hits archived-company conflict", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/v1/companies") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              detail: {
+                code: "archived_company_name_exists",
+                company_id: "c-archived",
+                name: "Old Co",
+                website: "https://old.example",
+                archive_reason: "Duplicate target"
+              }
+            }),
+            { status: 409 }
+          )
+        );
+      }
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New company" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Old Co");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    const restoreDialogTitle = await screen.findByRole("heading", { name: "Restore archived company" });
+    const restoreDialog = restoreDialogTitle.closest("dialog");
+    expect(restoreDialog).toBeTruthy();
+    if (!restoreDialog) {
+      throw new Error("Restore dialog container not found");
+    }
+    expect(within(restoreDialog).getByText(/already exists in the archive/i)).toBeInTheDocument();
+    expect(within(restoreDialog).getByText("https://old.example")).toBeInTheDocument();
+    expect(within(restoreDialog).getByText("Duplicate target")).toBeInTheDocument();
+    expect(within(restoreDialog).getByRole("button", { name: "Restore archived company" })).toBeInTheDocument();
+  });
+
+  it("keeps create modal input state when restore modal is canceled", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/v1/companies") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              detail: {
+                code: "archived_company_name_exists",
+                company_id: "c-archived",
+                name: "Old Co"
+              }
+            }),
+            { status: 409 }
+          )
+        );
+      }
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New company" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Old Co");
+    await userEvent.type(screen.getByRole("textbox", { name: "Website" }), "https://typed.example");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    const restoreDialogTitle = await screen.findByRole("heading", { name: "Restore archived company" });
+    const restoreDialog = restoreDialogTitle.closest("dialog");
+    expect(restoreDialog).toBeTruthy();
+    if (!restoreDialog) {
+      throw new Error("Restore dialog container not found");
+    }
+    await userEvent.click(within(restoreDialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Restore archived company" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Old Co");
+    expect(screen.getByRole("textbox", { name: "Website" })).toHaveValue("https://typed.example");
+  });
+
+  it("submits explicit archived restore with acknowledge flag and shows inline restore errors", async () => {
+    const fetchMock = vi.mocked(fetch);
+    let postCount = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/v1/companies") && init?.method === "POST") {
+        postCount += 1;
+        if (postCount === 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                detail: {
+                  code: "archived_company_name_exists",
+                  company_id: "c-archived",
+                  name: "Old Co"
+                }
+              }),
+              { status: 409 }
+            )
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Could not restore archived company right now." }), { status: 500 })
+        );
+      }
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New company" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Old Co");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    const restoreDialogTitle = await screen.findByRole("heading", { name: "Restore archived company" });
+    const restoreDialog = restoreDialogTitle.closest("dialog");
+    expect(restoreDialog).toBeTruthy();
+    if (!restoreDialog) {
+      throw new Error("Restore dialog container not found");
+    }
+
+    await userEvent.click(within(restoreDialog).getByRole("button", { name: "Restore archived company" }));
+    expect(await screen.findByText("Could not restore archived company right now.")).toBeInTheDocument();
+
+    const createCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).includes("/api/v1/companies") && (init as RequestInit | undefined)?.method === "POST"
+    );
+    expect(createCalls).toHaveLength(2);
+    expect(JSON.parse((createCalls[1][1] as RequestInit).body as string)).toMatchObject({
+      name: "Old Co",
+      acknowledge_reuse_of_archived_company: true
     });
   });
 });

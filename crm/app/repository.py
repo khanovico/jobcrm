@@ -884,6 +884,57 @@ class InMemoryRepository(BaseRepository):
                 update={"status": ApplicationStatus.invalid, "updated_at": utcnow()}
             )
 
+    def _clear_company_research_detail_model(self, company: Company) -> Company:
+        return company.model_copy(
+            update={
+                "research_status": CompanyResearchStatus.pending,
+                "linkedin": None,
+                "industry_ids": [],
+                "hq_locations": [],
+                "employee_count_text": None,
+                "actively_hiring": None,
+                "work_mode": None,
+                "work_mode_description": None,
+                "overview": None,
+                "full_product_detail": None,
+                "full_hiring_detail": None,
+                "full_organization_detail": None,
+                "analysis_links": [],
+                "enrichment_source_links": [],
+                "updated_at": utcnow(),
+            }
+        )
+
+    def _archive_application_for_company(self, application: Application, archive_reason: str) -> Application:
+        if application.status != ApplicationStatus.archived and not validate_application_transition(
+            application.status, ApplicationStatus.archived
+        ):
+            raise ValueError(
+                f"Cannot archive application {application.id} from status {application.status}"
+            )
+        return application.model_copy(
+            update={
+                "status": ApplicationStatus.archived,
+                "archive_reason": archive_reason,
+                "updated_at": utcnow(),
+            }
+        )
+
+    def _clear_application_model_to_company_research_pending(
+        self, application: Application, *, next_status: ApplicationStatus
+    ) -> Application:
+        return application.model_copy(
+            update={
+                "status": next_status,
+                "applied": False,
+                "applied_at": None,
+                "email_sent": False,
+                "email_sent_at": None,
+                "archive_reason": None,
+                "updated_at": utcnow(),
+            }
+        )
+
     def update_company(self, company_id: str, payload: CompanyUpdate) -> Company | None:
         company = self.get_company(company_id)
         if not company:
@@ -912,27 +963,7 @@ class InMemoryRepository(BaseRepository):
         for app_id, application in list(self.applications.items()):
             if application.company_id != company_id:
                 continue
-            if application.status != ApplicationStatus.archived:
-                if not validate_application_transition(
-                    application.status, ApplicationStatus.archived
-                ):
-                    raise ValueError(
-                        f"Cannot archive application {app_id} from status {application.status}"
-                    )
-                merged = application.model_copy(
-                    update={
-                        "status": ApplicationStatus.archived,
-                        "archive_reason": archive_reason,
-                        "updated_at": utcnow(),
-                    }
-                )
-            else:
-                merged = application.model_copy(
-                    update={
-                        "archive_reason": archive_reason,
-                        "updated_at": utcnow(),
-                    }
-                )
+            merged = self._archive_application_for_company(application, archive_reason)
             self.applications[app_id] = merged
             n += 1
         return n
@@ -1390,16 +1421,8 @@ class InMemoryRepository(BaseRepository):
                 self.emails.pop(eid, None)
         for pid in ppa_ids:
             self.per_profile_applications.pop(pid, None)
-        merged = application.model_copy(
-            update={
-                "status": next_status,
-                "applied": False,
-                "applied_at": None,
-                "email_sent": False,
-                "email_sent_at": None,
-                "archive_reason": None,
-                "updated_at": utcnow(),
-            }
+        merged = self._clear_application_model_to_company_research_pending(
+            application, next_status=next_status
         )
         self.applications[application_id] = merged
         return merged
@@ -1415,25 +1438,7 @@ class InMemoryRepository(BaseRepository):
             return None
         # Apply company wipe first so related-application reset sees research_status pending
         # (otherwise clear_application_to_company_research_pending would still see indexed → ppa_pending).
-        merged = company.model_copy(
-            update={
-                "research_status": CompanyResearchStatus.pending,
-                "linkedin": None,
-                "industry_ids": [],
-                "hq_locations": [],
-                "employee_count_text": None,
-                "actively_hiring": None,
-                "work_mode": None,
-                "work_mode_description": None,
-                "overview": None,
-                "full_product_detail": None,
-                "full_hiring_detail": None,
-                "full_organization_detail": None,
-                "analysis_links": [],
-                "enrichment_source_links": [],
-                "updated_at": utcnow(),
-            }
-        )
+        merged = self._clear_company_research_detail_model(company)
         self.companies[company_id] = merged
         if related_applications == "archive":
             self._archive_all_company_applications(
@@ -2137,6 +2142,40 @@ class MongoRepository(InMemoryRepository):
     def _email_ids_for_ppas(self, ppa_ids: set[str]) -> set[str]:
         return set(self._emails_for_ppas(ppa_ids))
 
+    def _mongo_application_ids_for_company(
+        self, company_id: str, *, include_archived: bool = True
+    ) -> set[str]:
+        query: dict[str, object] = {"company_id": company_id}
+        if not include_archived:
+            query["status"] = {"$ne": ApplicationStatus.archived.value}
+        return {
+            str(application_id)
+            for application_id in self.db.applications.distinct("_id", query)
+            if application_id is not None
+        }
+
+    def _mongo_ppa_ids_for_applications(self, application_ids: set[str]) -> set[str]:
+        if not application_ids:
+            return set()
+        return {
+            str(ppa_id)
+            for ppa_id in self.db.per_profile_applications.distinct(
+                "_id", {"application_id": {"$in": sorted(application_ids)}}
+            )
+            if ppa_id is not None
+        }
+
+    def _mongo_email_ids_for_ppas(self, ppa_ids: set[str]) -> set[str]:
+        if not ppa_ids:
+            return set()
+        return {
+            str(email_id)
+            for email_id in self.db.emails.distinct(
+                "_id", {"per_profile_application_id": {"$in": sorted(ppa_ids)}}
+            )
+            if email_id is not None
+        }
+
     def list_companies(
         self,
         skip: int,
@@ -2835,35 +2874,56 @@ class MongoRepository(InMemoryRepository):
             self._persist_ids("applications", self.applications, application_ids)
         return (ok, n)
 
+    def count_applications_for_company(self, company_id: str) -> int:
+        return self.db.applications.count_documents({"company_id": company_id})
+
     def clear_company_research_detail(
         self,
         company_id: str,
         *,
         related_applications: Literal["none", "archive", "reset"] = "none",
     ) -> Company | None:
-        applications_before = self._applications_for_company(company_id)
-        application_ids_before = set(applications_before)
-        ppas_before = self._ppas_for_applications(application_ids_before)
-        emails_before = self._emails_for_ppas(set(ppas_before))
+        company = self.get_company(company_id)
+        if not company:
+            return None
+        cleared_company = self._clear_company_research_detail_model(company)
+        self.companies[company_id] = cleared_company
         with self.bulk_persistence():
-            company = super().clear_company_research_detail(
-                company_id, related_applications=related_applications
-            )
-            if company:
-                applications_after = self._applications_for_company(company_id)
-                application_ids = self._changed_ids(applications_before, applications_after)
-                related_application_ids = set(applications_before) | set(applications_after)
-                ppas_after = self._ppas_for_applications(related_application_ids)
-                ppa_ids = self._changed_ids(ppas_before, ppas_after)
-                emails_after = self._emails_for_ppas(set(ppas_before) | set(ppas_after))
-                email_ids = self._changed_ids(emails_before, emails_after)
-                self._persist_document("companies", company)
-                self._persist_ids("applications", self.applications, application_ids)
-                self._persist_ids(
-                    "per_profile_applications", self.per_profile_applications, ppa_ids
+            self._persist_document("companies", cleared_company)
+            if related_applications == "archive":
+                application_ids = self._mongo_application_ids_for_company(company_id)
+                for application_id in application_ids:
+                    application = self.applications.get(application_id)
+                    if application is None:
+                        continue
+                    merged = self._archive_application_for_company(
+                        application, RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
+                    )
+                    self.applications[application_id] = merged
+                    self._persist_document("applications", merged)
+            elif related_applications == "reset":
+                application_ids = self._mongo_application_ids_for_company(
+                    company_id, include_archived=False
                 )
-                self._persist_ids("emails", self.emails, email_ids)
-        return company
+                ppa_ids = self._mongo_ppa_ids_for_applications(application_ids)
+                email_ids = self._mongo_email_ids_for_ppas(ppa_ids)
+                next_status = self._initial_application_status_for_company(company_id)
+                for email_id in email_ids:
+                    self.emails.pop(email_id, None)
+                    self._delete_document("emails", email_id)
+                for ppa_id in ppa_ids:
+                    self.per_profile_applications.pop(ppa_id, None)
+                    self._delete_document("per_profile_applications", ppa_id)
+                for application_id in application_ids:
+                    application = self.applications.get(application_id)
+                    if application is None:
+                        continue
+                    merged = self._clear_application_model_to_company_research_pending(
+                        application, next_status=next_status
+                    )
+                    self.applications[application_id] = merged
+                    self._persist_document("applications", merged)
+        return cleared_company
 
     def dashboard_application_counts(self, created_by_user_id: str | None = None) -> dict[str, int]:
         base_filter: dict[str, object] = {

@@ -1251,13 +1251,19 @@ def test_create_company_409_when_name_matches_archived_without_ack() -> None:
     token = _register_and_login(client)
     headers = _auth_headers(token)
 
-    c = client.post("/api/v1/companies", json={"name": "Once Co"}, headers=headers).json()
+    c = client.post(
+        "/api/v1/companies",
+        json={"name": "Once Co", "website": "https://once.example"},
+        headers=headers,
+    ).json()
     client.post(f"/api/v1/companies/{c['id']}/archive", json={"archive_reason": "gone"}, headers=headers)
     hit = client.post("/api/v1/companies", json={"name": "Once Co"}, headers=headers)
     assert hit.status_code == 409
     d = hit.json()["detail"]
     assert d["code"] == "archived_company_name_exists"
+    assert d["website"] == "https://once.example"
     assert d["archive_reason"] == "gone"
+    assert d["archived_at"]
 
 
 def test_create_company_unarchives_archived_name_when_acknowledged() -> None:
@@ -2069,6 +2075,14 @@ def _mongo_repo_for_write_tests() -> tuple[MongoRepository, _FakeMongoDb]:
     db = _FakeMongoDb()
     repo.db = db
     return repo, db
+
+
+def _sync_fake_mongo_docs_from_repo(
+    repo: InMemoryRepository, db: _FakeMongoDb, *collection_names: str
+) -> None:
+    for collection_name in collection_names:
+        values = getattr(repo, collection_name)
+        db[collection_name].docs = [_mongo_doc(item) for item in values.values()]
 
 
 def _mongo_repo_for_query_tests() -> tuple[MongoRepository, _FakeMongoDb]:
@@ -3014,7 +3028,34 @@ def test_mongo_repository_clears_application_with_targeted_related_deletes() -> 
     db.assert_no_full_rewrites()
 
 
-def test_mongo_repository_clear_company_reset_persists_targeted_cascade() -> None:
+def test_mongo_repository_count_applications_for_company_uses_count_query() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    company = repo.create_company(CompanyCreate(name="Acme"))
+    other_company = repo.create_company(CompanyCreate(name="Other"))
+    repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    archived = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    repo.create_application(
+        ApplicationCreate(company_id=other_company.id, status=ApplicationStatus.company_research_pending),
+        created_by_user_id=None,
+    )
+    repo.applications[archived.id] = archived.model_copy(update={"status": ApplicationStatus.archived})
+    _sync_fake_mongo_docs_from_repo(repo, db, "applications")
+    db.clear_ops()
+
+    count = repo.count_applications_for_company(company.id)
+
+    assert count == 2
+    assert db.applications.count_queries == [{"company_id": company.id}]
+    assert db.applications.find_queries == []
+
+
+def test_mongo_repository_clear_company_none_touches_only_company() -> None:
     repo, db = _mongo_repo_for_write_tests()
     company = repo.create_company(CompanyCreate(name="Acme", overview="Old"))
     profile = repo.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
@@ -3028,34 +3069,136 @@ def test_mongo_repository_clear_company_reset_persists_targeted_cascade() -> Non
     email = repo.create_email(
         EmailCreate(per_profile_application_id=ppa.id, kind=EmailKind.cold, content="Hello")
     )
+    _sync_fake_mongo_docs_from_repo(
+        repo,
+        db,
+        "companies",
+        "applications",
+        "per_profile_applications",
+        "emails",
+    )
+    db.clear_ops()
+
+    cleared = repo.clear_company_research_detail(company.id, related_applications="none")
+
+    assert cleared is not None
+    assert db.companies.replacements[-1][0] == {"_id": company.id}
+    assert db.applications.replacements == []
+    assert db.per_profile_applications.deletes == []
+    assert db.emails.deletes == []
+    assert db.applications.distinct_calls == []
+    assert repo.per_profile_applications[ppa.id].id == ppa.id
+    assert repo.emails[email.id].id == email.id
+    db.assert_no_full_rewrites()
+
+
+def test_mongo_repository_clear_company_reset_persists_targeted_cascade() -> None:
+    repo, db = _mongo_repo_for_write_tests()
+    company = repo.create_company(CompanyCreate(name="Acme", overview="Old"))
+    other_company = repo.create_company(CompanyCreate(name="Other"))
+    profile = repo.create_profile(ProfileCreate.model_validate(_valid_profile_create_payload()))
+    application = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    archived_application = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.archived),
+        created_by_user_id=None,
+    )
+    other_application = repo.create_application(
+        ApplicationCreate(company_id=other_company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    ppa = repo.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=application.id, profile_id=profile.id)
+    )
+    archived_ppa = repo.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=archived_application.id, profile_id=profile.id)
+    )
+    other_ppa = repo.create_per_profile_application(
+        PerProfileApplicationCreate(application_id=other_application.id, profile_id=profile.id)
+    )
+    email = repo.create_email(
+        EmailCreate(per_profile_application_id=ppa.id, kind=EmailKind.cold, content="Hello")
+    )
+    archived_email = repo.create_email(
+        EmailCreate(per_profile_application_id=archived_ppa.id, kind=EmailKind.cold, content="Keep")
+    )
+    other_email = repo.create_email(
+        EmailCreate(per_profile_application_id=other_ppa.id, kind=EmailKind.cold, content="Other")
+    )
+    _sync_fake_mongo_docs_from_repo(
+        repo,
+        db,
+        "companies",
+        "applications",
+        "per_profile_applications",
+        "emails",
+    )
     db.clear_ops()
 
     cleared = repo.clear_company_research_detail(company.id, related_applications="reset")
 
     assert cleared is not None
     assert db.companies.replacements[-1][0] == {"_id": company.id}
-    assert db.applications.replacements[-1][0] == {"_id": application.id}
+    assert [row[0] for row in db.applications.replacements] == [{"_id": application.id}]
     assert db.applications.replacements[-1][1]["status"] == ApplicationStatus.company_research_pending.value
-    assert {"_id": ppa.id} in db.per_profile_applications.deletes
-    assert {"_id": email.id} in db.emails.deletes
+    assert db.per_profile_applications.deletes == [{"_id": ppa.id}]
+    assert db.emails.deletes == [{"_id": email.id}]
+    assert db.applications.distinct_calls == [
+        ("_id", {"company_id": company.id, "status": {"$ne": ApplicationStatus.archived.value}})
+    ]
+    assert db.per_profile_applications.distinct_calls == [
+        ("_id", {"application_id": {"$in": [application.id]}})
+    ]
+    assert db.emails.distinct_calls == [
+        ("_id", {"per_profile_application_id": {"$in": [ppa.id]}})
+    ]
+    assert repo.applications[archived_application.id].status == ApplicationStatus.archived
+    assert repo.per_profile_applications[archived_ppa.id].id == archived_ppa.id
+    assert repo.emails[archived_email.id].id == archived_email.id
+    assert repo.applications[other_application.id].status == ApplicationStatus.ppa_pending
+    assert repo.per_profile_applications[other_ppa.id].id == other_ppa.id
+    assert repo.emails[other_email.id].id == other_email.id
     db.assert_no_full_rewrites()
 
 
 def test_mongo_repository_clear_company_archive_persists_targeted_apps_only() -> None:
     repo, db = _mongo_repo_for_write_tests()
     company = repo.create_company(CompanyCreate(name="Acme", overview="Old"))
+    other_company = repo.create_company(CompanyCreate(name="Other"))
     application = repo.create_application(
         ApplicationCreate(company_id=company.id, status=ApplicationStatus.company_research_pending),
         created_by_user_id=None,
     )
+    archived_application = repo.create_application(
+        ApplicationCreate(company_id=company.id, status=ApplicationStatus.archived),
+        created_by_user_id=None,
+    )
+    other_application = repo.create_application(
+        ApplicationCreate(company_id=other_company.id, status=ApplicationStatus.ppa_pending),
+        created_by_user_id=None,
+    )
+    _sync_fake_mongo_docs_from_repo(repo, db, "companies", "applications")
     db.clear_ops()
 
     cleared = repo.clear_company_research_detail(company.id, related_applications="archive")
 
     assert cleared is not None
     assert db.companies.replacements[-1][0] == {"_id": company.id}
-    assert db.applications.replacements[-1][0] == {"_id": application.id}
-    assert db.applications.replacements[-1][1]["status"] == ApplicationStatus.archived.value
+    assert {row[0]["_id"] for row in db.applications.replacements} == {
+        application.id,
+        archived_application.id,
+    }
+    assert all(
+        row[1]["status"] == ApplicationStatus.archived.value for row in db.applications.replacements
+    )
+    assert all(
+        row[1]["archive_reason"] == RELATED_COMPANY_RESEARCH_CLEARED_ARCHIVE_REASON
+        for row in db.applications.replacements
+    )
+    assert db.applications.distinct_calls == [("_id", {"company_id": company.id})]
+    assert repo.applications[other_application.id].status == ApplicationStatus.ppa_pending
     assert db.per_profile_applications.deletes == []
     assert db.emails.deletes == []
     db.assert_no_full_rewrites()
