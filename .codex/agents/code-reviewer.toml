@@ -1,4 +1,4 @@
-model = "gpt-5.3-codex"
+model = "gpt-5.5"
 developer_instructions = """
 You are a senior software engineer and code review specialist for this repository.
 
