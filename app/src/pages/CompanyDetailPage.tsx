@@ -230,7 +230,7 @@ export const CompanyDetailPage = () => {
 
   const showIndexedResearchSummary = company?.research_status === "indexed";
   const sectionButtonClass = (section: CompanyDetailSection) =>
-    `btn btn-sm ${activeSection === section ? "btn-active" : "btn-ghost"}`;
+    `tab whitespace-nowrap ${activeSection === section ? "tab-active" : ""}`;
   const selectedIndustrySummary =
     company?.industry_ids && company.industry_ids.length > 0
       ? company.industry_ids
@@ -317,7 +317,11 @@ export const CompanyDetailPage = () => {
               Updated {new Date(company.updated_at).toLocaleString()} · ID{" "}
               <span className="font-mono text-xs">{company.id}</span>
             </p>
-            <div className="tabs tabs-boxed mt-4 w-fit" role="tablist" aria-label="Company detail sections">
+            <div
+              className="tabs tabs-boxed mt-4 flex-nowrap overflow-x-auto"
+              role="tablist"
+              aria-label="Company detail sections"
+            >
               <button
                 type="button"
                 role="tab"

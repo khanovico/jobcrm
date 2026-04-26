@@ -329,7 +329,7 @@ export const ProfileDetailPage = () => {
   };
 
   const sectionButtonClass = (section: ProfileSection) =>
-    `btn btn-sm ${activeSection === section ? "btn-active" : "btn-ghost"}`;
+    `tab whitespace-nowrap ${activeSection === section ? "tab-active" : ""}`;
 
   if (!profileId) return <div>Missing profile id</div>;
   if (isNew && !canEditProfiles) return <div className="alert alert-warning">Profile creation is admin-only.</div>;
@@ -370,18 +370,32 @@ export const ProfileDetailPage = () => {
             {hasUnsavedChanges && <span className="badge badge-warning">Unsaved</span>}
           </div>
           {!isNew && profile && (
-            <div className="tabs tabs-boxed mb-4 w-fit">
-              <button type="button" className={sectionButtonClass("basics")} onClick={() => setActiveSection("basics")}>
+            <div className="tabs tabs-boxed mb-4 flex-nowrap overflow-x-auto" role="tablist" aria-label="Profile sections">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSection === "basics"}
+                className={sectionButtonClass("basics")}
+                onClick={() => setActiveSection("basics")}
+              >
                 Basics
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeSection === "education"}
                 className={sectionButtonClass("education")}
                 onClick={() => setActiveSection("education")}
               >
                 Education
               </button>
-              <button type="button" className={sectionButtonClass("writing")} onClick={() => setActiveSection("writing")}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSection === "writing"}
+                className={sectionButtonClass("writing")}
+                onClick={() => setActiveSection("writing")}
+              >
                 Writing
               </button>
             </div>

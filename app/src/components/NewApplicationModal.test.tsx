@@ -352,19 +352,30 @@ describe("NewApplicationModal", () => {
     });
   });
 
-  it("warns on accidental close when the form is dirty and stays open if discard is canceled", async () => {
-    vi.mocked(window.confirm).mockReturnValue(false);
+  it("warns with an in-app modal on accidental close when the form is dirty and stays open if discard is canceled", async () => {
     const { onClose } = renderModal();
 
     await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "Unsaved Co");
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
 
-    expect(window.confirm).toHaveBeenCalledWith("Discard unsaved changes?");
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Discard unsaved changes?" })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
-    await waitFor(() => {
-      expect((screen.getByRole("dialog") as HTMLDialogElement).open).toBe(true);
-    });
+    await userEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+
+    expect(screen.queryByRole("heading", { name: "Discard unsaved changes?" })).not.toBeInTheDocument();
     expect(screen.getByRole("form", { name: "New application" })).toBeInTheDocument();
+  });
+
+  it("discards dirty application edits after custom confirmation", async () => {
+    const { onClose } = renderModal();
+
+    await userEvent.type(screen.getByRole("textbox", { name: "Company name" }), "Unsaved Co");
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("does not warn when only company search text changed", async () => {

@@ -85,6 +85,7 @@ export const NewApplicationModal = ({
   const [archivedConflict, setArchivedConflict] = useState<ArchivedCompanyConflict | null>(null);
   const [duplicateCompany, setDuplicateCompany] = useState<CompanyOption | null>(null);
   const [initialFormSnapshot, setInitialFormSnapshot] = useState<FormSnapshot>(EMPTY_FORM_SNAPSHOT);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [modalKey, setModalKey] = useState(0);
   const companySearchRequestRef = useRef(0);
   const formResetKeyRef = useRef<string | null>(null);
@@ -217,21 +218,24 @@ export const NewApplicationModal = ({
     return () => window.clearTimeout(timer);
   }, [companies, companySearch, editing, loadCompanyOptions, open]);
 
-  const closeModal = ({ skipDirtyCheck = false, reopenAfterCancel = false } = {}) => {
-    if (!skipDirtyCheck && isDirty) {
-      const shouldDiscard = window.confirm("Discard unsaved changes?");
-      if (!shouldDiscard) {
-        if (reopenAfterCancel) {
-          setModalKey((value) => value + 1);
-        }
-        return;
-      }
-    }
+  const finishClose = () => {
     companySearchRequestRef.current += 1;
+    setDiscardConfirmOpen(false);
     onClose();
     setError(null);
     setSubmitting(false);
     resetForm();
+  };
+
+  const closeModal = ({ skipDirtyCheck = false, reopenAfterCancel = false } = {}) => {
+    if (!skipDirtyCheck && isDirty) {
+      if (reopenAfterCancel) {
+        setModalKey((value) => value + 1);
+      }
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    finishClose();
   };
 
   const chooseExistingCompany = (company: CompanyOption) => {
@@ -505,6 +509,24 @@ export const NewApplicationModal = ({
           </button>
         </div>
       </form>
+      <Modal
+        open={discardConfirmOpen}
+        onClose={() => setDiscardConfirmOpen(false)}
+        title="Discard unsaved changes?"
+        size="md"
+      >
+        <div className="space-y-4 text-sm">
+          <p>Discard unsaved application changes? This cannot be undone.</p>
+          <div className="modal-action">
+            <button type="button" className="btn btn-ghost" onClick={() => setDiscardConfirmOpen(false)}>
+              Keep editing
+            </button>
+            <button type="button" className="btn btn-warning" onClick={finishClose}>
+              Discard changes
+            </button>
+          </div>
+        </div>
+      </Modal>
     </Modal>
   );
 };

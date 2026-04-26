@@ -126,7 +126,7 @@ describe("ProfileDetailPage education year validation", () => {
 
     renderAtPath("/profiles/p1");
     await screen.findByDisplayValue("Existing Profile");
-    fireEvent.click(screen.getByRole("button", { name: "Education" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Education" }));
 
     const fromInput = screen.getByDisplayValue("2021");
     const saveButton = screen.getByRole("button", { name: "Save changes" });
@@ -220,7 +220,7 @@ describe("ProfileDetailPage education year validation", () => {
 
     renderAtPath("/profiles/p1");
     fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Education" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Education" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(await screen.findByText("Name is required.")).toBeInTheDocument();
