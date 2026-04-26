@@ -329,7 +329,7 @@ export const ProfileDetailPage = () => {
   };
 
   const sectionButtonClass = (section: ProfileSection) =>
-    `tab whitespace-nowrap ${activeSection === section ? "tab-active" : ""}`;
+    `tab whitespace-nowrap px-4 ${activeSection === section ? "tab-active" : ""}`;
 
   if (!profileId) return <div>Missing profile id</div>;
   if (isNew && !canEditProfiles) return <div className="alert alert-warning">Profile creation is admin-only.</div>;
@@ -370,7 +370,11 @@ export const ProfileDetailPage = () => {
             {hasUnsavedChanges && <span className="badge badge-warning">Unsaved</span>}
           </div>
           {!isNew && profile && (
-            <div className="tabs tabs-boxed mb-4 flex-nowrap overflow-x-auto" role="tablist" aria-label="Profile sections">
+            <div
+              className="tabs tabs-boxed mb-4 inline-flex max-w-full flex-nowrap overflow-x-auto"
+              role="tablist"
+              aria-label="Profile sections"
+            >
               <button
                 type="button"
                 role="tab"
