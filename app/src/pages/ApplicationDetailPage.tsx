@@ -652,47 +652,8 @@ export const ApplicationDetailPage = () => {
                     </a>
                   )}
 
-                  <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                    <div className="rounded-lg border border-base-300 bg-base-200/40 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h4 className="text-sm font-semibold">Outreach plan</h4>
-                        {ppa.cold_email_plan?.status && (
-                          <span className="badge badge-ghost">{ppa.cold_email_plan.status}</span>
-                        )}
-                      </div>
-                      {ppa.cold_email_plan?.subjects?.length ? (
-                        <div className="mt-3">
-                          <p className="text-xs font-semibold uppercase opacity-70">Subject options</p>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {ppa.cold_email_plan.subjects.map((subject, index) => {
-                              const isActive = index === ppa.cold_email_plan?.selected_subject_index;
-                              return (
-                                <button
-                                  type="button"
-                                  key={`${ppa.id}-subject-${index}`}
-                                  disabled={subjectUpdateBusyKey != null}
-                                  className={
-                                    isActive
-                                      ? "badge badge-primary h-auto min-h-7 whitespace-normal px-3 py-2 text-left"
-                                      : "badge badge-outline h-auto min-h-7 whitespace-normal px-3 py-2 text-left hover:badge-primary"
-                                  }
-                                  onClick={() => {
-                                    void updateActiveSubject(ppa, index);
-                                  }}
-                                >
-                                  {subject}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {actionError(actionErrors, `subject:${ppa.id}`)}
-                        </div>
-                      ) : (
-                        <p className="mt-2 text-sm opacity-70">No subject options generated.</p>
-                      )}
-                    </div>
-
-                    <div className="rounded-lg border border-base-300 bg-base-200/40 p-3">
+                  <div className="mt-3 space-y-3">
+                    <div className="rounded-lg border border-base-300 bg-base-200/40 px-3 py-2.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <h4 className="text-sm font-semibold">Recipient</h4>
                         {editingRecipientPpaId !== ppa.id && (
@@ -707,7 +668,7 @@ export const ApplicationDetailPage = () => {
                       </div>
                       {editingRecipientPpaId === ppa.id ? (
                         <div className="mt-2">
-                          <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="grid gap-2 md:grid-cols-4">
                             <input
                               type="text"
                               className="input input-sm input-bordered w-full"
@@ -796,7 +757,46 @@ export const ApplicationDetailPage = () => {
                           {actionError(actionErrors, `recipient:${ppa.id}`)}
                         </div>
                       ) : (
-                        <p className="mt-2 text-sm">{formatRecipient(ppa.cold_email_plan?.to) ?? "No recipient selected."}</p>
+                        <p className="mt-1 text-sm">{formatRecipient(ppa.cold_email_plan?.to) ?? "No recipient selected."}</p>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border border-base-300 bg-base-200/40 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-sm font-semibold">Outreach plan</h4>
+                        {ppa.cold_email_plan?.status && (
+                          <span className="badge badge-ghost">{ppa.cold_email_plan.status}</span>
+                        )}
+                      </div>
+                      {ppa.cold_email_plan?.subjects?.length ? (
+                        <div className="mt-3">
+                          <p className="text-xs font-semibold uppercase opacity-70">Subject options</p>
+                          <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                            {ppa.cold_email_plan.subjects.map((subject, index) => {
+                              const isActive = index === ppa.cold_email_plan?.selected_subject_index;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`${ppa.id}-subject-${index}`}
+                                  disabled={subjectUpdateBusyKey != null}
+                                  className={
+                                    isActive
+                                      ? "btn btn-primary btn-xs h-auto min-h-8 justify-start whitespace-normal px-3 py-2 text-left normal-case"
+                                      : "btn btn-outline btn-xs h-auto min-h-8 justify-start whitespace-normal px-3 py-2 text-left normal-case"
+                                  }
+                                  onClick={() => {
+                                    void updateActiveSubject(ppa, index);
+                                  }}
+                                >
+                                  {subject}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {actionError(actionErrors, `subject:${ppa.id}`)}
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm opacity-70">No subject options generated.</p>
                       )}
                     </div>
                   </div>

@@ -347,6 +347,9 @@ describe("ApplicationDetailPage", () => {
     fireEvent.click(await screen.findByText("Email body"));
     await screen.findByText("Hi Benjamin,");
     expect(screen.getByRole("heading", { name: "Review summary" })).toBeInTheDocument();
+    const recipientHeading = screen.getAllByRole("heading", { name: "Recipient" })[0];
+    const outreachHeading = screen.getAllByRole("heading", { name: "Outreach plan" })[0];
+    expect(recipientHeading.compareDocumentPosition(outreachHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getAllByText("Subject options").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Email body").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Quick intro").length).toBeGreaterThan(0);
