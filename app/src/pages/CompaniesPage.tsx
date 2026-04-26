@@ -1,5 +1,5 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 
 import { ArchiveCompanyModal } from "../components/ArchiveCompanyModal";
 import { NewApplicationModal } from "../components/NewApplicationModal";
@@ -7,9 +7,11 @@ import { Modal } from "../components/Modal";
 import { TablePagination } from "../components/TablePagination";
 import { api, ApiConflictError } from "../api";
 import { getCompanySummariesPage, invalidateCompanySummariesCache } from "../state/companySummaries";
-import { Company, CompanyResearchStatus, WorkerStateResponse } from "../types";
+import { getWorkerSummaryCached, invalidateWorkerSummaryCache } from "../state/workerState";
+import { CompanyListItem, CompanyResearchStatus, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 10;
+const FOREGROUND_REFRESH_DEDUPE_MS = 1000;
 
 type CompanySort =
   | "updated_at_desc"
@@ -17,7 +19,32 @@ type CompanySort =
   | "updated_at_asc"
   | "name_asc";
 
-type AppliedColFilter = "all" | "never" | "once";
+type ApplicationRecordFilter = "all" | "never" | "once";
+
+type ArchivedCompanyConflict = {
+  companyId: string | null;
+  name: string;
+  website: string | null;
+  archiveReason: string | null;
+  archivedAt: string | null;
+};
+
+const readOptionalConflictString = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const parseArchivedCompanyConflict = (
+  detail: Record<string, unknown>,
+  fallbackName: string
+): ArchivedCompanyConflict => ({
+  companyId: readOptionalConflictString(detail.company_id),
+  name: readOptionalConflictString(detail.name) ?? fallbackName,
+  website: readOptionalConflictString(detail.website),
+  archiveReason: readOptionalConflictString(detail.archive_reason),
+  archivedAt: readOptionalConflictString(detail.archived_at)
+});
 
 const companySortLabel = (s: CompanySort): string => {
   switch (s) {
@@ -48,9 +75,17 @@ const researchBadgeClass = (s: CompanyResearchStatus | undefined) => {
   return "badge-warning";
 };
 
+const parseResearchFilter = (search: string): CompanyResearchStatus | "all" => {
+  const value = new URLSearchParams(search).get("research_status");
+  return value === "pending" || value === "indexing" || value === "indexed" || value === "invalid"
+    ? value
+    : "all";
+};
+
 export const CompaniesPage = () => {
-  const navigate = useNavigate();
-  const [items, setItems] = useState<Company[]>([]);
+  const location = useLocation();
+  const initialResearchFilter = useMemo(() => parseResearchFilter(location.search), [location.search]);
+  const [items, setItems] = useState<CompanyListItem[]>([]);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -59,12 +94,13 @@ export const CompaniesPage = () => {
   const [applyCompanyId, setApplyCompanyId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
   const [sort, setSort] = useState<CompanySort>("updated_at_desc");
-  const [researchFilter, setResearchFilter] = useState<CompanyResearchStatus | "all">("all");
-  const [appliedColFilter, setAppliedColFilter] = useState<AppliedColFilter>("all");
+  const [researchFilter, setResearchFilter] = useState<CompanyResearchStatus | "all">(initialResearchFilter);
+  const [applicationRecordFilter, setApplicationRecordFilter] = useState<ApplicationRecordFilter>("all");
+  const lastForegroundRefreshAtRef = useRef(0);
 
   const listExtraParams = useMemo(() => {
     const p = new URLSearchParams();
@@ -72,33 +108,38 @@ export const CompaniesPage = () => {
     if (researchFilter !== "all") {
       p.set("research_status", researchFilter);
     }
-    if (appliedColFilter === "never") {
+    if (applicationRecordFilter === "never") {
       p.set("has_application", "false");
-    } else if (appliedColFilter === "once") {
+    } else if (applicationRecordFilter === "once") {
       p.set("has_application", "true");
     }
     return p;
-  }, [sort, researchFilter, appliedColFilter]);
-  const [archiveTarget, setArchiveTarget] = useState<Company | null>(null);
-  const [awaitingArchivedRestore, setAwaitingArchivedRestore] = useState(false);
+  }, [sort, researchFilter, applicationRecordFilter]);
+  const [archiveTarget, setArchiveTarget] = useState<CompanyListItem | null>(null);
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [archivedConflict, setArchivedConflict] = useState<ArchivedCompanyConflict | null>(null);
+  const [restoreSubmitting, setRestoreSubmitting] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setResearchFilter(parseResearchFilter(location.search));
+    setPage(1);
+  }, [location.search]);
 
   const load = useCallback(
     async (targetPage = page, options?: { force?: boolean }) => {
       setLoading(true);
       setError(null);
       try {
-        const [response, workers] = await Promise.all([
-          getCompanySummariesPage({
-            page: targetPage,
-            pageSize: PAGE_SIZE,
-            force: options?.force,
-            extraParams: listExtraParams
-          }),
-          api.getWorkerState().catch(() => null)
-        ]);
-        setItems(response);
-        setHasNextPage(response.length === PAGE_SIZE);
-        setWorkerState(workers);
+        const response = await getCompanySummariesPage({
+          page: targetPage,
+          pageSize: PAGE_SIZE,
+          force: options?.force,
+          extraParams: listExtraParams
+        });
+        setItems(response.items);
+        setTotal(response.total);
+        setHasNextPage(response.has_next);
       } catch (err) {
         setError((err as Error).message);
       } finally {
@@ -110,11 +151,36 @@ export const CompaniesPage = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [sort, researchFilter, appliedColFilter]);
+  }, [sort, researchFilter, applicationRecordFilter]);
 
   useEffect(() => {
     void load(page);
   }, [load, page]);
+
+  const loadWorkerSummary = useCallback(async (options?: { force?: boolean }) => {
+    setWorkerState(await getWorkerSummaryCached(options));
+  }, []);
+
+  useEffect(() => {
+    void loadWorkerSummary();
+  }, [loadWorkerSummary]);
+
+  useEffect(() => {
+    const refreshOnForeground = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastForegroundRefreshAtRef.current < FOREGROUND_REFRESH_DEDUPE_MS) return;
+      lastForegroundRefreshAtRef.current = now;
+      void load(page, { force: true });
+      void loadWorkerSummary({ force: true });
+    };
+    window.addEventListener("focus", refreshOnForeground);
+    document.addEventListener("visibilitychange", refreshOnForeground);
+    return () => {
+      window.removeEventListener("focus", refreshOnForeground);
+      document.removeEventListener("visibilitychange", refreshOnForeground);
+    };
+  }, [load, loadWorkerSummary, page]);
 
   useEffect(() => {
     if (items.length === 0 && page > 1) {
@@ -122,25 +188,34 @@ export const CompaniesPage = () => {
     }
   }, [items.length, page]);
 
+  const closeCreateModal = useCallback(() => {
+    setCreateOpen(false);
+    setError(null);
+    setRestoreError(null);
+  }, []);
+
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+    setRestoreError(null);
+    setArchivedConflict(null);
+    setCreateSubmitting(true);
     try {
       await api.createCompany({
         name,
         website: website.trim() || null,
-        acknowledge_reuse_of_archived_company: awaitingArchivedRestore
+        acknowledge_reuse_of_archived_company: false
       });
       invalidateCompanySummariesCache();
       setName("");
       setWebsite("");
-      setAwaitingArchivedRestore(false);
       setCreateOpen(false);
       await load(page, { force: true });
     } catch (err) {
       if (err instanceof ApiConflictError) {
         if (err.detail.code === "archived_company_name_exists") {
-          setAwaitingArchivedRestore(true);
+          setCreateOpen(false);
+          setArchivedConflict(parseArchivedCompanyConflict(err.detail, name.trim()));
           return;
         }
         if (err.detail.code === "company_name_exists") {
@@ -149,6 +224,32 @@ export const CompaniesPage = () => {
         }
       }
       setError((err as Error).message);
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  const onRestoreArchivedCompany = async () => {
+    if (!archivedConflict) return;
+    setRestoreError(null);
+    setRestoreSubmitting(true);
+    try {
+      await api.createCompany({
+        name,
+        website: website.trim() || null,
+        acknowledge_reuse_of_archived_company: true
+      });
+      invalidateCompanySummariesCache();
+      setName("");
+      setWebsite("");
+      setArchivedConflict(null);
+      setRestoreError(null);
+      setCreateOpen(false);
+      await load(page, { force: true });
+    } catch (err) {
+      setRestoreError((err as Error).message);
+    } finally {
+      setRestoreSubmitting(false);
     }
   };
 
@@ -167,7 +268,15 @@ export const CompaniesPage = () => {
             ) : null}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page, { force: true })}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                void load(page, { force: true });
+                invalidateWorkerSummaryCache();
+                void loadWorkerSummary({ force: true });
+              }}
+            >
               Refresh
             </button>
             <button
@@ -177,7 +286,8 @@ export const CompaniesPage = () => {
               aria-label="New company"
               onClick={() => {
                 setError(null);
-                setAwaitingArchivedRestore(false);
+                setArchivedConflict(null);
+                setRestoreError(null);
                 setCreateOpen(true);
               }}
             >
@@ -217,15 +327,15 @@ export const CompaniesPage = () => {
             </select>
           </label>
           <label className="form-control w-full min-w-[160px] max-w-xs">
-            <span className="label-text text-xs">Applied</span>
+            <span className="label-text text-xs">Applications</span>
             <select
               className="select select-bordered select-sm w-full"
-              value={appliedColFilter}
-              onChange={(e) => setAppliedColFilter(e.target.value as AppliedColFilter)}
+              value={applicationRecordFilter}
+              onChange={(e) => setApplicationRecordFilter(e.target.value as ApplicationRecordFilter)}
             >
               <option value="all">All</option>
-              <option value="never">None (no applications)</option>
-              <option value="once">Has applications</option>
+              <option value="never">No application records</option>
+              <option value="once">Has application records</option>
             </select>
           </label>
         </div>
@@ -235,7 +345,7 @@ export const CompaniesPage = () => {
               <tr>
                 <th>Name</th>
                 <th className="whitespace-nowrap">Research</th>
-                <th className="whitespace-nowrap">Applied</th>
+                <th className="whitespace-nowrap">Applications</th>
                 <th>Website</th>
                 <th className="whitespace-nowrap">Updated</th>
                 <th className="min-w-[140px] text-right">Actions</th>
@@ -243,12 +353,12 @@ export const CompaniesPage = () => {
             </thead>
             <tbody>
               {items.map((company) => (
-                <tr
-                  key={company.id}
-                  className="cursor-pointer hover:bg-base-200"
-                  onClick={() => navigate(`/companies/${company.id}`)}
-                >
-                  <td className="font-medium">{company.name}</td>
+                <tr key={company.id} className="hover:bg-base-200">
+                  <td className="font-medium">
+                    <Link to={`/companies/${company.id}`} className="link link-primary">
+                      {company.name}
+                    </Link>
+                  </td>
                   <td>
                     <span className={`badge badge-sm ${researchBadgeClass(company.research_status)}`}>
                       {researchLabel(company.research_status)}
@@ -256,9 +366,9 @@ export const CompaniesPage = () => {
                   </td>
                   <td className="whitespace-nowrap text-xs">
                     {company.has_application ? (
-                      <span className="badge badge-sm badge-success badge-outline">Has applications</span>
+                      <span className="badge badge-sm badge-success badge-outline">Has application records</span>
                     ) : (
-                      <span className="opacity-50">—</span>
+                      <span className="opacity-50">No application records</span>
                     )}
                   </td>
                   <td className="max-w-[200px] truncate text-xs opacity-80" title={company.website ?? undefined}>
@@ -300,17 +410,22 @@ export const CompaniesPage = () => {
           </table>
           {items.length === 0 && <p className="p-4 text-sm opacity-70">No companies yet.</p>}
         </div>
-        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} disabled={loading} />
-        <p className="mt-2 text-xs opacity-60">Click a row to view and edit full company details.</p>
+        <TablePagination
+          page={page}
+          hasNextPage={hasNextPage}
+          onPageChange={setPage}
+          disabled={loading}
+          pageSize={PAGE_SIZE}
+          visibleCount={items.length}
+          totalCount={total}
+          itemLabel="companies"
+        />
+        <p className="mt-2 text-xs opacity-60">Open the company name link to view and edit full company details.</p>
       </section>
 
       <Modal
         open={createOpen}
-        onClose={() => {
-          setCreateOpen(false);
-          setError(null);
-          setAwaitingArchivedRestore(false);
-        }}
+        onClose={closeCreateModal}
         title="New company"
         size="md"
       >
@@ -323,7 +438,8 @@ export const CompaniesPage = () => {
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
-                setAwaitingArchivedRestore(false);
+                setArchivedConflict(null);
+                setRestoreError(null);
               }}
               required
               autoFocus={createOpen}
@@ -337,26 +453,95 @@ export const CompaniesPage = () => {
               value={website}
               onChange={(e) => {
                 setWebsite(e.target.value);
-                setAwaitingArchivedRestore(false);
+                setArchivedConflict(null);
+                setRestoreError(null);
               }}
             />
           </label>
-          {awaitingArchivedRestore && (
-            <div className="alert alert-warning text-sm">
-              A company with this name is already archived. Confirm below to restore it and use it in your list, or
-              change the name to create a different record.
-            </div>
-          )}
           {error && <p className="text-sm text-error">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-ghost" onClick={() => setCreateOpen(false)}>
+            <button type="button" className="btn btn-ghost" onClick={closeCreateModal}>
               Cancel
             </button>
-            <button className="btn btn-primary" type="submit">
-              {awaitingArchivedRestore ? "Confirm restore" : "Create"}
+            <button className="btn btn-primary" type="submit" disabled={createSubmitting}>
+              {createSubmitting ? "Creating..." : "Create"}
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={archivedConflict !== null}
+        onClose={() => {
+          if (restoreSubmitting) return;
+          setArchivedConflict(null);
+          setRestoreError(null);
+          setCreateOpen(true);
+        }}
+        title="Restore archived company"
+        size="md"
+        closeDisabled={restoreSubmitting}
+      >
+        {archivedConflict && (
+          <div className="space-y-3 text-sm">
+            <p>
+              A company named <span className="font-medium">{archivedConflict.name}</span> already exists in the
+              archive.
+            </p>
+            <p className="opacity-80">
+              Restoring will reuse this archived record and return it to your active company list instead of creating
+              a second company with the same name.
+            </p>
+            <div className="rounded border border-base-300 bg-base-200 p-3">
+              <p>
+                <span className="font-medium">Name:</span> {archivedConflict.name}
+              </p>
+              {archivedConflict.website && (
+                <p className="mt-1">
+                  <span className="font-medium">Website:</span> {archivedConflict.website}
+                </p>
+              )}
+              {archivedConflict.archiveReason && (
+                <p className="mt-1">
+                  <span className="font-medium">Archived reason:</span> {archivedConflict.archiveReason}
+                </p>
+              )}
+              {archivedConflict.archivedAt && (
+                <p className="mt-1">
+                  <span className="font-medium">Archived at:</span> {new Date(archivedConflict.archivedAt).toLocaleString()}
+                </p>
+              )}
+              {archivedConflict.companyId && (
+                <p className="mt-1 opacity-70">
+                  <span className="font-medium">ID:</span> {archivedConflict.companyId}
+                </p>
+              )}
+            </div>
+            {restoreError && <p className="text-error">{restoreError}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={restoreSubmitting}
+                onClick={() => {
+                  setArchivedConflict(null);
+                  setRestoreError(null);
+                  setCreateOpen(true);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-warning"
+                disabled={restoreSubmitting}
+                onClick={() => void onRestoreArchivedCompany()}
+              >
+                {restoreSubmitting ? "Restoring..." : "Restore archived company"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <NewApplicationModal

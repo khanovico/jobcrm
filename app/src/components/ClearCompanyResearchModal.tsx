@@ -18,6 +18,7 @@ type Props = {
 export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }: Props) => {
   const [relatedApplicationCount, setRelatedApplicationCount] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [destructiveConfirmed, setDestructiveConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,12 +27,14 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
       setRelatedApplicationCount(null);
       setLoadError(null);
       setError(null);
+      setDestructiveConfirmed(false);
       setSubmitting(false);
       return;
     }
     let cancelled = false;
     setRelatedApplicationCount(null);
     setLoadError(null);
+    setDestructiveConfirmed(false);
     void (async () => {
       try {
         const result = await api.getCompanyApplicationCount(company.id);
@@ -49,13 +52,20 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
     };
   }, [open, company]);
 
-  const close = () => {
+  const finishClose = () => {
     setError(null);
+    setDestructiveConfirmed(false);
     onClose();
+  };
+
+  const close = () => {
+    if (submitting) return;
+    finishClose();
   };
 
   const relatedReady = relatedApplicationCount !== null || loadError !== null;
   const n = relatedApplicationCount ?? 0;
+  const requireExplicitConfirmation = relatedReady && (n > 0 || loadError !== null);
 
   const runClear = async (related_applications: "none" | "archive" | "reset") => {
     if (!company) return;
@@ -63,7 +73,7 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
     setSubmitting(true);
     try {
       await api.clearCompanyResearchDetail(company.id, { related_applications });
-      close();
+      finishClose();
       await onCleared();
     } catch (err) {
       setError((err as Error).message);
@@ -73,7 +83,7 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
   };
 
   return (
-    <Modal open={open} onClose={close} title="Clear company research" size="md">
+    <Modal open={open} onClose={close} title="Clear company research" size="md" closeDisabled={submitting}>
       <div className="space-y-3">
         {company && (
           <>
@@ -91,23 +101,59 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
             {relatedApplicationCount === null && !loadError && (
               <p className="text-sm opacity-70">Loading related applications…</p>
             )}
-            {relatedReady && (
+            {relatedReady && !loadError && (
               <p className="text-sm leading-relaxed opacity-90">
                 <strong>{n}</strong> application{n === 1 ? "" : "s"} tied to this company
                 {n === 0 ? "." : ". Choose what to do with them:"}
               </p>
             )}
+            {loadError && (
+              <p className="text-sm leading-relaxed opacity-90">
+                Related application count is unavailable. This fallback action only deletes company prep artifacts.
+              </p>
+            )}
             {relatedReady && n > 0 && (
               <ul className="list-inside list-disc space-y-1 text-sm opacity-90">
                 <li>
-                  <strong>Archive</strong> — archive all tied applications with reason &quot;Related company research
-                  cleared&quot;, then set company research to Pending.
+                  <strong>Archive related applications</strong> — archive all tied applications with reason
+                  &quot;Related company research cleared&quot;, then set company research to Pending.
                 </li>
                 <li>
-                  <strong>Clear</strong> — reset each non-archived application (remove per-profile rows and emails; same
-                  as the application Clear action), then set company research to Pending.
+                  <strong>Delete prep artifacts and reset applications</strong> — delete generated per-profile analysis
+                  rows and generated emails, then reset each non-archived application (same as the application Clear
+                  action) before setting company research to Pending.
                 </li>
               </ul>
+            )}
+            {relatedReady && n > 0 && (
+              <label className="label cursor-pointer justify-start gap-3 rounded border border-warning/30 bg-warning/10 px-3 py-2">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-warning checkbox-sm"
+                  checked={destructiveConfirmed}
+                  onChange={(event) => setDestructiveConfirmed(event.target.checked)}
+                  disabled={submitting}
+                />
+                <span className="label-text text-sm leading-relaxed">
+                  I understand this can archive related applications or delete generated per-profile analysis and emails
+                  when resetting related applications.
+                </span>
+              </label>
+            )}
+            {loadError && (
+              <label className="label cursor-pointer justify-start gap-3 rounded border border-warning/30 bg-warning/10 px-3 py-2">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-warning checkbox-sm"
+                  checked={destructiveConfirmed}
+                  onChange={(event) => setDestructiveConfirmed(event.target.checked)}
+                  disabled={submitting}
+                />
+                <span className="label-text text-sm leading-relaxed">
+                  I understand related application count is unavailable, and this action only deletes company prep
+                  artifacts.
+                </span>
+              </label>
             )}
           </>
         )}
@@ -121,18 +167,18 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
               <button
                 type="button"
                 className="btn btn-warning"
-                disabled={submitting || !relatedReady}
+                disabled={submitting || !relatedReady || (requireExplicitConfirmation && !destructiveConfirmed)}
                 onClick={() => void runClear("archive")}
               >
-                {submitting ? "Working…" : "Archive"}
+                {submitting ? "Working…" : "Archive related applications"}
               </button>
               <button
                 type="button"
                 className="btn btn-accent"
-                disabled={submitting || !relatedReady}
+                disabled={submitting || !relatedReady || (requireExplicitConfirmation && !destructiveConfirmed)}
                 onClick={() => void runClear("reset")}
               >
-                {submitting ? "Working…" : "Clear"}
+                {submitting ? "Working…" : "Delete prep artifacts and reset applications"}
               </button>
             </>
           )}
@@ -140,10 +186,10 @@ export const ClearCompanyResearchModal = ({ open, onClose, company, onCleared }:
             <button
               type="button"
               className="btn btn-warning"
-              disabled={submitting || !relatedReady}
+              disabled={submitting || !relatedReady || (requireExplicitConfirmation && !destructiveConfirmed)}
               onClick={() => void runClear("none")}
             >
-              {submitting ? "Working…" : "Clear company"}
+              {submitting ? "Working…" : "Delete company prep artifacts only"}
             </button>
           )}
         </div>

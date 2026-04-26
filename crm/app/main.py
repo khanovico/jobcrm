@@ -24,21 +24,27 @@ from app.models import (
     ActorType,
     AgentApiKeyCreate,
     AgentApiKeyCreated,
+    AgentApiKeyPublic,
+    AgentApplicationTaskSummary,
     AgentCompaniesBulkUpdateRequest,
+    AgentCompanyResearchTaskSummary,
     AgentIndustriesBulkCreateRequest,
     AgentContext,
     AgentHealthResponse,
     AgentNotificationCreate,
     Application,
+    ApplicationAppliedProfileFacetsResponse,
     ApplicationBootstrapCreate,
     ApplicationCreate,
     ApplicationDetailResponse,
+    ApplicationListPage,
     ApplicationListItem,
     ApplicationMarkApplied,
     ApplicationMarkEmailSent,
     ApplicationStatus,
     ApplicationUpdate,
     AuditEvent,
+    AuditEventListPage,
     AuditListQuery,
     Company,
     CompanyApplicationCountResponse,
@@ -46,6 +52,8 @@ from app.models import (
     CompanyArchiveRequest,
     CompanyArchiveResponse,
     CompanyCreate,
+    CompanyListPage,
+    CompanyListItem,
     CompanyResearchStatus,
     CompanyUpdate,
     DashboardMetrics,
@@ -56,10 +64,15 @@ from app.models import (
     GlobalSearchResult,
     Industry,
     IndustryBulkCreateRequest,
+    IndustryCountResponse,
     IndustryCreate,
+    IndustryOptionsResponse,
     IndustryUpdate,
     NotificationBulkDelete,
+    NotificationBulkRead,
+    NotificationListPage,
     NotificationListQuery,
+    NotificationSummaryResponse,
     PerProfileApplication,
     PerProfileApplicationCreate,
     PerProfileApplicationDetail,
@@ -67,6 +80,7 @@ from app.models import (
     Profile,
     ProfileCreate,
     ProfileIdList,
+    ProfileListPage,
     ProfileListItem,
     ProfileUpdate,
     TokenResponse,
@@ -88,6 +102,8 @@ from app.repository import BaseRepository
 
 app = FastAPI(title=settings.app_name)
 
+HUMAN_LIST_MAX_LIMIT = 200
+
 
 def _resolve_company_create(repo: BaseRepository, payload: CompanyCreate) -> Company:
     existing = repo.find_company_by_normalized_name(payload.name)
@@ -108,7 +124,9 @@ def _resolve_company_create(repo: BaseRepository, payload: CompanyCreate) -> Com
                     "code": "archived_company_name_exists",
                     "company_id": existing.id,
                     "name": existing.name,
+                    "website": existing.website,
                     "archive_reason": existing.archive_reason,
+                    "archived_at": existing.archived_at.isoformat() if existing.archived_at else None,
                 },
             )
         unarchived = repo.unarchive_company(existing.id, payload)
@@ -169,6 +187,27 @@ def _validate_bulk_industry_names(repo: BaseRepository, names: list[str]) -> Non
         )
 
 
+def _normalized_query_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalized_query_text_list(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = value.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        normalized.append(cleaned)
+    return normalized
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -201,33 +240,12 @@ def dashboard_metrics(
     repo: BaseRepository = Depends(get_repository),
 ) -> DashboardMetrics:
     scope_user_id = user.id if user.role != UserRole.admin else None
-    apps = repo.list_applications(
-        skip=0,
-        limit=10_000,
-        status=None,
-        exclude_status=ApplicationStatus.archived,
-        created_by_user_id=scope_user_id,
-    )
-    pipeline = sum(
-        1
-        for a in apps
-        if a.status
-        in (ApplicationStatus.company_research_pending, ApplicationStatus.company_researching)
-    )
-    ready = sum(1 for a in apps if a.status == ApplicationStatus.application_ready)
-    actions = sum(
-        1
-        for a in apps
-        if a.status == ApplicationStatus.application_ready and not a.applied
-    )
-    notes = repo.list_notifications(
-        user.id, NotificationListQuery(skip=0, limit=200, unread_only=True)
-    )
+    counts = repo.dashboard_application_counts(created_by_user_id=scope_user_id)
     return DashboardMetrics(
-        company_research_pipeline=pipeline,
-        application_ready=ready,
-        actions_need_review=actions,
-        unread_notifications=len(notes),
+        company_research_pipeline=counts["company_research_pipeline"],
+        application_ready=counts["application_ready"],
+        actions_need_review=counts["actions_need_review"],
+        unread_notifications=repo.count_unread_notifications(user.id),
     )
 
 
@@ -243,13 +261,45 @@ def global_search(
 
 @app.get("/api/v1/industries", response_model=list[Industry])
 def list_industries(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Industry]:
     return repo.list_industries(skip=skip, limit=limit, search=search)
+
+
+@app.get("/api/v1/industries/count", response_model=IndustryCountResponse)
+def industry_count(
+    search: str | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> IndustryCountResponse:
+    return IndustryCountResponse(total=repo.count_industries(search))
+
+
+@app.get("/api/v1/industries/options", response_model=IndustryOptionsResponse)
+def industry_options(
+    ids: list[str] | None = Query(default=None),
+    search: str | None = None,
+    limit: int = Query(default=20, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> IndustryOptionsResponse:
+    selected_ids = list(dict.fromkeys(ids or []))
+    if len(selected_ids) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At most 100 selected industry IDs can be hydrated.",
+        )
+    selected = repo.get_industries_by_ids(selected_ids)
+    options = repo.list_industry_options(
+        limit=limit,
+        search=search,
+        exclude_ids=[industry.id for industry in selected],
+    )
+    return IndustryOptionsResponse(selected=selected, options=options)
 
 
 @app.post("/api/v1/industries", response_model=Industry, status_code=status.HTTP_201_CREATED)
@@ -362,10 +412,48 @@ def create_agent_key(
     )
 
 
+@app.get("/api/v1/admin/agent-keys", response_model=list[AgentApiKeyPublic])
+def list_agent_keys(
+    _: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[AgentApiKeyPublic]:
+    rows = repo.list_agent_api_keys()
+    return [
+        AgentApiKeyPublic(
+            id=row.id,
+            name=row.name,
+            scopes=row.scopes,
+            created_at=row.created_at,
+            last_used_at=row.last_used_at,
+        )
+        for row in rows
+    ]
+
+
+@app.delete("/api/v1/admin/agent-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_agent_key(
+    key_id: str,
+    admin: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> Response:
+    revoked = repo.revoke_agent_api_key(key_id)
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent API key not found")
+    _audit(
+        repo,
+        actor_type=ActorType.user,
+        actor_id=admin.id,
+        action="revoke_agent_key",
+        entity_type="agent_api_key",
+        entity_id=key_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.get("/api/v1/companies", response_model=list[Company])
 def list_companies(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
     sort: Literal[
         "updated_at_desc",
@@ -387,6 +475,66 @@ def list_companies(
         research_status=research_status,
         has_application=has_application,
     )
+
+
+@app.get("/api/v1/companies/summary", response_model=list[CompanyListItem])
+def list_company_summaries(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    search: str | None = None,
+    sort: Literal[
+        "updated_at_desc",
+        "created_at_desc",
+        "created_at_asc",
+        "updated_at_asc",
+        "name_asc",
+    ] = "updated_at_desc",
+    research_status: CompanyResearchStatus | None = None,
+    has_application: bool | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> list[CompanyListItem]:
+    return repo.list_company_summaries(
+        skip=skip,
+        limit=limit,
+        search=search,
+        sort=sort,
+        research_status=research_status,
+        has_application=has_application,
+    )
+
+
+@app.get("/api/v1/companies/summary/page", response_model=CompanyListPage)
+def list_company_summaries_page(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    search: str | None = None,
+    sort: Literal[
+        "updated_at_desc",
+        "created_at_desc",
+        "created_at_asc",
+        "updated_at_asc",
+        "name_asc",
+    ] = "updated_at_desc",
+    research_status: CompanyResearchStatus | None = None,
+    has_application: bool | None = None,
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> CompanyListPage:
+    items = repo.list_company_summaries(
+        skip=skip,
+        limit=limit,
+        search=search,
+        sort=sort,
+        research_status=research_status,
+        has_application=has_application,
+    )
+    total = repo.count_company_summaries(
+        search=search,
+        research_status=research_status,
+        has_application=has_application,
+    )
+    return CompanyListPage(items=items, total=total, has_next=skip + len(items) < total)
 
 
 @app.post("/api/v1/companies", response_model=Company, status_code=status.HTTP_201_CREATED)
@@ -510,37 +658,40 @@ def clear_company_research_detail_route(
 
 @app.get("/api/v1/profiles", response_model=list[Profile])
 def list_profiles(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
+    frozen: bool | None = Query(default=None),
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[Profile]:
-    return repo.list_profiles(skip=skip, limit=limit, search=search)
+    return repo.list_profiles(skip=skip, limit=limit, search=search, frozen=frozen)
 
 
 @app.get("/api/v1/profiles/summary", response_model=list[ProfileListItem])
 def list_profile_summaries(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     search: str | None = None,
+    frozen: bool | None = Query(default=None),
     _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> list[ProfileListItem]:
-    profiles = repo.list_profiles(skip=skip, limit=limit, search=search)
-    return [
-        ProfileListItem(
-            id=profile.id,
-            name=profile.name,
-            frozen=profile.frozen,
-            location=profile.location,
-            email=profile.email,
-            phone=profile.phone,
-            created_at=profile.created_at,
-            updated_at=profile.updated_at,
-        )
-        for profile in profiles
-    ]
+    return repo.list_profile_summaries(skip=skip, limit=limit, search=search, frozen=frozen)
+
+
+@app.get("/api/v1/profiles/summary/page", response_model=ProfileListPage)
+def list_profile_summaries_page(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    search: str | None = None,
+    frozen: bool | None = Query(default=None),
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> ProfileListPage:
+    items = repo.list_profile_summaries(skip=skip, limit=limit, search=search, frozen=frozen)
+    total = repo.count_profile_summaries(search=search, frozen=frozen)
+    return ProfileListPage(items=items, total=total, has_next=skip + len(items) < total)
 
 
 @app.post("/api/v1/profiles", response_model=Profile, status_code=status.HTTP_201_CREATED)
@@ -616,11 +767,14 @@ def delete_profile(
 
 @app.get("/api/v1/applications", response_model=list[ApplicationListItem])
 def list_applications(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     status_filter: ApplicationStatus | None = None,
     exclude_status: ApplicationStatus | None = None,
+    workflow_filter: Literal["company_research"] | None = None,
     company_id: str | None = None,
+    company_search: str | None = None,
+    applied_profile_names: list[str] | None = Query(default=None),
     applied: bool | None = None,
     email_sent: bool | None = None,
     sort: Literal[
@@ -641,6 +795,88 @@ def list_applications(
         email_sent=email_sent,
         sort=sort,
         exclude_status=exclude_status,
+        company_search=_normalized_query_text(company_search),
+        applied_profile_names=_normalized_query_text_list(applied_profile_names),
+        workflow_filter=workflow_filter,
+    )
+
+
+@app.get("/api/v1/applications/page", response_model=ApplicationListPage)
+def list_applications_page(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    status_filter: ApplicationStatus | None = None,
+    exclude_status: ApplicationStatus | None = None,
+    workflow_filter: Literal["company_research"] | None = None,
+    company_id: str | None = None,
+    company_search: str | None = None,
+    applied_profile_names: list[str] | None = Query(default=None),
+    applied: bool | None = None,
+    email_sent: bool | None = None,
+    sort: Literal[
+        "updated_at_desc",
+        "updated_at_asc",
+        "created_at_desc",
+        "created_at_asc",
+    ] = "updated_at_desc",
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> ApplicationListPage:
+    normalized_company_search = _normalized_query_text(company_search)
+    normalized_profile_names = _normalized_query_text_list(applied_profile_names)
+    items = repo.list_applications(
+        skip=skip,
+        limit=limit,
+        status=status_filter,
+        company_id=company_id,
+        applied=applied,
+        email_sent=email_sent,
+        sort=sort,
+        exclude_status=exclude_status,
+        company_search=normalized_company_search,
+        applied_profile_names=normalized_profile_names,
+        workflow_filter=workflow_filter,
+    )
+    total = repo.count_applications(
+        status=status_filter,
+        company_id=company_id,
+        applied=applied,
+        email_sent=email_sent,
+        exclude_status=exclude_status,
+        company_search=normalized_company_search,
+        applied_profile_names=normalized_profile_names,
+        workflow_filter=workflow_filter,
+    )
+    return ApplicationListPage(items=items, total=total, has_next=skip + len(items) < total)
+
+
+@app.get(
+    "/api/v1/applications/applied-profile-facets",
+    response_model=ApplicationAppliedProfileFacetsResponse,
+)
+def list_application_applied_profile_facets(
+    status_filter: ApplicationStatus | None = None,
+    exclude_status: ApplicationStatus | None = None,
+    workflow_filter: Literal["company_research"] | None = None,
+    company_id: str | None = None,
+    company_search: str | None = None,
+    applied: bool | None = None,
+    email_sent: bool | None = None,
+    limit: int = Query(default=500, ge=1, le=500),
+    _: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> ApplicationAppliedProfileFacetsResponse:
+    return ApplicationAppliedProfileFacetsResponse(
+        profile_names=repo.list_application_applied_profile_facets(
+            status=status_filter,
+            company_id=company_id,
+            applied=applied,
+            email_sent=email_sent,
+            exclude_status=exclude_status,
+            company_search=_normalized_query_text(company_search),
+            limit=limit,
+            workflow_filter=workflow_filter,
+        )
     )
 
 
@@ -717,14 +953,15 @@ def get_application_detail(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
     ppas = repo.list_per_profile_for_application(application_id)
+    emails_by_ppa = repo.list_emails_for_ppas([ppa.id for ppa in ppas])
+    profile_name_by_id = repo.list_profile_names_by_ids([ppa.profile_id for ppa in ppas])
     ppa_rows: list[PerProfileApplicationDetail] = []
     for ppa in ppas:
-        profile = repo.get_profile(ppa.profile_id)
         ppa_rows.append(
             PerProfileApplicationDetail(
                 **ppa.model_dump(),
-                profile_name=profile.name if profile else "Unknown profile",
-                emails=repo.list_emails_for_ppa(ppa.id),
+                profile_name=profile_name_by_id.get(ppa.profile_id, "Unknown profile"),
+                emails=emails_by_ppa.get(ppa.id, []),
             )
         )
     return ApplicationDetailResponse(
@@ -1034,8 +1271,8 @@ def delete_email_route(
     response_model_by_alias=True,
 )
 def list_notifications_route(
-    skip: int = 0,
-    limit: int = 50,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     unread_only: bool = False,
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
@@ -1046,12 +1283,54 @@ def list_notifications_route(
     return [enrich_notification_link(repo, user.id, n) for n in rows]
 
 
+@app.get(
+    "/api/v1/notifications/page",
+    response_model=NotificationListPage,
+    response_model_by_alias=True,
+)
+def list_notifications_page_route(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    unread_only: bool = False,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> NotificationListPage:
+    query = NotificationListQuery(skip=skip, limit=limit, unread_only=unread_only)
+    rows = [enrich_notification_link(repo, user.id, n) for n in repo.list_notifications(user.id, query)]
+    total = repo.count_notifications(user.id, query)
+    return NotificationListPage(items=rows, total=total, has_next=skip + len(rows) < total)
+
+
 @app.get("/api/v1/notifications/unread-count")
 def unread_notifications_count(
     user: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> dict[str, int]:
     return {"count": repo.count_unread_notifications(user.id)}
+
+
+@app.get(
+    "/api/v1/notifications/summary",
+    response_model=NotificationSummaryResponse,
+    response_model_by_alias=True,
+)
+def notifications_summary_route(
+    latest_limit: int = Query(default=10, ge=0, le=25),
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> NotificationSummaryResponse:
+    rows = (
+        []
+        if latest_limit == 0
+        else repo.list_notifications(
+            user.id,
+            NotificationListQuery(skip=0, limit=latest_limit, unread_only=True),
+        )
+    )
+    return NotificationSummaryResponse(
+        unread_count=repo.count_unread_notifications(user.id),
+        newest_unread=[enrich_notification_link(repo, user.id, n) for n in rows],
+    )
 
 
 @app.post("/api/v1/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)
@@ -1064,6 +1343,16 @@ def read_notification(
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/v1/notifications/read", status_code=status.HTTP_200_OK)
+def read_notifications_bulk_route(
+    body: NotificationBulkRead,
+    user: UserInDB = Depends(get_current_user),
+    repo: BaseRepository = Depends(get_repository),
+) -> dict[str, int]:
+    updated = repo.mark_notifications_read_bulk(user.id, body.ids)
+    return {"updated": updated}
 
 
 @app.delete("/api/v1/notifications/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1090,9 +1379,10 @@ def delete_notifications_bulk_route(
 
 @app.get("/api/v1/audit-events", response_model=list[AuditEvent])
 def list_audit(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=HUMAN_LIST_MAX_LIMIT),
     actor_type: ActorType | None = None,
+    action: str | None = Query(default=None, min_length=1),
     entity_type: str | None = None,
     from_ts: str | None = None,
     to_ts: str | None = None,
@@ -1108,6 +1398,7 @@ def list_audit(
         skip=skip,
         limit=limit,
         actor_type=actor_type,
+        action=action.strip() if action else None,
         entity_type=entity_type,
         from_ts=_parse(from_ts),
         to_ts=_parse(to_ts),
@@ -1115,9 +1406,48 @@ def list_audit(
     return repo.list_audit_events(q)
 
 
+@app.get("/api/v1/audit-events/page", response_model=AuditEventListPage)
+def list_audit_page(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=HUMAN_LIST_MAX_LIMIT),
+    actor_type: ActorType | None = None,
+    action: str | None = Query(default=None, min_length=1),
+    entity_type: str | None = None,
+    from_ts: str | None = None,
+    to_ts: str | None = None,
+    _: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> AuditEventListPage:
+    def _parse(ts: str | None):
+        if not ts:
+            return None
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+    q = AuditListQuery(
+        skip=skip,
+        limit=limit,
+        actor_type=actor_type,
+        action=action.strip() if action else None,
+        entity_type=entity_type,
+        from_ts=_parse(from_ts),
+        to_ts=_parse(to_ts),
+    )
+    rows = repo.list_audit_events(q)
+    total = repo.count_audit_events(q)
+    return AuditEventListPage(items=rows, total=total, has_next=skip + len(rows) < total)
+
+
 @app.get("/api/v1/settings/workers", response_model=WorkerStateResponse)
 def get_worker_settings_route(
     _: UserInDB = Depends(get_current_admin),
+    repo: BaseRepository = Depends(get_repository),
+) -> WorkerStateResponse:
+    return repo.get_worker_state()
+
+
+@app.get("/api/v1/workers/summary", response_model=WorkerStateResponse)
+def get_worker_summary_route(
+    _: UserInDB = Depends(get_current_user),
     repo: BaseRepository = Depends(get_repository),
 ) -> WorkerStateResponse:
     return repo.get_worker_state()
@@ -1173,38 +1503,38 @@ def agent_health(
 
 @app.get(
     "/api/v1/agent/applications/company-research-pending",
-    response_model=list[Application],
+    response_model=list[AgentApplicationTaskSummary],
 )
 def agent_list_company_research_pending(
     limit: int = Query(default=5, ge=1, le=50),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[AgentApplicationTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_applications_by_status(ApplicationStatus.company_research_pending, limit)
+    return repo.list_agent_application_tasks(ApplicationStatus.company_research_pending, limit)
 
 
-@app.get("/api/v1/agent/applications/ppa-pending", response_model=list[Application])
+@app.get("/api/v1/agent/applications/ppa-pending", response_model=list[AgentApplicationTaskSummary])
 def agent_list_ppa_pending(
     limit: int = Query(default=5, ge=1, le=50),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[AgentApplicationTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_applications_by_status(ApplicationStatus.ppa_pending, limit)
+    return repo.list_agent_application_tasks(ApplicationStatus.ppa_pending, limit)
 
 
 @app.get(
     "/api/v1/agent/applications/application-pending",
-    response_model=list[Application],
+    response_model=list[AgentApplicationTaskSummary],
 )
 def agent_list_application_pending(
     limit: int = Query(default=5, ge=1, le=50),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Application]:
+) -> list[AgentApplicationTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_applications_by_status(ApplicationStatus.application_pending, limit)
+    return repo.list_agent_application_tasks(ApplicationStatus.application_pending, limit)
 
 
 @app.post(
@@ -1276,14 +1606,27 @@ def agent_list_companies(
     return repo.list_companies(skip=skip, limit=limit, search=None)
 
 
-@app.get("/api/v1/agent/companies/unindexed", response_model=list[Company])
+@app.get("/api/v1/agent/companies/unindexed", response_model=list[AgentCompanyResearchTaskSummary])
 def agent_list_unindexed_companies(
     limit: int = Query(default=5, ge=1, le=5),
     agent: AgentContext = Depends(get_agent_context),
     repo: BaseRepository = Depends(get_repository),
-) -> list[Company]:
+) -> list[AgentCompanyResearchTaskSummary]:
     require_agent_scope(agent, "read")
-    return repo.list_companies_unindexed(limit)
+    return repo.list_company_research_tasks(limit)
+
+
+@app.get("/api/v1/agent/companies/{company_id}", response_model=Company)
+def agent_get_company(
+    company_id: str,
+    agent: AgentContext = Depends(get_agent_context),
+    repo: BaseRepository = Depends(get_repository),
+) -> Company:
+    require_agent_scope(agent, "read")
+    company = repo.get_company(company_id)
+    if not company:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+    return company
 
 
 @app.patch("/api/v1/agent/companies/bulk", response_model=list[Company])
@@ -1294,23 +1637,24 @@ def agent_bulk_update_companies(
 ) -> list[Company]:
     require_agent_scope(agent, "write")
     updated: list[Company] = []
-    for item in body.updates:
-        company = repo.update_company(item.company_id, item.payload)
-        if not company:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Company not found: {item.company_id}",
+    with repo.bulk_persistence():
+        for item in body.updates:
+            company = repo.update_company(item.company_id, item.payload)
+            if not company:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Company not found: {item.company_id}",
+                )
+            _audit(
+                repo,
+                actor_type=ActorType.agent,
+                actor_id=agent.key_id,
+                action="bulk_update",
+                entity_type="company",
+                entity_id=item.company_id,
+                metadata={"fields": list(item.payload.model_dump(exclude_none=True).keys())},
             )
-        _audit(
-            repo,
-            actor_type=ActorType.agent,
-            actor_id=agent.key_id,
-            action="bulk_update",
-            entity_type="company",
-            entity_id=item.company_id,
-            metadata={"fields": list(item.payload.model_dump(exclude_none=True).keys())},
-        )
-        updated.append(company)
+            updated.append(company)
     return updated
 
 
@@ -1377,6 +1721,7 @@ def agent_list_applications(
     limit: int = 200,
     status_filter: ApplicationStatus | None = None,
     exclude_status: ApplicationStatus | None = None,
+    workflow_filter: Literal["company_research"] | None = None,
     company_id: str | None = None,
     applied: bool | None = None,
     email_sent: bool | None = None,
@@ -1399,6 +1744,7 @@ def agent_list_applications(
         email_sent=email_sent,
         sort=sort,
         exclude_status=exclude_status,
+        workflow_filter=workflow_filter,
     )
 
 

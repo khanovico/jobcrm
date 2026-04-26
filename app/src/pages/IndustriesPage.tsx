@@ -3,6 +3,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { invalidateIndustryCatalogCache } from "../state/industryCatalog";
 import { Industry } from "../types";
+import { DestructiveConfirmModal } from "../components/DestructiveConfirmModal";
+import { TablePagination } from "../components/TablePagination";
+
+const PAGE_SIZE = 25;
 
 export const IndustriesPage = () => {
   const [items, setItems] = useState<Industry[]>([]);
@@ -11,6 +15,8 @@ export const IndustriesPage = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const [mode, setMode] = useState<"single" | "bulk">("single");
   const [name, setName] = useState("");
@@ -23,15 +29,29 @@ export const IndustriesPage = () => {
   const [editDescription, setEditDescription] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Industry | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const industryPageParams = () => {
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) params.set("search", searchQuery.trim());
+    params.set("skip", String((page - 1) * PAGE_SIZE));
+    params.set("limit", String(PAGE_SIZE));
+    return params;
+  };
+
+  const industryCountParams = () => {
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) params.set("search", searchQuery.trim());
+    return params;
+  };
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (searchQuery.trim()) params.set("search", searchQuery.trim());
-      params.set("limit", "200");
-      setItems(await api.listIndustries(params));
+      const rows = await api.listIndustries(industryPageParams());
+      setItems(rows);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -39,10 +59,34 @@ export const IndustriesPage = () => {
     }
   };
 
+  const loadCount = async () => {
+    try {
+      const count = await api.countIndustries(industryCountParams());
+      setTotal(count.total);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, searchQuery]);
+
+  useEffect(() => {
+    void loadCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (items.length === 0 && total > 0 && page > 1) {
+      setPage((current) => Math.max(1, current - 1));
+    }
+  }, [items.length, page, total]);
 
   const onSingleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -54,7 +98,7 @@ export const IndustriesPage = () => {
       invalidateIndustryCatalogCache();
       setName("");
       setDescription("");
-      await load();
+      await Promise.all([load(), loadCount()]);
       setSuccess("Industry created.");
     } catch (err) {
       setError((err as Error).message);
@@ -94,7 +138,7 @@ export const IndustriesPage = () => {
       await api.bulkCreateIndustries({ industries });
       invalidateIndustryCatalogCache();
       setBulkText("");
-      await load();
+      await Promise.all([load(), loadCount()]);
       setSuccess(`${industries.length} industries created.`);
     } catch (err) {
       setError((err as Error).message);
@@ -131,7 +175,7 @@ export const IndustriesPage = () => {
         description: editDescription.trim()
       });
       invalidateIndustryCatalogCache();
-      await load();
+      await Promise.all([load(), loadCount()]);
       cancelEdit();
       setSuccess("Industry updated.");
     } catch (err) {
@@ -141,19 +185,21 @@ export const IndustriesPage = () => {
     }
   };
 
-  const removeIndustry = async (industry: Industry) => {
-    if (!window.confirm(`Delete "${industry.name}"? This action cannot be undone.`)) {
-      return;
-    }
+  const removeIndustry = async () => {
+    if (!deleteTarget) return;
+    const industry = deleteTarget;
     setDeletingId(industry.id);
+    setDeleteError(null);
     setError(null);
     setSuccess(null);
     try {
       await api.deleteIndustry(industry.id);
       invalidateIndustryCatalogCache();
-      await load();
+      await Promise.all([load(), loadCount()]);
       setSuccess(`Deleted "${industry.name}".`);
+      setDeleteTarget(null);
     } catch (err) {
+      setDeleteError((err as Error).message);
       setError((err as Error).message);
     } finally {
       setDeletingId(null);
@@ -161,6 +207,9 @@ export const IndustriesPage = () => {
   };
 
   const selectedCount = useMemo(() => items.length, [items]);
+  const hasNextPage = page * PAGE_SIZE < total;
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
   return (
     <div className="space-y-6">
@@ -176,6 +225,9 @@ export const IndustriesPage = () => {
             <div className="stat px-4 py-2">
               <div className="stat-title text-xs">Visible industries</div>
               <div className="stat-value text-xl">{selectedCount}</div>
+              <div className="stat-desc">
+                {rangeStart}-{rangeEnd} of {total}
+              </div>
             </div>
           </div>
         </div>
@@ -191,6 +243,7 @@ export const IndustriesPage = () => {
             onSubmit={(e) => {
               e.preventDefault();
               setSearchQuery(searchInput.trim());
+              setPage(1);
             }}
           >
             <label className="form-control flex-1">
@@ -213,6 +266,7 @@ export const IndustriesPage = () => {
               onClick={() => {
                 setSearchInput("");
                 setSearchQuery("");
+                setPage(1);
               }}
             >
               Reset
@@ -289,7 +343,12 @@ export const IndustriesPage = () => {
                                   type="button"
                                   className="btn btn-error btn-outline btn-xs"
                                   disabled={deletingId === industry.id}
-                                  onClick={() => void removeIndustry(industry)}
+                                  onClick={() => {
+                                    setDeleteTarget(industry);
+                                    setDeleteError(null);
+                                    setError(null);
+                                    setSuccess(null);
+                                  }}
                                 >
                                   {deletingId === industry.id ? "Deleting..." : "Delete"}
                                 </button>
@@ -304,6 +363,17 @@ export const IndustriesPage = () => {
               </table>
             </div>
           )}
+          <TablePagination
+            page={page}
+            hasNextPage={hasNextPage}
+            onPageChange={setPage}
+            disabled={loading}
+            pageSize={PAGE_SIZE}
+            visibleCount={items.length}
+            totalCount={total}
+            itemLabel="industries"
+            rangeSuffix={searchQuery ? ` matching "${searchQuery}"` : ""}
+          />
         </section>
 
         <aside
@@ -383,6 +453,28 @@ export const IndustriesPage = () => {
           )}
         </aside>
       </div>
+      <DestructiveConfirmModal
+        open={deleteTarget != null}
+        onClose={() => {
+          if (deleteTarget && deletingId === deleteTarget.id) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+        onConfirm={() => {
+          void removeIndustry();
+        }}
+        title={deleteTarget ? `Delete "${deleteTarget.name}"?` : "Delete industry?"}
+        confirmLabel="Delete industry"
+        confirmingLabel="Deleting..."
+        submitting={deleteTarget != null && deletingId === deleteTarget.id}
+        error={deleteError}
+      >
+        <p>
+          This permanently removes <strong>{deleteTarget?.name ?? "this industry"}</strong> from the industry taxonomy.
+          This cannot be undone.
+        </p>
+        <p className="opacity-80">Company records and filters may no longer show this label after deletion.</p>
+      </DestructiveConfirmModal>
     </div>
   );
 };

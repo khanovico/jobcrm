@@ -18,13 +18,22 @@ export type ModalProps = {
   size?: ModalSize;
   /** Extra class on modal-box (e.g. padding tweaks) */
   bodyClassName?: string;
+  closeDisabled?: boolean;
 };
 
 /**
  * Reusable modal using the native `<dialog>` element (DaisyUI modal styles).
  * Parent state is synced via the dialog `close` event (including backdrop and programmatic close).
  */
-export const Modal = ({ open, onClose, title, children, size = "lg", bodyClassName = "" }: ModalProps) => {
+export const Modal = ({
+  open,
+  onClose,
+  title,
+  children,
+  size = "lg",
+  bodyClassName = "",
+  closeDisabled = false
+}: ModalProps) => {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -48,6 +57,7 @@ export const Modal = ({ open, onClose, title, children, size = "lg", bodyClassNa
   }, [onClose]);
 
   const requestClose = () => {
+    if (closeDisabled) return;
     ref.current?.close();
   };
 
@@ -63,14 +73,20 @@ export const Modal = ({ open, onClose, title, children, size = "lg", bodyClassNa
       <div className={`modal-box flex max-h-[85vh] flex-col ${sizeClass[size]} ${bodyClassName}`}>
         <header className="mb-3 flex shrink-0 items-start justify-between gap-2">
           <h3 className="text-lg font-semibold leading-tight">{title}</h3>
-          <button type="button" className="btn btn-sm btn-circle btn-ghost" aria-label="Close" onClick={requestClose}>
+          <button
+            type="button"
+            className="btn btn-sm btn-circle btn-ghost"
+            aria-label="Close"
+            disabled={closeDisabled}
+            onClick={requestClose}
+          >
             ✕
           </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
       <form method="dialog" className="modal-backdrop">
-        <button type="submit" className="cursor-default">
+        <button type="submit" className="cursor-default" disabled={closeDisabled}>
           close
         </button>
       </form>

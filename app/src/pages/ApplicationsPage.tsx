@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { ArchiveApplicationModal } from "../components/ArchiveApplicationModal";
 import { ApplicationWorkflowOverrideModal } from "../components/ApplicationWorkflowOverrideModal";
@@ -17,9 +17,13 @@ import {
   initializeSelectedAppliedProfileNames,
   setSelectedAppliedProfileNames
 } from "../state/applicationsFilters";
+import { invalidateCompanySummariesCache } from "../state/companySummaries";
+import { getWorkerSummaryCached, invalidateWorkerSummaryCache } from "../state/workerState";
 import { ApplicationListItem, WorkerStateResponse } from "../types";
 
 const PAGE_SIZE = 15;
+const EMPTY_APPLIED_PROFILE_MATCH = "__jobcrm_no_applied_profile_match__";
+const WORKER_FOREGROUND_REFRESH_DEDUPE_MS = 1000;
 
 const PlusIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5 w-5">
@@ -28,14 +32,32 @@ const PlusIcon = () => (
 );
 
 export type ApplicationListMode = "pending" | "applied" | "archived" | "all";
+type ApplicationWorkflowFilter = "" | "company_research";
+
+const parseRouteFilters = (search: string) => {
+  const params = new URLSearchParams(search);
+  const status = params.get("status_filter") ?? "";
+  const workflow = params.get("workflow_filter") === "company_research" ? "company_research" : "";
+  return { status, workflow } as const;
+};
 
 export const ApplicationsPage = () => {
-  const navigate = useNavigate();
+  const location = useLocation();
+  const initialRouteFilters = useMemo(() => parseRouteFilters(location.search), [location.search]);
   const [items, setItems] = useState<ApplicationListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [listMode, setListMode] = useState<ApplicationListMode>("pending");
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [markAppliedBusyId, setMarkAppliedBusyId] = useState<string | null>(null);
+  const [listMode, setListMode] = useState<ApplicationListMode>(
+    initialRouteFilters.status || initialRouteFilters.workflow ? "all" : "pending"
+  );
+  const [statusFilter, setStatusFilter] = useState(initialRouteFilters.status);
+  const [workflowFilter, setWorkflowFilter] = useState<ApplicationWorkflowFilter>(initialRouteFilters.workflow);
   const [appliedProfileFilterOpen, setAppliedProfileFilterOpen] = useState(false);
-  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[]>([]);
+  const [selectedAppliedProfileNames, setSelectedAppliedProfileNamesState] = useState<string[] | null>(
+    () => getSelectedAppliedProfileNames()
+  );
+  const [profileNamesLoaded, setProfileNamesLoaded] = useState(false);
   const appliedProfilesFilterButtonRef = useRef<HTMLButtonElement | null>(null);
   const [appliedProfilesFilterPosition, setAppliedProfilesFilterPosition] = useState<{ top: number; left: number } | null>(
     null
@@ -50,32 +72,41 @@ export const ApplicationsPage = () => {
   const [workerState, setWorkerState] = useState<WorkerStateResponse | null>(null);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [total, setTotal] = useState(0);
   const [tableSort, setTableSort] = useState<ApplicationTableSort>("updated_at_desc");
   const [profileNamesForFilter, setProfileNamesForFilter] = useState<string[]>([]);
   const [companySearch, setCompanySearch] = useState("");
+  const [debouncedCompanySearch, setDebouncedCompanySearch] = useState("");
   const previousAvailableProfileNamesRef = useRef<string[]>([]);
-
-  const loadProfileNamesForFilter = useCallback(async () => {
-    try {
-      const summaries = await api.listAllProfileSummaries();
-      const names = Array.from(
-        new Set(summaries.map((row) => row.name.trim()).filter((n) => n.length > 0))
-      ).sort((a, b) => a.localeCompare(b));
-      setProfileNamesForFilter(names);
-    } catch {
-      setProfileNamesForFilter([]);
-    }
-  }, []);
+  const lastWorkerForegroundRefreshAtRef = useRef(0);
+  const profileNamesCacheRef = useRef<Map<string, string[]>>(new Map());
+  const profileNamesRequestSeq = useRef(0);
 
   useEffect(() => {
-    void loadProfileNamesForFilter();
-  }, [loadProfileNamesForFilter]);
+    const timer = window.setTimeout(() => {
+      setDebouncedCompanySearch(companySearch.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [companySearch]);
 
   const availableAppliedProfileNames = profileNamesForFilter;
 
   useEffect(() => {
+    const routeFilters = parseRouteFilters(location.search);
+    setStatusFilter(routeFilters.status);
+    setWorkflowFilter(routeFilters.workflow);
+    if (routeFilters.status || routeFilters.workflow) {
+      setListMode("all");
+    } else {
+      setListMode("pending");
+    }
+    setPage(1);
+  }, [location.search]);
+
+  useEffect(() => {
+    if (!profileNamesLoaded) return;
     if (availableAppliedProfileNames.length === 0) {
-      setSelectedAppliedProfileNamesState([]);
+      setSelectedAppliedProfileNamesState(null);
       previousAvailableProfileNamesRef.current = [];
       return;
     }
@@ -93,43 +124,22 @@ export const ApplicationsPage = () => {
       setSelectedAppliedProfileNamesState(initializeSelectedAppliedProfileNames(next));
     }
     previousAvailableProfileNamesRef.current = next;
-  }, [availableAppliedProfileNames]);
+  }, [availableAppliedProfileNames, profileNamesLoaded]);
 
   const updateAppliedProfileSelection = (nextSelection: string[]) => {
     const sanitizedSelection = nextSelection.filter((name) => availableAppliedProfileNames.includes(name));
     setSelectedAppliedProfileNamesState(sanitizedSelection);
     setSelectedAppliedProfileNames(sanitizedSelection);
+    setPage(1);
   };
 
-  const companySearchFilteredItems = useMemo(() => {
-    const q = companySearch.trim().toLowerCase();
-    if (!q) {
-      return items;
-    }
-    return items.filter((a) => a.company_name.toLowerCase().includes(q));
-  }, [items, companySearch]);
-
-  const filteredItems = useMemo(() => {
-    const selectedNamesList = getSelectedAppliedProfileNames() ?? availableAppliedProfileNames;
-    if (availableAppliedProfileNames.length === 0) {
-      return companySearchFilteredItems;
-    }
-    const allSelected =
-      selectedNamesList.length === availableAppliedProfileNames.length &&
-      availableAppliedProfileNames.every((name) => selectedNamesList.includes(name));
-    const selectedNames = new Set(selectedNamesList);
-    return companySearchFilteredItems.filter((application) => {
-      const appliedProfiles = application.applied_profiles ?? [];
-      if (appliedProfiles.length === 0) {
-        return selectedNamesList.length === 0 || allSelected;
-      }
-      return appliedProfiles.some((profile) => selectedNames.has(profile.profile_name));
-    });
-  }, [companySearchFilteredItems, availableAppliedProfileNames, selectedAppliedProfileNames]);
-
-  const listParams = useMemo(() => {
+  const applicationFilterParams = useMemo(() => {
     const p = new URLSearchParams();
-    if (listMode === "pending") {
+    if (statusFilter) {
+      p.set("status_filter", statusFilter);
+    } else if (workflowFilter) {
+      p.set("workflow_filter", workflowFilter);
+    } else if (listMode === "pending") {
       p.set("exclude_status", "archived");
       p.set("applied", "false");
     } else if (listMode === "applied") {
@@ -138,39 +148,120 @@ export const ApplicationsPage = () => {
     } else if (listMode === "archived") {
       p.set("status_filter", "archived");
     }
-    p.set("sort", tableSort);
+    if (debouncedCompanySearch) {
+      p.set("company_search", debouncedCompanySearch);
+    }
     return p;
-  }, [listMode, tableSort]);
+  }, [debouncedCompanySearch, listMode, statusFilter, workflowFilter]);
+  const applicationFilterParamsKey = useMemo(() => applicationFilterParams.toString(), [applicationFilterParams]);
+
+  const loadProfileNamesForFilter = useCallback(async () => {
+    const cachedNames = profileNamesCacheRef.current.get(applicationFilterParamsKey);
+    if (cachedNames) {
+      setProfileNamesForFilter(cachedNames);
+      setProfileNamesLoaded(true);
+      return;
+    }
+    const requestSeq = profileNamesRequestSeq.current + 1;
+    profileNamesRequestSeq.current = requestSeq;
+    try {
+      const facets = await api.listApplicationAppliedProfileFacets(new URLSearchParams(applicationFilterParams));
+      const names = Array.from(
+        new Set(facets.profile_names.map((name) => name.trim()).filter((name) => name.length > 0))
+      ).sort((a, b) => a.localeCompare(b));
+      if (requestSeq !== profileNamesRequestSeq.current) return;
+      profileNamesCacheRef.current.set(applicationFilterParamsKey, names);
+      setProfileNamesForFilter(names);
+    } catch {
+      if (requestSeq !== profileNamesRequestSeq.current) return;
+      setProfileNamesForFilter([]);
+    } finally {
+      if (requestSeq === profileNamesRequestSeq.current) {
+        setProfileNamesLoaded(true);
+      }
+    }
+  }, [applicationFilterParams, applicationFilterParamsKey]);
+
+  const listParamsKey = useMemo(() => {
+    const p = new URLSearchParams(applicationFilterParams);
+    const allProfilesSelected =
+      availableAppliedProfileNames.length > 0 &&
+      selectedAppliedProfileNames !== null &&
+      selectedAppliedProfileNames.length === availableAppliedProfileNames.length &&
+      availableAppliedProfileNames.every((name) => selectedAppliedProfileNames.includes(name));
+    if (selectedAppliedProfileNames !== null && !allProfilesSelected) {
+      const namesToFilter =
+        selectedAppliedProfileNames.length > 0
+          ? selectedAppliedProfileNames
+          : [EMPTY_APPLIED_PROFILE_MATCH];
+      for (const profileName of namesToFilter) {
+        p.append("applied_profile_names", profileName);
+      }
+    }
+    p.set("sort", tableSort);
+    return p.toString();
+  }, [applicationFilterParams, availableAppliedProfileNames, selectedAppliedProfileNames, tableSort]);
 
   const load = useCallback(
     async (targetPage = page) => {
       setError(null);
       try {
-        const params = new URLSearchParams(listParams);
+        const params = new URLSearchParams(listParamsKey);
         params.set("skip", String((targetPage - 1) * PAGE_SIZE));
         params.set("limit", String(PAGE_SIZE));
-        const [applicationItems, workers] = await Promise.all([
-          api.listApplications(params),
-          api.getWorkerState().catch(() => null)
-        ]);
-        setItems(applicationItems);
-        setHasNextPage(applicationItems.length === PAGE_SIZE);
-        setWorkerState(workers);
-        void loadProfileNamesForFilter();
+        const applicationPage = await api.listApplicationsPage(params);
+        setItems(applicationPage.items);
+        setTotal(applicationPage.total);
+        setHasNextPage(applicationPage.has_next);
       } catch (e) {
         setError((e as Error).message);
       }
     },
-    [listParams, page, loadProfileNamesForFilter]
+    [listParamsKey, page]
   );
 
   useEffect(() => {
     setPage(1);
-  }, [listMode]);
+  }, [listMode, debouncedCompanySearch, statusFilter, workflowFilter]);
 
   useEffect(() => {
     setPage(1);
   }, [tableSort]);
+
+  useEffect(() => {
+    setProfileNamesLoaded(false);
+    setProfileNamesForFilter([]);
+    previousAvailableProfileNamesRef.current = [];
+  }, [applicationFilterParamsKey]);
+
+  useEffect(() => {
+    if (!appliedProfileFilterOpen || profileNamesLoaded) return;
+    void loadProfileNamesForFilter();
+  }, [appliedProfileFilterOpen, loadProfileNamesForFilter, profileNamesLoaded]);
+
+  const loadWorkerSummary = useCallback(async (options?: { force?: boolean }) => {
+    setWorkerState(await getWorkerSummaryCached(options));
+  }, []);
+
+  useEffect(() => {
+    void loadWorkerSummary();
+  }, [loadWorkerSummary]);
+
+  useEffect(() => {
+    const refreshWorkerSummaryOnForeground = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastWorkerForegroundRefreshAtRef.current < WORKER_FOREGROUND_REFRESH_DEDUPE_MS) return;
+      lastWorkerForegroundRefreshAtRef.current = now;
+      void loadWorkerSummary({ force: true });
+    };
+    window.addEventListener("focus", refreshWorkerSummaryOnForeground);
+    document.addEventListener("visibilitychange", refreshWorkerSummaryOnForeground);
+    return () => {
+      window.removeEventListener("focus", refreshWorkerSummaryOnForeground);
+      document.removeEventListener("visibilitychange", refreshWorkerSummaryOnForeground);
+    };
+  }, [loadWorkerSummary]);
 
   useEffect(() => {
     void load(page);
@@ -280,7 +371,11 @@ export const ApplicationsPage = () => {
                   key={value}
                   type="button"
                   className={`btn btn-sm join-item ${listMode === value ? "btn-active" : "btn-ghost"}`}
-                  onClick={() => setListMode(value)}
+                  onClick={() => {
+                    setStatusFilter("");
+                    setWorkflowFilter("");
+                    setListMode(value);
+                  }}
                 >
                   {label}
                 </button>
@@ -296,9 +391,17 @@ export const ApplicationsPage = () => {
                 }
               }}
             >
-              All profile filters
+              Reset profile filter
             </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void load(page)}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                void load(page);
+                invalidateWorkerSummaryCache();
+                void loadWorkerSummary({ force: true });
+              }}
+            >
               Refresh
             </button>
             <button
@@ -313,6 +416,11 @@ export const ApplicationsPage = () => {
           </div>
         </div>
         {error && !createOpen && <div className="alert alert-error mb-2 text-sm">{error}</div>}
+        {actionError ? (
+          <div role="alert" className="alert alert-error mb-2 text-sm">
+            {actionError}
+          </div>
+        ) : null}
         <div className="overflow-x-auto rounded-lg border border-base-300">
           <table className="table table-sm">
             <thead>
@@ -338,13 +446,13 @@ export const ApplicationsPage = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((application) => (
-                <tr
-                  key={application.id}
-                  className="cursor-pointer hover:bg-base-200"
-                  onClick={() => navigate(`/applications/${application.id}`)}
-                >
-                  <td className="font-medium">{application.company_name}</td>
+              {items.map((application) => (
+                <tr key={application.id} className="hover:bg-base-200">
+                  <td className="font-medium">
+                    <Link to={`/applications/${application.id}`} className="link link-primary">
+                      {application.company_name}
+                    </Link>
+                  </td>
                   <td>
                     <span className={`${applicationStatusBadgeClass(application.status)} badge-sm`}>
                       {formatApplicationStatusLabel(application.status)}
@@ -384,7 +492,10 @@ export const ApplicationsPage = () => {
                           <button
                             type="button"
                             className={`btn btn-xs ${application.applied ? "btn-outline" : "btn-success"}`}
-                            disabled={!application.applied && application.status !== "application_ready"}
+                            disabled={
+                              markAppliedBusyId === application.id ||
+                              (!application.applied && application.status !== "application_ready")
+                            }
                             title={
                               !application.applied && application.status !== "application_ready"
                                 ? "Mark applied only when status is Application ready"
@@ -392,16 +503,24 @@ export const ApplicationsPage = () => {
                             }
                             onClick={async (e) => {
                               e.stopPropagation();
+                              if (markAppliedBusyId === application.id) return;
                               const nextApplied = !application.applied;
-                              await api.markApplied(application.id, nextApplied);
-                              if (listMode === "all" || listMode === "archived") {
+                              setActionError(null);
+                              setMarkAppliedBusyId(application.id);
+                              try {
+                                await api.markApplied(application.id, nextApplied);
                                 await load(page);
-                                return;
+                              } catch (err) {
+                                const detail = err instanceof Error && err.message ? ` ${err.message}` : "";
+                                setActionError(
+                                  `Could not ${nextApplied ? "mark" : "unmark"} ${application.company_name} as applied.${detail}`
+                                );
+                              } finally {
+                                setMarkAppliedBusyId((current) => (current === application.id ? null : current));
                               }
-                              setListMode(nextApplied ? "applied" : "pending");
                             }}
                           >
-                            {application.applied ? "Unmark Applied" : "Mark Applied"}
+                            {markAppliedBusyId === application.id ? "Saving..." : application.applied ? "Unmark Applied" : "Mark Applied"}
                           </button>
                           <button
                             type="button"
@@ -422,9 +541,17 @@ export const ApplicationsPage = () => {
               ))}
             </tbody>
           </table>
-          {filteredItems.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
+          {items.length === 0 && <p className="p-4 text-sm opacity-70">No applications in this view.</p>}
         </div>
-        <TablePagination page={page} hasNextPage={hasNextPage} onPageChange={setPage} />
+        <TablePagination
+          page={page}
+          hasNextPage={hasNextPage}
+          onPageChange={setPage}
+          pageSize={PAGE_SIZE}
+          visibleCount={items.length}
+          totalCount={total}
+          itemLabel="applications"
+        />
         {appliedProfileFilterOpen && appliedProfilesFilterPosition ? (
           <>
             <button
@@ -459,24 +586,25 @@ export const ApplicationsPage = () => {
                 {availableAppliedProfileNames.length === 0 ? (
                   <p className="text-xs opacity-70">No profiles available</p>
                 ) : (
-                  availableAppliedProfileNames.map((profileName) => (
-                    <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
-                      <input
-                        type="checkbox"
-                        className="checkbox checkbox-sm"
-                        checked={selectedAppliedProfileNames.includes(profileName)}
+	                  availableAppliedProfileNames.map((profileName) => (
+	                    <label key={profileName} className="label cursor-pointer justify-start gap-2 py-1">
+	                      <input
+	                        type="checkbox"
+	                        className="checkbox checkbox-sm"
+	                        checked={selectedAppliedProfileNames === null || selectedAppliedProfileNames.includes(profileName)}
                         onChange={(event) => {
-                          if (event.target.checked) {
-                            updateAppliedProfileSelection(
-                              Array.from(new Set([...selectedAppliedProfileNames, profileName])).sort((a, b) =>
-                                a.localeCompare(b)
-                              )
-                            );
-                            return;
-                          }
-                          updateAppliedProfileSelection(selectedAppliedProfileNames.filter((name) => name !== profileName));
+	                          if (event.target.checked) {
+	                            updateAppliedProfileSelection(
+	                              Array.from(new Set([...(selectedAppliedProfileNames ?? []), profileName])).sort((a, b) =>
+	                                a.localeCompare(b)
+	                              )
+	                            );
+	                            return;
+	                          }
+                          const currentSelection = selectedAppliedProfileNames ?? availableAppliedProfileNames;
+	                          updateAppliedProfileSelection(currentSelection.filter((name) => name !== profileName));
                         }}
-                      />
+	                      />
                       <span className="label-text text-xs">{profileName}</span>
                     </label>
                   ))
@@ -485,9 +613,6 @@ export const ApplicationsPage = () => {
             </div>
           </>
         ) : null}
-        <p className="mt-2 text-xs opacity-60">
-          Click a row to open application detail. Use <strong>Pending</strong> for in-flight work, <strong>Applied</strong> for already-submitted applications, <strong>Archived</strong> to review closed pipelines, <strong>All</strong> for everything.
-        </p>
       </section>
 
       <NewApplicationModal
@@ -495,7 +620,10 @@ export const ApplicationsPage = () => {
         onClose={closeModal}
         companies={editing ? [{ id: editing.company_id, name: editing.company_name }] : []}
         editing={editing}
-        onSuccess={load}
+        onSuccess={async () => {
+          invalidateCompanySummariesCache();
+          await load(page);
+        }}
       />
 
       <ApplicationWorkflowOverrideModal

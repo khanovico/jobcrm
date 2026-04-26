@@ -8,6 +8,7 @@ import { NotificationKind, UserNotification } from "../types";
 
 const TOAST_POLL_MS = 45_000;
 const TOAST_AUTO_DISMISS_MS = 10_000;
+const THEME_STORAGE_KEY = "jobcrm-theme";
 
 const SESSION_INITIAL_KEY = "jobcrm-notifications-initial-sync";
 const SESSION_SEEN_IDS_KEY = "jobcrm-notifications-seen-ids";
@@ -51,10 +52,23 @@ const links = [
 ];
 
 type ToastItem = { toastKey: string; note: UserNotification };
+type Theme = "light" | "dark";
+
+function loadThemePreference(): Theme {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    /* ignore */
+  }
+  const currentTheme = document.documentElement.getAttribute("data-theme");
+  return currentTheme === "dark" ? "dark" : "light";
+}
 
 export const Layout = () => {
   const { logout, user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [theme, setTheme] = useState<Theme>(loadThemePreference);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const seenNotificationIdsRef = useRef<Set<string>>(loadSeenNotificationIds());
   const toastDismissTimersRef = useRef<Map<string, number>>(new Map());
@@ -83,9 +97,17 @@ export const Layout = () => {
   );
 
   const toggleTheme = () => {
-    const current = document.documentElement.getAttribute("data-theme");
-    document.documentElement.setAttribute("data-theme", current === "dark" ? "light" : "dark");
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
   };
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,11 +116,10 @@ export const Layout = () => {
       if (pollInFlightRef.current) return;
       pollInFlightRef.current = true;
       try {
-        const unread = await api.getUnreadNotificationsCount();
-        if (!cancelled) setUnreadCount(unread.count);
-
-        const rows = await api.listNotifications({ unreadOnly: true, skip: 0, limit: 25 });
+        const summary = await api.getNotificationsSummary(10);
         if (cancelled) return;
+        setUnreadCount(summary.unread_count);
+        const rows = summary.newest_unread;
 
         let initialDone = false;
         try {
@@ -151,8 +172,8 @@ export const Layout = () => {
     const refreshUnreadBadge = () => {
       void (async () => {
         try {
-          const unread = await api.getUnreadNotificationsCount();
-          if (!cancelled) setUnreadCount(unread.count);
+          const summary = await api.getNotificationsSummary(0);
+          if (!cancelled) setUnreadCount(summary.unread_count);
         } catch {
           if (!cancelled) setUnreadCount(0);
         }
@@ -180,8 +201,15 @@ export const Layout = () => {
             <h1 className="ml-2 text-xl font-semibold tracking-tight">JobCRM</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" className="btn btn-sm" onClick={toggleTheme}>
-              Toggle Theme
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={toggleTheme}
+              aria-pressed={theme === "dark"}
+              aria-label={`Theme is ${theme}. Activate ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Theme: ${theme}`}
+            >
+              Theme: {theme}
             </button>
             <button type="button" className="btn btn-sm btn-outline" onClick={logout}>
               Logout

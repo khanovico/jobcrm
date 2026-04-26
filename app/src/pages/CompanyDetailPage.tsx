@@ -11,11 +11,12 @@ import {
   applicationStatusBadgeClass,
   formatApplicationStatusLabel
 } from "../applicationStatus";
-import { getAllIndustries } from "../state/industryCatalog";
+import { getIndustryOptions } from "../state/industryCatalog";
 import { invalidateCompanySummariesCache } from "../state/companySummaries";
 import { Application, Company, CompanyResearchStatus, Industry } from "../types";
 
 const COMPANY_APPLICATIONS_PAGE_SIZE = 20;
+type CompanyDetailSection = "review" | "applications" | "edit";
 
 const dash = (value: string | null | undefined) => (value && String(value).trim() !== "" ? value : "—");
 
@@ -51,7 +52,12 @@ export const CompanyDetailPage = () => {
   const [applications, setApplications] = useState<Application[]>([]);
   const [applicationsPage, setApplicationsPage] = useState(1);
   const [hasNextApplicationsPage, setHasNextApplicationsPage] = useState(false);
+  const [applicationsTotal, setApplicationsTotal] = useState(0);
   const [industries, setIndustries] = useState<Industry[]>([]);
+  const [industryOptions, setIndustryOptions] = useState<Industry[]>([]);
+  const [industrySearchInput, setIndustrySearchInput] = useState("");
+  const [industrySearch, setIndustrySearch] = useState("");
+  const [loadingIndustries, setLoadingIndustries] = useState(false);
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [linkedin, setLinkedin] = useState("");
@@ -66,26 +72,36 @@ export const CompanyDetailPage = () => {
   const [hqLocations, setHqLocations] = useState("");
   const [selectedIndustryIds, setSelectedIndustryIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [applicationActionError, setApplicationActionError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [clearResearchOpen, setClearResearchOpen] = useState(false);
   const [statusOverrideApplication, setStatusOverrideApplication] = useState<Application | null>(null);
+  const [activeSection, setActiveSection] = useState<CompanyDetailSection>("review");
+
+  const reviewPanelId = "company-detail-review-panel";
+  const applicationsPanelId = "company-detail-applications-panel";
+  const editPanelId = "company-detail-edit-panel";
+  const sectionPanelId = (section: CompanyDetailSection) => {
+    if (section === "applications") return applicationsPanelId;
+    if (section === "edit") return editPanelId;
+    return reviewPanelId;
+  };
 
   const industryNameById = useMemo(() => {
     const m: Record<string, string> = {};
-    industries.forEach((i) => {
+    [...industries, ...industryOptions].forEach((i) => {
       m[i.id] = i.name;
     });
     return m;
-  }, [industries]);
+  }, [industries, industryOptions]);
 
   const loadCompanyContext = useCallback(async () => {
     if (!companyId) return;
     setError(null);
     try {
-      const [co, inds] = await Promise.all([api.getCompany(companyId), getAllIndustries()]);
-      setCompany(co);
-      setIndustries(inds);
+      const co = await api.getCompany(companyId);
       setName(co.name);
       setWebsite(co.website ?? "");
       setLinkedin(co.linkedin ?? "");
@@ -99,6 +115,7 @@ export const CompanyDetailPage = () => {
       setActivelyHiring(co.actively_hiring === null || co.actively_hiring === undefined ? "" : co.actively_hiring);
       setHqLocations((co.hq_locations ?? []).join(", "));
       setSelectedIndustryIds([...(co.industry_ids ?? [])]);
+      setCompany(co);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -114,9 +131,10 @@ export const CompanyDetailPage = () => {
           skip: String((targetPage - 1) * COMPANY_APPLICATIONS_PAGE_SIZE),
           limit: String(COMPANY_APPLICATIONS_PAGE_SIZE)
         });
-        const apps = await api.listApplications(params);
-        setApplications(apps);
-        setHasNextApplicationsPage(apps.length === COMPANY_APPLICATIONS_PAGE_SIZE);
+        const response = await api.listApplicationsPage(params);
+        setApplications(response.items);
+        setApplicationsTotal(response.total);
+        setHasNextApplicationsPage(response.has_next);
       } catch (e) {
         setError((e as Error).message);
       }
@@ -129,12 +147,44 @@ export const CompanyDetailPage = () => {
   }, [loadCompanyContext]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setIndustrySearch(industrySearchInput.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [industrySearchInput]);
+
+  useEffect(() => {
+    if (!company || company.id !== companyId || activeSection !== "edit") return;
+    let active = true;
+    setLoadingIndustries(true);
+    getIndustryOptions({ ids: selectedIndustryIds, search: industrySearch })
+      .then((response) => {
+        if (!active) return;
+        setIndustries(response.selected);
+        setIndustryOptions(response.options);
+      })
+      .catch((e) => {
+        if (!active) return;
+        setError((e as Error).message);
+      })
+      .finally(() => {
+        if (active) setLoadingIndustries(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeSection, company?.id, companyId, industrySearch, selectedIndustryIds]);
+
+  useEffect(() => {
     setApplicationsPage(1);
+    setApplications([]);
+    setHasNextApplicationsPage(false);
   }, [companyId]);
 
   useEffect(() => {
+    if (activeSection !== "applications") return;
     void loadApplicationsPage(applicationsPage);
-  }, [applicationsPage, loadApplicationsPage]);
+  }, [activeSection, applicationsPage, loadApplicationsPage]);
 
   useEffect(() => {
     if (applications.length === 0 && applicationsPage > 1) {
@@ -146,7 +196,7 @@ export const CompanyDetailPage = () => {
     event.preventDefault();
     if (!companyId) return;
     setSaving(true);
-    setError(null);
+    setEditError(null);
     try {
       const payload = {
         name,
@@ -170,7 +220,7 @@ export const CompanyDetailPage = () => {
       invalidateCompanySummariesCache();
       setCompany(updated);
     } catch (err) {
-      setError((err as Error).message);
+      setEditError((err as Error).message);
     } finally {
       setSaving(false);
     }
@@ -179,6 +229,15 @@ export const CompanyDetailPage = () => {
   if (!companyId) return <div>Missing company id</div>;
 
   const showIndexedResearchSummary = company?.research_status === "indexed";
+  const sectionButtonClass = (section: CompanyDetailSection) =>
+    `tab whitespace-nowrap px-4 ${activeSection === section ? "tab-active" : ""}`;
+  const selectedIndustrySummary =
+    company?.industry_ids && company.industry_ids.length > 0
+      ? company.industry_ids
+          .map((id) => industryNameById[id])
+          .filter(Boolean)
+          .join(", ") || `${company.industry_ids.length} selected`
+      : "—";
 
   return (
     <div className="space-y-4">
@@ -244,7 +303,7 @@ export const CompanyDetailPage = () => {
                     setClearResearchOpen(true);
                   }}
                 >
-                  Clear
+                  Reset research
                 </button>
               </div>
             </div>
@@ -258,211 +317,337 @@ export const CompanyDetailPage = () => {
               Updated {new Date(company.updated_at).toLocaleString()} · ID{" "}
               <span className="font-mono text-xs">{company.id}</span>
             </p>
-            {showIndexedResearchSummary && company.overview?.trim() ? (
-              <div className="mt-4">
-                <h3 className="text-sm font-semibold opacity-80">Overview</h3>
-                <p className="whitespace-pre-wrap text-sm">{company.overview}</p>
-              </div>
-            ) : null}
-            {!showIndexedResearchSummary && companyHasStoredEnrichment(company) ? (
-              <p className="mt-4 text-sm opacity-70">
-                Overview and agent enrichment are hidden while research status is not Indexed. Values remain in{" "}
-                <strong>Edit company</strong> below.
-              </p>
-            ) : null}
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div>
-                <h3 className="text-sm font-semibold opacity-80">Website</h3>
-                {company.website ? (
-                  <a href={company.website} className="link link-primary break-all" target="_blank" rel="noreferrer">
-                    {company.website}
-                  </a>
-                ) : (
-                  <p className="text-sm">—</p>
-                )}
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold opacity-80">LinkedIn</h3>
-                {company.linkedin ? (
-                  <a href={company.linkedin} className="link link-primary break-all" target="_blank" rel="noreferrer">
-                    {company.linkedin}
-                  </a>
-                ) : (
-                  <p className="text-sm">—</p>
-                )}
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold opacity-80">Employee count</h3>
-                <p className="text-sm">{dash(company.employee_count_text)}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold opacity-80">Work mode</h3>
-                <p className="text-sm">{dash(company.work_mode)}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold opacity-80">Actively hiring</h3>
-                <p className="text-sm">
-                  {company.actively_hiring === null || company.actively_hiring === undefined
-                    ? "—"
-                    : company.actively_hiring
-                      ? "Yes"
-                      : "No"}
-                </p>
-              </div>
-              <div className="sm:col-span-2">
-                <h3 className="text-sm font-semibold opacity-80">HQ locations</h3>
-                <p className="text-sm">
-                  {company.hq_locations && company.hq_locations.length > 0
-                    ? company.hq_locations.join(", ")
-                    : "—"}
-                </p>
-              </div>
-              <div className="sm:col-span-2">
-                <h3 className="text-sm font-semibold opacity-80">Industries</h3>
-                <p className="text-sm">
-                  {company.industry_ids && company.industry_ids.length > 0
-                    ? company.industry_ids
-                        .map((id) => industryNameById[id] ?? "Unknown industry")
-                        .join(", ")
-                    : "—"}
-                </p>
-              </div>
-              {company.work_mode_description && (
-                <div className="sm:col-span-2">
-                  <h3 className="text-sm font-semibold opacity-80">Work mode detail</h3>
-                  <p className="whitespace-pre-wrap text-sm">{company.work_mode_description}</p>
-                </div>
-              )}
+            <div
+              className="tabs tabs-boxed mt-4 inline-flex max-w-full flex-nowrap overflow-x-auto"
+              role="tablist"
+              aria-label="Company detail sections"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSection === "review"}
+                aria-controls={reviewPanelId}
+                className={sectionButtonClass("review")}
+                onClick={() => setActiveSection("review")}
+              >
+                Review
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSection === "applications"}
+                aria-controls={applicationsPanelId}
+                className={sectionButtonClass("applications")}
+                onClick={() => setActiveSection("applications")}
+              >
+                Applications
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeSection === "edit"}
+                aria-controls={editPanelId}
+                className={sectionButtonClass("edit")}
+                onClick={() => setActiveSection("edit")}
+              >
+                Edit
+              </button>
             </div>
-            {showIndexedResearchSummary && company.analysis_links && company.analysis_links.length > 0 && (
-              <div className="mt-4">
-                <h3 className="text-sm font-semibold opacity-80">Analysis links</h3>
-                <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
-                  {company.analysis_links.map((row, idx) => (
-                    <li key={`${row.topic}-${idx}`}>
-                      <span className="font-medium">{row.topic}: </span>
-                      <a href={row.link} className="link link-secondary break-all" target="_blank" rel="noreferrer">
-                        {row.link}
+            {activeSection === "review" && (
+              <div id={sectionPanelId("review")} role="tabpanel">
+                {showIndexedResearchSummary && company.overview?.trim() ? (
+                  <div className="mt-4">
+                    <h3 className="text-sm font-semibold opacity-80">Overview</h3>
+                    <p className="whitespace-pre-wrap text-sm">{company.overview}</p>
+                  </div>
+                ) : null}
+                {!showIndexedResearchSummary && companyHasStoredEnrichment(company) ? (
+                  <details className="mt-4 rounded border border-warning/40 bg-warning/10 p-3 text-sm">
+                    <summary className="cursor-pointer font-medium">Stored enrichment hidden from indexed review</summary>
+                    <p className="mt-2 opacity-80">
+                      Research status is {researchLabel(company.research_status)}, so indexed research is not shown as
+                      the primary review source. Stored values are still available here and in edit mode.
+                    </p>
+                    {company.overview?.trim() ? (
+                      <p className="mt-2 whitespace-pre-wrap">
+                        <span className="font-medium">Overview: </span>
+                        {company.overview}
+                      </p>
+                    ) : null}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {company.full_product_detail?.trim() ? (
+                        <a
+                          href={company.full_product_detail}
+                          className="link link-primary"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Product detail
+                        </a>
+                      ) : null}
+                      {company.full_hiring_detail?.trim() ? (
+                        <a
+                          href={company.full_hiring_detail}
+                          className="link link-primary"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Hiring detail
+                        </a>
+                      ) : null}
+                      {company.full_organization_detail?.trim() ? (
+                        <a
+                          href={company.full_organization_detail}
+                          className="link link-primary"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Organization detail
+                        </a>
+                      ) : null}
+                    </div>
+                    {company.analysis_links && company.analysis_links.length > 0 ? (
+                      <ul className="mt-2 list-inside list-disc space-y-1">
+                        {company.analysis_links.map((row, idx) => (
+                          <li key={`${row.topic}-${idx}`}>
+                            <span className="font-medium">{row.topic}: </span>
+                            <a
+                              href={row.link}
+                              className="link link-secondary break-all"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {row.link}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {company.enrichment_source_links && company.enrichment_source_links.length > 0 ? (
+                      <ul className="mt-2 list-inside list-disc space-y-1">
+                        {company.enrichment_source_links.map((url, idx) => (
+                          <li key={`${url}-${idx}`}>
+                            <span className="font-medium">Source: </span>
+                            <a href={url} className="link link-accent break-all" target="_blank" rel="noreferrer">
+                              {url}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <button type="button" className="btn btn-ghost btn-xs mt-3" onClick={() => setActiveSection("edit")}>
+                      Review stored enrichment in edit mode
+                    </button>
+                  </details>
+                ) : null}
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <h3 className="text-sm font-semibold opacity-80">Website</h3>
+                    {company.website ? (
+                      <a href={company.website} className="link link-primary break-all" target="_blank" rel="noreferrer">
+                        {company.website}
                       </a>
-                    </li>
-                  ))}
-                </ul>
+                    ) : (
+                      <p className="text-sm">—</p>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold opacity-80">LinkedIn</h3>
+                    {company.linkedin ? (
+                      <a href={company.linkedin} className="link link-primary break-all" target="_blank" rel="noreferrer">
+                        {company.linkedin}
+                      </a>
+                    ) : (
+                      <p className="text-sm">—</p>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold opacity-80">Employee count</h3>
+                    <p className="text-sm">{dash(company.employee_count_text)}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold opacity-80">Work mode</h3>
+                    <p className="text-sm">{dash(company.work_mode)}</p>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold opacity-80">Actively hiring</h3>
+                    <p className="text-sm">
+                      {company.actively_hiring === null || company.actively_hiring === undefined
+                        ? "—"
+                        : company.actively_hiring
+                          ? "Yes"
+                          : "No"}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <h3 className="text-sm font-semibold opacity-80">HQ locations</h3>
+                    <p className="text-sm">
+                      {company.hq_locations && company.hq_locations.length > 0
+                        ? company.hq_locations.join(", ")
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <h3 className="text-sm font-semibold opacity-80">Industries</h3>
+                    <p className="text-sm">{selectedIndustrySummary}</p>
+                  </div>
+                  {company.work_mode_description && (
+                    <div className="sm:col-span-2">
+                      <h3 className="text-sm font-semibold opacity-80">Work mode detail</h3>
+                      <p className="whitespace-pre-wrap text-sm">{company.work_mode_description}</p>
+                    </div>
+                  )}
+                </div>
+                {showIndexedResearchSummary && company.analysis_links && company.analysis_links.length > 0 && (
+                  <div className="mt-4">
+                    <h3 className="text-sm font-semibold opacity-80">Analysis links</h3>
+                    <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
+                      {company.analysis_links.map((row, idx) => (
+                        <li key={`${row.topic}-${idx}`}>
+                          <span className="font-medium">{row.topic}: </span>
+                          <a href={row.link} className="link link-secondary break-all" target="_blank" rel="noreferrer">
+                            {row.link}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {showIndexedResearchSummary &&
+                  company.enrichment_source_links &&
+                  company.enrichment_source_links.length > 0 && (
+                    <div className="mt-4">
+                      <h3 className="text-sm font-semibold opacity-80">Enrichment sources</h3>
+                      <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
+                        {company.enrichment_source_links.map((url, idx) => (
+                          <li key={`${url}-${idx}`}>
+                            <a href={url} className="link link-accent break-all" target="_blank" rel="noreferrer">
+                              {url}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
               </div>
             )}
-            {showIndexedResearchSummary &&
-              company.enrichment_source_links &&
-              company.enrichment_source_links.length > 0 && (
-                <div className="mt-4">
-                  <h3 className="text-sm font-semibold opacity-80">Enrichment sources</h3>
-                  <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
-                    {company.enrichment_source_links.map((url, idx) => (
-                      <li key={`${url}-${idx}`}>
-                        <a href={url} className="link link-accent break-all" target="_blank" rel="noreferrer">
-                          {url}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
           </div>
 
-          <div className="card bg-base-100 p-4 shadow">
-            <h3 className="mb-2 text-lg font-semibold">Applications</h3>
-            {applications.length === 0 ? (
-              <p className="text-sm opacity-70">No applications for this company yet.</p>
-            ) : (
-              <>
-                <div className="overflow-x-auto rounded-lg border border-base-300">
-                  <table className="table table-sm">
-                    <thead>
-                      <tr>
-                        <th>Status</th>
-                        <th>Applied</th>
-                        <th className="text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {applications.map((a) => (
-                        <tr key={a.id}>
-                          <td>
-                            <span className={`badge badge-sm ${applicationStatusBadgeClass(a.status)}`}>
-                              {formatApplicationStatusLabel(a.status)}
-                            </span>
-                          </td>
-                          <td className="whitespace-nowrap text-xs">{a.applied_at ?? "—"}</td>
-                          <td className="text-right">
-                            <div className="flex flex-wrap justify-end gap-1">
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onClick={() => setStatusOverrideApplication(a)}
-                              >
-                                Set status…
-                              </button>
-                              {a.status !== "archived" && (
-                                <>
-                                  <button
-                                    type="button"
-                                    className={`btn btn-xs ${a.applied ? "btn-outline" : "btn-success"}`}
-                                    disabled={!a.applied && a.status !== "application_ready"}
-                                    title={
-                                      !a.applied && a.status !== "application_ready"
-                                        ? "Use Force mark below when workflow rules block marking applied."
-                                        : undefined
-                                    }
-                                    onClick={async () => {
-                                      try {
-                                        await api.markApplied(a.id, !a.applied);
-                                        await loadApplicationsPage(applicationsPage);
-                                      } catch (e) {
-                                        setError((e as Error).message);
-                                      }
-                                    }}
-                                  >
-                                    {a.applied ? "Unmark" : "Mark applied"}
-                                  </button>
-                                  {!a.applied ? (
+          {activeSection === "applications" && (
+            <div id={sectionPanelId("applications")} role="tabpanel" className="card bg-base-100 p-4 shadow">
+              <h3 className="mb-2 text-lg font-semibold">Applications</h3>
+              {applicationActionError && (
+                <div className="alert alert-error mb-3 text-sm" role="alert">
+                  {applicationActionError}
+                </div>
+              )}
+              {applications.length === 0 ? (
+                <p className="text-sm opacity-70">No applications for this company yet.</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto rounded-lg border border-base-300">
+                    <table className="table table-sm">
+                      <thead>
+                        <tr>
+                          <th>Status</th>
+                          <th>Applied</th>
+                          <th className="text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {applications.map((a) => (
+                          <tr key={a.id}>
+                            <td>
+                              <span className={`badge badge-sm ${applicationStatusBadgeClass(a.status)}`}>
+                                {formatApplicationStatusLabel(a.status)}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap text-xs">{a.applied_at ?? "—"}</td>
+                            <td className="text-right">
+                              <div className="flex flex-wrap justify-end gap-1">
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-xs"
+                                  onClick={() => setStatusOverrideApplication(a)}
+                                >
+                                  Set status…
+                                </button>
+                                {a.status !== "archived" && (
+                                  <>
                                     <button
                                       type="button"
-                                      className="btn btn-ghost btn-xs"
-                                      title="Mark applied ignoring workflow (use when correcting data)"
+                                      className={`btn btn-xs ${a.applied ? "btn-outline" : "btn-success"}`}
+                                      disabled={!a.applied && a.status !== "application_ready"}
+                                      title={
+                                        !a.applied && a.status !== "application_ready"
+                                          ? "Use Force mark below when workflow rules block marking applied."
+                                          : undefined
+                                      }
                                       onClick={async () => {
+                                        setApplicationActionError(null);
                                         try {
-                                          await api.markApplied(a.id, true, { force: true });
+                                          await api.markApplied(a.id, !a.applied);
                                           await loadApplicationsPage(applicationsPage);
                                         } catch (e) {
-                                          setError((e as Error).message);
+                                          setApplicationActionError((e as Error).message);
                                         }
                                       }}
                                     >
-                                      Force mark
+                                      {a.applied ? "Unmark" : "Mark applied"}
                                     </button>
-                                  ) : null}
-                                </>
-                              )}
-                              <Link to={`/applications/${a.id}`} className="btn btn-primary btn-outline btn-xs">
-                                Open detail
-                              </Link>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <TablePagination
-                  page={applicationsPage}
-                  hasNextPage={hasNextApplicationsPage}
-                  onPageChange={setApplicationsPage}
-                />
-              </>
-            )}
-          </div>
+                                    {!a.applied ? (
+                                      <button
+                                        type="button"
+                                        className="btn btn-ghost btn-xs"
+                                        title="Mark applied ignoring workflow (use when correcting data)"
+                                        onClick={async () => {
+                                          setApplicationActionError(null);
+                                          try {
+                                            await api.markApplied(a.id, true, { force: true });
+                                            await loadApplicationsPage(applicationsPage);
+                                          } catch (e) {
+                                            setApplicationActionError((e as Error).message);
+                                          }
+                                        }}
+                                      >
+                                        Force mark
+                                      </button>
+                                    ) : null}
+                                  </>
+                                )}
+                                <Link to={`/applications/${a.id}`} className="btn btn-primary btn-outline btn-xs">
+                                  Open detail
+                                </Link>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <TablePagination
+                    page={applicationsPage}
+                    hasNextPage={hasNextApplicationsPage}
+                    onPageChange={setApplicationsPage}
+                    pageSize={COMPANY_APPLICATIONS_PAGE_SIZE}
+                    visibleCount={applications.length}
+                    totalCount={applicationsTotal}
+                    itemLabel="applications"
+                  />
+                </>
+              )}
+            </div>
+          )}
 
-          <div className="card bg-base-100 p-4 shadow">
-            <h3 className="mb-2 text-lg font-semibold">Edit company</h3>
-            <form className="space-y-3" onSubmit={onSubmit}>
+          {activeSection === "edit" && (
+            <div id={sectionPanelId("edit")} role="tabpanel" className="card bg-base-100 p-4 shadow">
+              <h3 className="mb-2 text-lg font-semibold">Edit company</h3>
+              {editError && (
+                <div className="alert alert-error mb-3 text-sm" role="alert">
+                  {editError}
+                </div>
+              )}
+              <form className="space-y-3" onSubmit={onSubmit}>
               <label className="form-control w-full">
                 <span className="label-text">Name</span>
                 <input
@@ -549,9 +734,13 @@ export const CompanyDetailPage = () => {
               <div className="form-control w-full">
                 <span className="label-text">Industries</span>
                 <IndustryMultiSelect
-                  industries={industries}
+                  selectedIndustries={industries}
+                  options={industryOptions}
                   value={selectedIndustryIds}
                   onChange={setSelectedIndustryIds}
+                  search={industrySearchInput}
+                  onSearchChange={setIndustrySearchInput}
+                  loading={loadingIndustries}
                   disabled={saving}
                 />
               </div>
@@ -605,6 +794,7 @@ export const CompanyDetailPage = () => {
               </div>
             </form>
           </div>
+          )}
 
           <ArchiveCompanyModal
             open={archiveOpen}
@@ -630,7 +820,11 @@ export const CompanyDetailPage = () => {
               setError(null);
               try {
                 setApplicationsPage(1);
-                await Promise.all([loadCompanyContext(), loadApplicationsPage(1)]);
+                if (activeSection === "applications") {
+                  await Promise.all([loadCompanyContext(), loadApplicationsPage(1)]);
+                } else {
+                  await loadCompanyContext();
+                }
               } catch (e) {
                 setError((e as Error).message);
               }

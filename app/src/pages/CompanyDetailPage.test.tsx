@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,13 +7,14 @@ import { resetIndustryCatalogCacheForTests } from "../state/industryCatalog";
 import { CompanyDetailPage } from "./CompanyDetailPage";
 import type { Company } from "../types";
 
-const { getCompany, listApplications, listIndustries, getCompanyApplicationCount, markApplied } = vi.hoisted(
+const { getCompany, listApplicationsPage, listIndustryOptions, getCompanyApplicationCount, markApplied, updateCompany } = vi.hoisted(
   () => ({
     getCompany: vi.fn(),
-    listApplications: vi.fn(),
-    listIndustries: vi.fn(),
+    listApplicationsPage: vi.fn(),
+    listIndustryOptions: vi.fn(),
     getCompanyApplicationCount: vi.fn(),
-    markApplied: vi.fn()
+    markApplied: vi.fn(),
+    updateCompany: vi.fn()
   })
 );
 
@@ -28,9 +29,9 @@ vi.mock("../components/ApplicationWorkflowOverrideModal", () => ({
 vi.mock("../api", () => ({
   api: {
     getCompany,
-    listApplications,
-    listIndustries,
-    updateCompany: vi.fn(),
+    listApplicationsPage,
+    listIndustryOptions,
+    updateCompany,
     deleteCompany: vi.fn(),
     clearCompanyResearchDetail: vi.fn(),
     getCompanyApplicationCount,
@@ -60,14 +61,16 @@ function renderPage(companyId = "co1") {
 describe("CompanyDetailPage", () => {
   beforeEach(() => {
     getCompany.mockReset();
-    listApplications.mockReset();
-    listIndustries.mockReset();
+    listApplicationsPage.mockReset();
+    listIndustryOptions.mockReset();
     getCompanyApplicationCount.mockReset();
     markApplied.mockReset();
-    listApplications.mockResolvedValue([]);
-    listIndustries.mockResolvedValue([]);
+    updateCompany.mockReset();
+    listApplicationsPage.mockResolvedValue({ items: [], total: 0, has_next: false });
+    listIndustryOptions.mockResolvedValue({ selected: [], options: [] });
     getCompanyApplicationCount.mockResolvedValue({ count: 0 });
     markApplied.mockResolvedValue({ id: "a1", applied: true } as never);
+    updateCompany.mockResolvedValue(baseCompany() as never);
   });
 
   afterEach(() => {
@@ -91,8 +94,7 @@ describe("CompanyDetailPage", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Acme Corp" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
     });
-    // Read-only paragraph + edit textarea both show the same copy.
-    expect(screen.getAllByText("Public overview body")).toHaveLength(2);
+    expect(screen.getAllByText("Public overview body")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "Full Product Detail" })).toHaveAttribute(
       "href",
       "https://example.com/product-detail"
@@ -107,6 +109,21 @@ describe("CompanyDetailPage", () => {
     );
     const researchLine = screen.getByText("Research status:").parentElement!;
     expect(within(researchLine).getByText("Indexed")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Edit" }));
+    expect(screen.getByDisplayValue("Public overview body")).toBeInTheDocument();
+  });
+
+  it("keeps applications and edit-only industry options lazy on initial review render", async () => {
+    getCompany.mockResolvedValue(baseCompany({ industry_ids: ["ind-250"] }));
+
+    renderPage();
+
+    await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
+    expect(screen.getByRole("tab", { name: "Review" })).toHaveAttribute("aria-selected", "true");
+    expect(listApplicationsPage).not.toHaveBeenCalled();
+    expect(listIndustryOptions).not.toHaveBeenCalled();
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
 
   it("hides read-only enrichment summary when research_status is pending but data exists", async () => {
@@ -134,13 +151,18 @@ describe("CompanyDetailPage", () => {
     expect(screen.queryByRole("heading", { name: "Analysis links" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Enrichment sources" })).not.toBeInTheDocument();
 
-    expect(
-      screen.getByText(/hidden while research status is not Indexed/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText("Stored enrichment hidden from indexed review")).toBeInTheDocument();
     const researchLine = screen.getByText("Research status:").parentElement!;
     expect(within(researchLine).getByText("Pending")).toBeInTheDocument();
 
-    // Read-only card does not render overview; value only in the edit form.
+    expect(screen.queryByDisplayValue("Still in DB")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText("Stored enrichment hidden from indexed review"));
+    expect(screen.getByText(/Research status is Pending/i)).toBeInTheDocument();
+    expect(screen.getByText("Still in DB")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://a.example" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://src.example" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Review stored enrichment in edit mode" }));
     expect(screen.getByDisplayValue("Still in DB")).toBeInTheDocument();
   });
 
@@ -162,7 +184,7 @@ describe("CompanyDetailPage", () => {
       expect(screen.getByRole("heading", { level: 2, name: "Acme Corp" })).toBeInTheDocument();
     });
 
-    expect(screen.queryByText(/hidden while research status is not Indexed/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Stored enrichment hidden from indexed review")).not.toBeInTheDocument();
   });
 
   it("shows analysis and enrichment sections when indexed", async () => {
@@ -183,31 +205,47 @@ describe("CompanyDetailPage", () => {
     expect(screen.getByRole("link", { name: "https://enrich.example/doc" })).toBeInTheDocument();
   });
 
-  it("reuses cached industries when revisiting company detail", async () => {
-    getCompany.mockResolvedValue(baseCompany());
-    listIndustries.mockResolvedValue([
-      {
-        id: "ind-1",
-        name: "FinTech",
-        description: "Finance",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z"
-      }
-    ]);
-
-    const firstMount = renderPage();
-    await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
-    firstMount.unmount();
+  it("hydrates selected industries without fetching the full catalog", async () => {
+    getCompany.mockResolvedValue(baseCompany({ industry_ids: ["ind-250"] }));
+    listIndustryOptions.mockResolvedValue({
+      selected: [
+        {
+          id: "ind-250",
+          name: "Late Catalog Industry",
+          description: "",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z"
+        }
+      ],
+      options: [
+        {
+          id: "ind-1",
+          name: "FinTech",
+          description: "Finance",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z"
+        }
+      ]
+    });
 
     renderPage();
     await screen.findByRole("heading", { level: 2, name: "Acme Corp" });
-
-    expect(listIndustries).toHaveBeenCalledTimes(1);
+    expect(listIndustryOptions).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("tab", { name: "Edit" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("Late Catalog Industry").length).toBeGreaterThan(0);
+    });
+    expect(listIndustryOptions).toHaveBeenCalledTimes(1);
+    const hydratedCall = listIndustryOptions.mock.calls
+      .map((call) => call[0] as URLSearchParams)
+      .find((params) => params.getAll("ids").includes("ind-250"));
+    expect(hydratedCall).toBeTruthy();
+    expect(hydratedCall?.get("limit")).toBe("20");
   });
 
   it("paginates company applications", async () => {
     getCompany.mockResolvedValue(baseCompany());
-    const firstPageApplications = Array.from({ length: 20 }, (_, index) => ({
+    const firstPageApplications = Array.from({ length: 21 }, (_, index) => ({
       id: `a-${index + 1}`,
       company_id: "co1",
       status: "application_ready",
@@ -229,22 +267,71 @@ describe("CompanyDetailPage", () => {
         updated_at: "2026-02-01T00:00:00Z"
       }
     ];
-    listApplications.mockImplementation((params?: URLSearchParams) => {
+    listApplicationsPage.mockImplementation((params?: URLSearchParams) => {
       if (params?.get("skip") === "20") {
-        return Promise.resolve(secondPageApplications);
+        return Promise.resolve({ items: secondPageApplications, total: 21, has_next: false });
       }
-      return Promise.resolve(firstPageApplications);
+      return Promise.resolve({ items: firstPageApplications.slice(0, 20), total: 21, has_next: true });
     });
 
     renderPage();
 
+    await userEvent.click(await screen.findByRole("tab", { name: "Applications" }));
     expect(await screen.findByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Go to next page" })).toBeEnabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to next page" }));
 
-    expect(await screen.findByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Current page, page 2" })).toBeInTheDocument();
+    });
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.getByText("2026-02-01T00:00:00Z")).toBeInTheDocument();
+  });
+
+  it("shows application action failures in the applications section", async () => {
+    getCompany.mockResolvedValue(baseCompany());
+    listApplicationsPage.mockResolvedValue({
+      items: [
+        {
+          id: "a-1",
+          company_id: "co1",
+          status: "application_ready",
+          applied: false,
+          email_sent: false,
+          applied_at: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z"
+        }
+      ],
+      total: 1,
+      has_next: false
+    });
+    markApplied.mockRejectedValue(new Error("Application update failed"));
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("tab", { name: "Applications" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Mark applied" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Application update failed");
+    expect(screen.getByRole("heading", { name: "Applications" })).toBeInTheDocument();
+  });
+
+  it("shows save failures in the edit section", async () => {
+    getCompany.mockResolvedValue(baseCompany({ name: "Acme Corp" }));
+    updateCompany.mockRejectedValue(new Error("Company save failed"));
+
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("tab", { name: "Edit" }));
+    await userEvent.clear(screen.getByRole("textbox", { name: "Name" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Acme Updated");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Company save failed");
+    expect(screen.getByRole("heading", { name: "Edit company" })).toBeInTheDocument();
   });
 });

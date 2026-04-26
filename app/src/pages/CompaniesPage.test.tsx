@@ -1,9 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetCompanySummariesCacheForTests } from "../state/companySummaries";
+import { resetWorkerSummaryCacheForTests } from "../state/workerState";
 import { CompaniesPage } from "./CompaniesPage";
 
 const WORKER_STATE = {
@@ -12,16 +13,28 @@ const WORKER_STATE = {
   max: { company_researcher: 1, ppa_analyser: 1, application_drafter: 1 }
 };
 
+const companySummaryRow = {
+  id: "c1",
+  name: "Acme Corp",
+  has_application: false,
+  research_status: "indexed",
+  website: "https://acme.example",
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-02T00:00:00Z"
+};
+
 describe("CompaniesPage", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
   });
   afterEach(() => {
+    cleanup();
     resetCompanySummariesCacheForTests();
+    resetWorkerSummaryCacheForTests();
     vi.unstubAllGlobals();
   });
 
-  it("navigates to company detail when a table row is clicked", async () => {
+  it("uses a primary link to navigate to company detail", async () => {
     const fetchMock = vi.mocked(fetch);
     const companyRow = {
       id: "c1",
@@ -34,10 +47,10 @@ describe("CompaniesPage", () => {
     };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -54,9 +67,11 @@ describe("CompaniesPage", () => {
 
     expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
     expect(screen.getAllByText("Indexed").some((el) => el.tagName === "SPAN")).toBe(true);
-    expect(screen.getAllByText("Has applications").some((el) => el.classList.contains("badge"))).toBe(true);
+    expect(screen.getAllByText("Has application records").some((el) => el.classList.contains("badge"))).toBe(true);
+    expect(screen.getAllByText("Applications").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Current page, page 1" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("row", { name: /Acme Corp/i }));
+    expect(screen.getByText("Showing 1-1 of 1 companies")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Acme Corp" }));
     expect(await screen.findByTestId("company-detail")).toBeInTheDocument();
   });
 
@@ -73,10 +88,10 @@ describe("CompaniesPage", () => {
     };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -101,7 +116,7 @@ describe("CompaniesPage", () => {
 
     const companyCalls = fetchMock.mock.calls
       .map(([input]) => (typeof input === "string" ? input : input.toString()))
-      .filter((url) => url.includes("/api/v1/companies"));
+      .filter((url) => url.includes("/api/v1/companies/summary"));
     expect(companyCalls).toHaveLength(1);
   });
 
@@ -118,12 +133,12 @@ describe("CompaniesPage", () => {
     };
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
-      if (url.includes("/api/v1/companies")) {
+      if (url.includes("/api/v1/companies/summary")) {
         const u = new URL(url);
         expect(u.searchParams.get("sort")).toBe("updated_at_desc");
         return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
       }
-      if (url.includes("/settings/workers")) {
+      if (url.includes("/workers/summary")) {
         return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
       }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
@@ -138,8 +153,348 @@ describe("CompaniesPage", () => {
     await waitFor(() => {
       const calls = fetchMock.mock.calls
         .map(([input]) => (typeof input === "string" ? input : input.toString()))
-        .filter((url) => url.includes("/api/v1/companies"));
+        .filter((url) => url.includes("/api/v1/companies/summary"));
       expect(calls.some((url) => new URL(url).searchParams.get("sort") === "updated_at_desc")).toBe(true);
+    });
+
+    expect(screen.getAllByText("No application records").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "No application records" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("option", { name: "Has application records" }).length).toBeGreaterThan(0);
+    const calledUrls = fetchMock.mock.calls.map(([input]) =>
+      typeof input === "string" ? input : input.toString()
+    );
+    expect(calledUrls.some((url) => url.includes("/api/v1/companies/summary"))).toBe(true);
+    expect(calledUrls.some((url) => url.includes("/api/v1/settings/workers"))).toBe(false);
+    expect(calledUrls.filter((url) => url.includes("/api/v1/workers/summary"))).toHaveLength(1);
+  });
+
+  it("syncs same-route research_status query changes into company summary filters", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/companies?research_status=indexed"]}>
+        <Routes>
+          <Route
+            path="/companies"
+            element={
+              <>
+                <Link to="/companies?research_status=pending">Pending companies</Link>
+                <CompaniesPage />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("cell", { name: "Acme Corp" });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls
+          .map(([input]) => String(input))
+          .filter((url) => url.includes("/api/v1/companies/summary"))
+          .some((url) => url.includes("research_status=indexed"))
+      ).toBe(true);
+    });
+
+    await userEvent.click(screen.getByRole("link", { name: "Pending companies" }));
+
+    await waitFor(() => {
+      const companyCalls = fetchMock.mock.calls
+        .map(([input]) => String(input))
+        .filter((url) => url.includes("/api/v1/companies/summary"));
+      expect(companyCalls.some((url) => url.includes("research_status=pending"))).toBe(true);
+      expect(companyCalls[companyCalls.length - 1]).not.toContain("research_status=indexed");
+    });
+  });
+
+  it("refreshes cached company summaries when the tab returns to the foreground", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const initialCompany = {
+      id: "c1",
+      name: "Acme Corp",
+      has_application: false,
+      research_status: "pending",
+      website: "https://acme.example",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z"
+    };
+    const refreshedCompany = {
+      ...initialCompany,
+      has_application: true,
+      research_status: "indexed",
+      updated_at: "2026-01-02T00:00:00Z"
+    };
+    let summaryCalls = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/companies/summary")) {
+        summaryCalls += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify([summaryCalls > 1 ? refreshedCompany : initialCompany]), {
+            status: 200
+          })
+        );
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Pending")).toBeInTheDocument();
+    fireEvent.focus(window);
+    fireEvent(document, new Event("visibilitychange"));
+
+    await waitFor(() => {
+      expect(summaryCalls).toBe(2);
+      expect(screen.getAllByText("Indexed").some((el) => el.tagName === "SPAN")).toBe(true);
+    });
+  });
+
+  it("creates an application from the company row Apply action", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const companyRow = {
+      id: "c1",
+      name: "Acme Corp",
+      has_application: false,
+      research_status: "indexed",
+      website: "https://acme.example",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z"
+    };
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/api/v1/applications") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "a1",
+              company_id: "c1",
+              status: "ppa_pending",
+              applied: false,
+              email_sent: false,
+              created_at: "2026-01-03T00:00:00Z",
+              updated_at: "2026-01-03T00:00:00Z"
+            }),
+            { status: 201 }
+          )
+        );
+      }
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companyRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(await screen.findByText("Using existing company: Acme Corp")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(([input]) =>
+        String(input).endsWith("/api/v1/applications")
+      );
+      expect(createCall).toBeTruthy();
+      expect(JSON.parse((createCall![1] as RequestInit).body as string)).toMatchObject({
+        company_id: "c1"
+      });
+    });
+  });
+
+  it("opens an explicit restore modal when create hits archived-company conflict", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/v1/companies") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              detail: {
+                code: "archived_company_name_exists",
+                company_id: "c-archived",
+                name: "Old Co",
+                website: "https://old.example",
+                archive_reason: "Duplicate target"
+              }
+            }),
+            { status: 409 }
+          )
+        );
+      }
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New company" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Old Co");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    const restoreDialogTitle = await screen.findByRole("heading", { name: "Restore archived company" });
+    const restoreDialog = restoreDialogTitle.closest("dialog");
+    expect(restoreDialog).toBeTruthy();
+    if (!restoreDialog) {
+      throw new Error("Restore dialog container not found");
+    }
+    expect(within(restoreDialog).getByText(/already exists in the archive/i)).toBeInTheDocument();
+    expect(within(restoreDialog).getByText("https://old.example")).toBeInTheDocument();
+    expect(within(restoreDialog).getByText("Duplicate target")).toBeInTheDocument();
+    expect(within(restoreDialog).getByRole("button", { name: "Restore archived company" })).toBeInTheDocument();
+  });
+
+  it("keeps create modal input state when restore modal is canceled", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/v1/companies") && init?.method === "POST") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              detail: {
+                code: "archived_company_name_exists",
+                company_id: "c-archived",
+                name: "Old Co"
+              }
+            }),
+            { status: 409 }
+          )
+        );
+      }
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New company" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Old Co");
+    await userEvent.type(screen.getByRole("textbox", { name: "Website" }), "https://typed.example");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    const restoreDialogTitle = await screen.findByRole("heading", { name: "Restore archived company" });
+    const restoreDialog = restoreDialogTitle.closest("dialog");
+    expect(restoreDialog).toBeTruthy();
+    if (!restoreDialog) {
+      throw new Error("Restore dialog container not found");
+    }
+    await userEvent.click(within(restoreDialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Restore archived company" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Old Co");
+    expect(screen.getByRole("textbox", { name: "Website" })).toHaveValue("https://typed.example");
+  });
+
+  it("submits explicit archived restore with acknowledge flag and shows inline restore errors", async () => {
+    const fetchMock = vi.mocked(fetch);
+    let postCount = 0;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/v1/companies") && init?.method === "POST") {
+        postCount += 1;
+        if (postCount === 1) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                detail: {
+                  code: "archived_company_name_exists",
+                  company_id: "c-archived",
+                  name: "Old Co"
+                }
+              }),
+              { status: 409 }
+            )
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Could not restore archived company right now." }), { status: 500 })
+        );
+      }
+      if (url.includes("/api/v1/companies/summary")) {
+        return Promise.resolve(new Response(JSON.stringify([companySummaryRow]), { status: 200 }));
+      }
+      if (url.includes("/workers/summary")) {
+        return Promise.resolve(new Response(JSON.stringify(WORKER_STATE), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+    });
+
+    render(
+      <MemoryRouter>
+        <CompaniesPage />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("cell", { name: "Acme Corp" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New company" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Old Co");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    const restoreDialogTitle = await screen.findByRole("heading", { name: "Restore archived company" });
+    const restoreDialog = restoreDialogTitle.closest("dialog");
+    expect(restoreDialog).toBeTruthy();
+    if (!restoreDialog) {
+      throw new Error("Restore dialog container not found");
+    }
+
+    await userEvent.click(within(restoreDialog).getByRole("button", { name: "Restore archived company" }));
+    expect(await screen.findByText("Could not restore archived company right now.")).toBeInTheDocument();
+
+    const createCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).includes("/api/v1/companies") && (init as RequestInit | undefined)?.method === "POST"
+    );
+    expect(createCalls).toHaveLength(2);
+    expect(JSON.parse((createCalls[1][1] as RequestInit).body as string)).toMatchObject({
+      name: "Old Co",
+      acknowledge_reuse_of_archived_company: true
     });
   });
 });

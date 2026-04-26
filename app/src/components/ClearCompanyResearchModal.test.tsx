@@ -33,7 +33,7 @@ describe("ClearCompanyResearchModal", () => {
     cleanup();
   });
 
-  it("shows Archive and Clear when applications exist", async () => {
+  it("shows explicit destructive labels and requires confirmation when applications exist", async () => {
     getCompanyApplicationCount.mockResolvedValue({ count: 1 });
 
     const onCleared = vi.fn();
@@ -47,10 +47,23 @@ describe("ClearCompanyResearchModal", () => {
     );
 
     expect(await screen.findByText(/tied to this company/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Archive" })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled();
+    expect(
+      screen.getByText(/can archive related applications or delete generated per-profile analysis and emails/i)
+    ).toBeInTheDocument();
+    const archiveButton = screen.getByRole("button", { name: "Archive related applications" });
+    const resetButton = screen.getByRole("button", { name: "Delete prep artifacts and reset applications" });
+    expect(archiveButton).toBeDisabled();
+    expect(resetButton).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i understand this can archive related applications or delete generated per-profile analysis and emails/i
+      })
+    );
+    expect(archiveButton).not.toBeDisabled();
+    expect(resetButton).not.toBeDisabled();
+
+    await userEvent.click(archiveButton);
 
     await waitFor(() => {
       expect(clearCompanyResearchDetail).toHaveBeenCalledWith("c1", { related_applications: "archive" });
@@ -58,7 +71,7 @@ describe("ClearCompanyResearchModal", () => {
     expect(onCleared).toHaveBeenCalled();
   });
 
-  it("shows only Clear company when no applications", async () => {
+  it("shows explicit company-only label when no applications", async () => {
     getCompanyApplicationCount.mockResolvedValue({ count: 0 });
 
     render(
@@ -71,10 +84,88 @@ describe("ClearCompanyResearchModal", () => {
     );
 
     expect(await screen.findByText(/tied to this company/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Clear company" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete company prep artifacts only" }));
 
     await waitFor(() => {
       expect(clearCompanyResearchDetail).toHaveBeenCalledWith("c1", { related_applications: "none" });
+    });
+  });
+
+  it("requires explicit confirmation when related application count cannot be loaded", async () => {
+    getCompanyApplicationCount.mockRejectedValue(new Error("timeout"));
+
+    render(
+      <ClearCompanyResearchModal
+        open
+        onClose={vi.fn()}
+        company={{ id: "c1", name: "Solo" }}
+        onCleared={vi.fn()}
+      />
+    );
+
+    expect(
+      await screen.findByText(/i understand related application count is unavailable, and this action only deletes/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/fallback action only deletes company prep artifacts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0 applications tied to this company/i)).not.toBeInTheDocument();
+    const clearButton = screen.getByRole("button", { name: "Delete company prep artifacts only" });
+    expect(clearButton).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i understand related application count is unavailable, and this action only deletes/i
+      })
+    );
+    expect(clearButton).not.toBeDisabled();
+
+    await userEvent.click(clearButton);
+    await waitFor(() => {
+      expect(clearCompanyResearchDetail).toHaveBeenCalledWith("c1", { related_applications: "none" });
+    });
+  });
+
+  it("disables controls and blocks close while submitting", async () => {
+    getCompanyApplicationCount.mockResolvedValue({ count: 2 });
+    let resolveClear = () => {};
+    clearCompanyResearchDetail.mockImplementation(
+      () =>
+        new Promise((resolve: (value: unknown) => void) => {
+          resolveClear = () => resolve({});
+        })
+    );
+
+    const onClose = vi.fn();
+    render(
+      <ClearCompanyResearchModal
+        open
+        onClose={onClose}
+        company={{ id: "c1", name: "Acme" }}
+        onCleared={vi.fn()}
+      />
+    );
+
+    await screen.findByText(/tied to this company/);
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i understand this can archive related applications or delete generated per-profile analysis and emails/i
+      })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Archive related applications" }));
+
+    const cancelButton = screen.getByRole("button", { name: "Cancel" });
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    expect(cancelButton).toBeDisabled();
+    expect(closeButton).toBeDisabled();
+    for (const button of screen.getAllByRole("button", { name: "Working…" })) {
+      expect(button).toBeDisabled();
+    }
+
+    await userEvent.click(closeButton);
+    expect(onClose).not.toHaveBeenCalled();
+
+    resolveClear();
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 });

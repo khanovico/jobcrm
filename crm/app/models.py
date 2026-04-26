@@ -253,6 +253,15 @@ class Industry(IndustryBase):
     updated_at: datetime
 
 
+class IndustryCountResponse(BaseModel):
+    total: int
+
+
+class IndustryOptionsResponse(BaseModel):
+    selected: list[Industry]
+    options: list[Industry]
+
+
 class CompanyResearchStatus(str, Enum):
     pending = "pending"
     indexing = "indexing"
@@ -337,6 +346,11 @@ class CompanyApplicationCountResponse(BaseModel):
     count: int
 
 
+class PageMeta(BaseModel):
+    total: int
+    has_next: bool
+
+
 class CompanyArchiveResponse(BaseModel):
     applications_archived: int
 
@@ -349,6 +363,30 @@ class ClearCompanyResearchDetailRequest(BaseModel):
     """How to handle applications tied to the company when clearing research status."""
 
     related_applications: Literal["none", "archive", "reset"] = "none"
+
+
+class CompanyListItem(BaseModel):
+    id: str
+    name: str
+    research_status: CompanyResearchStatus = CompanyResearchStatus.pending
+    website: str | None = None
+    has_application: bool = Field(
+        default=False,
+        description="True when at least one application exists for this company.",
+    )
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_indexed_field(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "research_status" not in data and "indexed" in data:
+            data["research_status"] = (
+                CompanyResearchStatus.indexed.value if data.get("indexed") else CompanyResearchStatus.pending.value
+            )
+        return data
 
 
 class Company(CompanyBase):
@@ -404,7 +442,7 @@ class ProfileCreate(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     frozen: bool | None = None
     location: str | None = None
     email: EmailStr | None = None
@@ -628,6 +666,53 @@ class ApplicationListItem(Application):
     applied_profiles: list[AppliedProfileName] = Field(default_factory=list)
 
 
+class ApplicationListPage(BaseModel):
+    items: list[ApplicationListItem]
+    total: int
+    has_next: bool
+
+
+class CompanyListPage(BaseModel):
+    items: list[CompanyListItem]
+    total: int
+    has_next: bool
+
+
+class ProfileListPage(BaseModel):
+    items: list[ProfileListItem]
+    total: int
+    has_next: bool
+
+
+class ApplicationAppliedProfileFacetsResponse(BaseModel):
+    profile_names: list[str] = Field(default_factory=list)
+
+
+class AgentApplicationTaskSummary(BaseModel):
+    """Compact queue item for polling agents; fetch full detail by id when claiming work."""
+
+    id: str
+    status: ApplicationStatus
+    company_id: str
+    company_name: str
+    company_website: str | None = None
+    job_link: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentCompanyResearchTaskSummary(BaseModel):
+    """Compact company research queue item for polling agents."""
+
+    id: str
+    name: str
+    website: str | None = None
+    research_status: CompanyResearchStatus
+    has_application: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
 class PerProfileApplicationDetail(PerProfileApplication):
     """Per-profile row with resolved display name and nested emails for detail view."""
 
@@ -699,7 +784,11 @@ class NotificationPayload(BaseModel):
 
 
 class NotificationBulkDelete(BaseModel):
-    ids: list[str] = Field(min_length=1)
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class NotificationBulkRead(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=200)
 
 
 class UserNotification(BaseModel):
@@ -755,6 +844,23 @@ class UserNotification(BaseModel):
             "created_at": data.get("created_at", ts),
             "link": data.get("link"),
         }
+
+
+class NotificationSummaryResponse(BaseModel):
+    unread_count: int
+    newest_unread: list[UserNotification]
+
+
+class NotificationListPage(BaseModel):
+    items: list[UserNotification]
+    total: int
+    has_next: bool
+
+
+class AuditEventListPage(BaseModel):
+    items: list[AuditEvent]
+    total: int
+    has_next: bool
 
 
 class AgentApiKeyCreate(BaseModel):
@@ -835,10 +941,35 @@ class AgentNotificationCreate(BaseModel):
         return self
 
 
+class ApplicationSearchSummary(BaseModel):
+    id: str
+    company_id: str
+    company_name: str
+    status: ApplicationStatus
+    updated_at: datetime
+    job_link: str | None = None
+    job_title: str | None = None
+    job_description_excerpt: str | None = None
+
+
+class CompanySearchSummary(BaseModel):
+    id: str
+    name: str
+    website: str | None = None
+    research_status: CompanyResearchStatus = CompanyResearchStatus.pending
+
+
+class ProfileSearchSummary(BaseModel):
+    id: str
+    name: str
+    location: str | None = None
+    email: EmailStr | None = None
+
+
 class GlobalSearchResult(BaseModel):
-    companies: list[Company]
-    profiles: list[Profile]
-    applications: list[Application]
+    companies: list[CompanySearchSummary]
+    profiles: list[ProfileSearchSummary]
+    applications: list[ApplicationSearchSummary]
 
 
 class ApplicationListQuery(BaseModel):
@@ -849,6 +980,7 @@ class ApplicationListQuery(BaseModel):
     company_id: str | None = None
     applied: bool | None = None
     email_sent: bool | None = None
+    workflow_filter: Literal["company_research"] | None = None
     sort: Literal["created_at_desc", "created_at_asc", "updated_at_desc"] = "created_at_desc"
 
 
@@ -856,6 +988,7 @@ class AuditListQuery(BaseModel):
     skip: int = 0
     limit: int = 100
     actor_type: ActorType | None = None
+    action: str | None = None
     entity_type: str | None = None
     from_ts: datetime | None = None
     to_ts: datetime | None = None

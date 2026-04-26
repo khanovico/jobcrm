@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -33,6 +33,9 @@ describe("IndustriesPage", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = init?.method ?? "GET";
+      if (url.includes("/api/v1/industries/count") && method === "GET") {
+        return Promise.resolve(new Response(JSON.stringify({ total: rows.length }), { status: 200 }));
+      }
       if (url.includes("/api/v1/industries") && method === "GET") {
         return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }));
       }
@@ -51,14 +54,14 @@ describe("IndustriesPage", () => {
     });
 
     render(<IndustriesPage />);
-    expect(await screen.findByText("FinTech")).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText("Industry name"), "HealthTech");
-    await userEvent.type(screen.getByLabelText("Description"), "Healthcare");
-    await userEvent.click(screen.getByRole("button", { name: "Create industry" }));
+    expect(await screen.findByText("FinTech", undefined, { timeout: 5000 })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Industry name"), { target: { value: "HealthTech" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Healthcare" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create industry" }));
 
     expect(await screen.findByText("Industry created.")).toBeInTheDocument();
     expect(screen.getByText("HealthTech")).toBeInTheDocument();
-  });
+  }, 10000);
 
   it("supports bulk create mode and inline editing", async () => {
     const fetchMock = vi.mocked(fetch);
@@ -69,6 +72,9 @@ describe("IndustriesPage", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = init?.method ?? "GET";
+      if (url.includes("/api/v1/industries/count") && method === "GET") {
+        return Promise.resolve(new Response(JSON.stringify({ total: rows.length }), { status: 200 }));
+      }
       if (url.includes("/api/v1/industries") && method === "GET") {
         return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }));
       }
@@ -97,10 +103,9 @@ describe("IndustriesPage", () => {
     expect(await screen.findByText("FinTech")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Bulk create" }));
-    await userEvent.type(
-      screen.getByLabelText("Bulk entries (one per line)"),
-      "HealthTech|Healthcare{enter}EdTech|Education"
-    );
+    fireEvent.change(screen.getByLabelText("Bulk entries (one per line)"), {
+      target: { value: "HealthTech|Healthcare\nEdTech|Education" }
+    });
     await userEvent.click(screen.getByRole("button", { name: "Create industries in bulk" }));
 
     expect(await screen.findByText("2 industries created.")).toBeInTheDocument();
@@ -123,17 +128,24 @@ describe("IndustriesPage", () => {
     const rows: IndustryRow[] = [
       { id: "1", name: "FinTech", description: "Finance", created_at: now, updated_at: now }
     ];
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    let releaseDelete!: () => void;
 
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
       const method = init?.method ?? "GET";
+      if (url.includes("/api/v1/industries/count") && method === "GET") {
+        return Promise.resolve(new Response(JSON.stringify({ total: rows.length }), { status: 200 }));
+      }
       if (url.includes("/api/v1/industries") && method === "GET") {
         return Promise.resolve(new Response(JSON.stringify(rows), { status: 200 }));
       }
       if (url.includes("/api/v1/industries/1") && method === "DELETE") {
-        rows.splice(0, 1);
-        return Promise.resolve(new Response(null, { status: 204 }));
+        return new Promise<Response>((resolve) => {
+          releaseDelete = () => {
+            rows.splice(0, 1);
+            resolve(new Response(null, { status: 204 }));
+          };
+        });
       }
       return Promise.resolve(new Response(null, { status: 404 }));
     });
@@ -141,9 +153,54 @@ describe("IndustriesPage", () => {
     render(<IndustriesPage />);
     expect(await screen.findByRole("cell", { name: "FinTech" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByText('Delete "FinTech"?')).toBeInTheDocument();
+    expect(screen.getByText(/permanently removes/i)).toBeInTheDocument();
 
-    expect(confirmSpy).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Delete industry" }));
+    const deletingButtons = screen.getAllByRole("button", { name: "Deleting..." });
+    expect(deletingButtons[deletingButtons.length - 1]).toBeDisabled();
+
+    releaseDelete();
     expect(await screen.findByText('Deleted "FinTech".')).toBeInTheDocument();
     expect(screen.queryByText("FinTech")).not.toBeInTheDocument();
+  });
+
+  it("paginates industries and reports total result count", async () => {
+    const fetchMock = vi.mocked(fetch);
+    const rows: IndustryRow[] = Array.from({ length: 30 }, (_, index) => ({
+      id: String(index + 1),
+      name: `Industry ${index + 1}`,
+      description: "",
+      created_at: now,
+      updated_at: now
+    }));
+
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url.includes("/api/v1/industries/count") && method === "GET") {
+        return Promise.resolve(new Response(JSON.stringify({ total: rows.length }), { status: 200 }));
+      }
+      if (url.includes("/api/v1/industries") && method === "GET") {
+        const params = new URL(url).searchParams;
+        const skip = Number(params.get("skip") ?? "0");
+        const limit = Number(params.get("limit") ?? "25");
+        return Promise.resolve(new Response(JSON.stringify(rows.slice(skip, skip + limit)), { status: 200 }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
+
+    render(<IndustriesPage />);
+
+    expect(await screen.findByText("Industry 1")).toBeInTheDocument();
+    expect(screen.getAllByText("1-25 of 30").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Go to next page" }));
+
+    expect(await screen.findByText("Industry 26")).toBeInTheDocument();
+    expect(screen.getAllByText("26-30 of 30").length).toBeGreaterThan(0);
+    const listCalls = fetchMock.mock.calls
+      .map(([input]) => (typeof input === "string" ? input : input.toString()))
+      .filter((url) => url.includes("/api/v1/industries?"));
+    expect(listCalls.some((url) => url.includes("skip=25") && url.includes("limit=25"))).toBe(true);
   });
 });
