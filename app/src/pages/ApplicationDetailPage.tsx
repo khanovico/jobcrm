@@ -427,36 +427,6 @@ export const ApplicationDetailPage = () => {
                               </div>
                             </div>
 
-                            {ppa.cold_email_plan?.subjects?.length ? (
-                              <details className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
-                                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide opacity-70">
-                                  Subjects
-                                </summary>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  {ppa.cold_email_plan.subjects.map((subject, index) => {
-                                    const isActive = index === ppa.cold_email_plan?.selected_subject_index;
-                                    return (
-                                      <button
-                                        type="button"
-                                        key={`${em.id}-subject-${index}`}
-                                        disabled={subjectUpdateBusyKey != null}
-                                        className={
-                                          isActive
-                                            ? "badge badge-primary h-auto min-h-7 whitespace-normal px-3 py-2 text-left"
-                                            : "badge badge-outline h-auto min-h-7 whitespace-normal px-3 py-2 text-left hover:badge-primary"
-                                        }
-                                        onClick={() => {
-                                          void updateActiveSubject(ppa, index);
-                                        }}
-                                      >
-                                        {subject}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </details>
-                            ) : null}
-
                             {editingRecipientPpaId === ppa.id ? (
                               <div className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
                                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-70">To</p>
@@ -562,6 +532,36 @@ export const ApplicationDetailPage = () => {
                                 </button>
                               </div>
                             )}
+
+                            {ppa.cold_email_plan?.subjects?.length ? (
+                              <details className="mb-3 rounded-lg border border-base-300 bg-base-200/40 p-3">
+                                <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide opacity-70">
+                                  Subjects
+                                </summary>
+                                <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                  {ppa.cold_email_plan.subjects.map((subject, index) => {
+                                    const isActive = index === ppa.cold_email_plan?.selected_subject_index;
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={`${em.id}-subject-${index}`}
+                                        disabled={subjectUpdateBusyKey != null}
+                                        className={
+                                          isActive
+                                            ? "btn btn-primary btn-xs h-auto min-h-8 justify-start whitespace-normal px-3 py-2 text-left normal-case"
+                                            : "btn btn-outline btn-xs h-auto min-h-8 justify-start whitespace-normal px-3 py-2 text-left normal-case"
+                                        }
+                                        onClick={() => {
+                                          void updateActiveSubject(ppa, index);
+                                        }}
+                                      >
+                                        {subject}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </details>
+                            ) : null}
 
                             {getActiveSubject(
                               ppa.cold_email_plan?.subjects,
